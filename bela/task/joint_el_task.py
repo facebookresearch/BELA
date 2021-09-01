@@ -10,7 +10,6 @@ import hydra
 import torch
 import torch.nn as nn
 
-from pytorch.recipes.text.module.common import CheckpointMixin
 from pytorch_lightning import LightningModule
 
 from bela.conf import (
@@ -441,7 +440,7 @@ class MentionScoresHead(nn.Module):
         return mention_scores, mention_bounds
 
 
-class JointELTask(CheckpointMixin, LightningModule):
+class JointELTask(LightningModule):
     def __init__(
         self,
         transform: TransformConf,
@@ -550,11 +549,12 @@ class JointELTask(CheckpointMixin, LightningModule):
     def forward(
         self,
         text_inputs,
+        attention_mask,
         mention_offsets,
         mention_lengths,
     ):
         # encode query and contexts
-        _, all_layers = self.encoder(text_inputs)
+        _, all_layers = self.encoder(text_inputs, attention_mask)
         text_encodings = all_layers[-1].transpose(0, 1)
 
         mentions_repr = self.span_encoder(
@@ -834,8 +834,8 @@ class JointELTask(CheckpointMixin, LightningModule):
         This receives queries, each with mutliple contexts.
         """
 
-        text_inputs = batch["token_ids"]  # bs x mention_len
-        text_pad_mask = batch["pad_mask"]
+        text_inputs = batch["input_ids"]  # bs x mention_len
+        text_pad_mask = batch["attention_mask"]
         gold_mention_offsets = batch["mention_offsets"]  # bs x max_mentions_num
         gold_mention_lengths = batch["mention_lengths"]  # bs x max_mentions_num
         entities_ids = batch["entities"]  # bs x max_mentions_num
@@ -844,7 +844,7 @@ class JointELTask(CheckpointMixin, LightningModule):
 
         # mention representations (bs x max_mentions_num x embedding_dim)
         text_encodings, mentions_repr = self(
-            text_inputs, gold_mention_offsets, gold_mention_lengths
+            text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
         )
 
         dis_loss = self._disambiguation_training_step(
@@ -1102,8 +1102,8 @@ class JointELTask(CheckpointMixin, LightningModule):
         return el_targets, el_predictions, saliency_targets, saliency_predictions
 
     def _eval_step(self, batch, batch_idx):
-        text_inputs = batch["token_ids"]  # bs x mention_len
-        text_pad_mask = batch["pad_mask"]
+        text_inputs = batch["input_ids"]  # bs x mention_len
+        text_pad_mask = batch["attention_mask"]
         mention_offsets = batch["mention_offsets"]  # bs x max_mentions_num
         mention_lengths = batch["mention_lengths"]  # bs x max_mentions_num
         entities_ids = batch["entities"]  # bs x max_mentions_num
@@ -1112,7 +1112,7 @@ class JointELTask(CheckpointMixin, LightningModule):
 
         if self.only_train_disambiguation:
             text_encodings, mentions_repr = self(
-                text_inputs, mention_offsets, mention_lengths
+                text_inputs, text_pad_mask, mention_offsets, mention_lengths
             )
 
             return self._disambiguation_eval_step(

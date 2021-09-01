@@ -1,0 +1,15 @@
+defaults:
+  - config
+  - datamodule: joint_el_datamodule_disambiguation
+  - task/transform: joint_el_xlmr_transform
+  - task/model: xlmr
+  - task/optim: adamw
+  - trainer: cpu
+
+task:
+  _target_: bela.task.joint_el_task.JointELTask
+  embeddings_path: /home/movb/tmp/dense/es_embeddings.pt
+  faiss_index_path: /home/movb/tmp/dense/es_index.faiss
+
+checkpoint_callback:
+    monitor: valid_recall_at_1

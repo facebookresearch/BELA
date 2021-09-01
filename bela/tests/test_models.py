@@ -44,10 +44,8 @@ class TestHFEncoder(unittest.TestCase):
         )
 
         output = model(
-            {
-                "input_ids": text_model_inputs["input_ids"],
-                "attention_mask": text_model_inputs["attention_mask"],
-            }
+            input_ids=text_model_inputs["input_ids"],
+            attention_mask=text_model_inputs["attention_mask"],
         )
 
 

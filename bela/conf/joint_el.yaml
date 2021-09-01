@@ -1,0 +1,15 @@
+defaults:
+  - config
+  - datamodule: joint_el_datamodule
+  - task/transform: joint_el_xlmr_transform
+  - task/model: xlmr
+  - task/optim: adamw
+  - trainer: gpu_1_host
+
+task:
+  _target_: bela.task.joint_el_task.JointELTask
+  embeddings_path: data/es_embeddings.pt
+  faiss_index_path: data/es_index.faiss
+
+checkpoint_callback:
+    monitor: valid_boe_f1

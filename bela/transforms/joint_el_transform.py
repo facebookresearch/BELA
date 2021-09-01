@@ -137,9 +137,9 @@ class JointELCollate(nn.Module):
     def __init__(
         self,
         pad_idx: int = 1,
-        token_ids_column: str = "token_ids",
+        token_ids_column: str = "input_ids",
         seq_lens_column: str = "seq_lens",
-        pad_mask_column: str = "pad_mask",
+        pad_mask_column: str = "attention_mask",
         mention_pad_idx: int = 0,
         mention_offsets_column: str = "mention_offsets",
         mention_lengths_column: str = "mention_lengths",
@@ -233,9 +233,9 @@ class JointELTransform(HFTransform):
         mention_lengths_column: str = "mention_lengths",
         mentions_seq_lengths_column: str = "mentions_seq_lengths",
         entities_column: str = "entities",
-        token_ids_column: str = "token_ids",
+        token_ids_column: str = "input_ids",
         seq_lens_column: str = "seq_lens",
-        pad_mask_column: str = "pad_mask",
+        pad_mask_column: str = "attention_mask",
         tokens_mapping_column: str = "tokens_mapping",
     ):
         super().__init__(model_path=model_path)

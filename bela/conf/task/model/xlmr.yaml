@@ -1,0 +1,3 @@
+# @package _group_
+_target_: bela.models.hf_encoder.HFEncoder
+model_path: xlm-roberta-base
