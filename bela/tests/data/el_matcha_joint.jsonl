@@ -1,0 +1,2 @@
+{"gt_entities":[[0,3,"Chelsea F.C.","wiki"],[12,1,"London","wiki"]],"text":["Chelsea","Football","Club","is","an","English","professional","football","club","based","in","Fulham","London"],"all_entities":["Chelsea F.C.","London"],"gt_scores":[1,0]}
+{"gt_entities":[[1,1,"London","wiki"]],"text":["In","London","the","capital","of","England","and","the","United","Kingdom"],"all_entities":["London"],"gt_scores":[1]}
