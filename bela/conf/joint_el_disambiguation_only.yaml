@@ -1,15 +1,24 @@
 defaults:
   - config
-  - datamodule: joint_el_datamodule_disambiguation
+  - datamodule: joint_el_datamodule
   - task/transform: joint_el_xlmr_transform
   - task/model: xlmr
   - task/optim: adamw
-  - trainer: cpu
+  - trainer: gpu_1_host
 
 task:
   _target_: bela.task.joint_el_task.JointELTask
+  only_train_disambiguation: true
   embeddings_path: /home/movb/tmp/dense/es_embeddings.pt
   faiss_index_path: /home/movb/tmp/dense/es_index.faiss
+
+datamodule:
+  train_path: /home/movb/tmp/dense/f264828346/train_100000.txt
+  val_path: /home/movb/tmp/dense/f264828346/eval.txt
+  test_path: /home/movb/tmp/dense/f264828346/test.txt
+  ent_catalogue_idx_path: /home/movb/tmp/dense/es_xlm_ent_idx.txt
+  batch_size: 64
+
 
 checkpoint_callback:
     monitor: valid_recall_at_1

@@ -1,9 +1,0 @@
-# @package _group_
-_target_: bela.datamodule.joint_el_datamodule.JointELDataModule
-train_path: /home/movb/tmp/dense/f264828346/train_100000.txt
-val_path: /home/movb/tmp/dense/f264828346/eval.txt
-test_path: /home/movb/tmp/dense/f264828346/test.txt
-ent_catalogue_idx_path: /home/movb/tmp/dense/es_xlm_ent_idx.txt
-
-batch_size: 64
-drop_last: False

@@ -142,6 +142,13 @@ class SpanEncoder(nn.Module):
             raise NotImplementedError()
 
     def forward(self, text_encodings, mention_offsets, mention_lengths):
+        # print("text_encodings", text_encodings)
+        # print("mention_offsets", mention_offsets)
+        # print("mention_lengths", mention_lengths)
+
+        # print("text_encodings shape", text_encodings.shape)
+        # print("mention_offsets shape", mention_offsets.shape)
+        # print("mention_lengths shape", mention_lengths.shape)
         idx = (
             torch.arange(mention_offsets.shape[0])
             .unsqueeze(1)
@@ -554,8 +561,8 @@ class JointELTask(LightningModule):
         mention_lengths,
     ):
         # encode query and contexts
-        _, all_layers = self.encoder(text_inputs, attention_mask)
-        text_encodings = all_layers[-1].transpose(0, 1)
+        _, last_layer = self.encoder(text_inputs, attention_mask)
+        text_encodings = last_layer
 
         mentions_repr = self.span_encoder(
             text_encodings, mention_offsets, mention_lengths
@@ -967,8 +974,8 @@ class JointELTask(LightningModule):
         device = text_inputs.device
 
         # encode query and contexts
-        _, all_layers = self.encoder(text_inputs)
-        text_encodings = all_layers[-1].transpose(0, 1)
+        _, last_layer = self.encoder(text_inputs)
+        text_encodings = last_layer
 
         mention_logits, mention_bounds = self.mention_encoder(
             text_encodings, text_pad_mask, tokens_mapping

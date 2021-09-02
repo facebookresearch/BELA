@@ -16,9 +16,8 @@ class HFEncoder(nn.Module):
         super().__init__()
         self.transformer = AutoModel.from_pretrained(model_path)
 
-    def forward(self, tokens):
-        output = self.transformer(**tokens, output_hidden_states=True)
+    def forward(self, input_ids, attention_mask=None):
+        output = self.transformer(input_ids=input_ids, attention_mask=attention_mask)
         last_layer = output["last_hidden_state"]
-        hidden_states = output["hidden_states"]
         sentence_rep = last_layer[:, 0, :]
-        return sentence_rep, hidden_states
+        return sentence_rep, last_layer
