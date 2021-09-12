@@ -22,7 +22,7 @@ hydra:
     nodes: ${trainer.num_nodes}
     timeout_min: 1440
     cpus_per_task: 10
-    mem_gb: 256
-    constraint: volta32gb
+    mem_gb: 0
+    # constraint: volta32gb
   sweep:
     dir: /checkpoints/${env:USER}/hydra_outputs/${hydra.launcher.name}/${now:%Y-%m-%d-%H%M%S}

@@ -9,16 +9,23 @@ defaults:
 task:
   _target_: bela.task.joint_el_task.JointELTask
   only_train_disambiguation: true
-  embeddings_path: /home/movb/tmp/dense/es_embeddings.pt
-  faiss_index_path: /home/movb/tmp/dense/es_index.faiss
+  embeddings_path: /fsx/movb/data/matcha/en/en_embeddings.pt
+  faiss_index_path: /fsx/movb/data/matcha/en/en_index.faiss
+  optim:
+    lr: 1e-05
 
 datamodule:
-  train_path: /home/movb/tmp/dense/f264828346/train_100000.txt
-  val_path: /home/movb/tmp/dense/f264828346/eval.txt
-  test_path: /home/movb/tmp/dense/f264828346/test.txt
-  ent_catalogue_idx_path: /home/movb/tmp/dense/es_xlm_ent_idx.txt
+  train_path: /fsx/movb/data/matcha/en/wiki_train.txt
+  val_path: /fsx/movb/data/matcha/en/wiki_eval.txt
+  test_path: /fsx/movb/data/matcha/en/wiki_test.txt 
+  ent_catalogue_idx_path: /fsx/movb/data/matcha/en/en_xlm_ent_idx.txt
   batch_size: 64
+
+trainer:
+  max_epochs: 2
+  val_check_interval: 500
 
 
 checkpoint_callback:
     monitor: valid_recall_at_1
+    # every_n_train_steps: 301
