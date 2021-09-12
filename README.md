@@ -2,17 +2,34 @@
 
 ## Install requirmenets
 
+First you need to install pytorch with cuda11 support:
+
+```
+conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch -c nvidia
+```
+
+Then you can install other packages:
 ```
 pip install -r requirements.txt
 ```
 
+## Runing tests
+
+```
+PYTHONPATH=.:$PYTHONPATH python -m unittest
+```
+
 ## Pretrain disambiguation model on wikipedia data
+
+The default path to the data is `/fsx/movb/data/matcha`. You need to modify config with appropriate paramters in `bela/conf/joint_el_disambiguation_only.yaml`. This is Hydra config in YAML format. Please read more about [hydra here](https://hydra.cc/) and [yaml here](https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html). To run training (you should be on machine with GPU):
 
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el_disambiguation_only
 ```
 
 ## Train model on entity linkind data
+
+Config is stored in `bela/conf/joint_el.yaml`. To run training (you should be on machine with GPU):
 
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
@@ -22,10 +39,4 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
 
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
-```
-
-## Runing tests
-
-```
-PYTHONPATH=.:$PYTHONPATH python -m unittest
 ```
