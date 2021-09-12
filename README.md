@@ -1,21 +1,27 @@
 # Bi-encoder Entity Linking Architecture
 
-## Pretrain disambiguation model on wikipedia data (locally)
+## Install requirmenets
+
+```
+pip install -r requirements.txt
+```
+
+## Pretrain disambiguation model on wikipedia data
 
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el_disambiguation_only
 ```
 
-## Train model on entity linkind data (locally)
+## Train model on entity linkind data
 
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
 ```
 
-## Train model on 8 GPUs
+## Train model using SLUMR
 
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el trainer.gpus=8
+PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
 ```
 
 ## Runing tests
