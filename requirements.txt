@@ -6,3 +6,5 @@ pyyaml
 pytorch-lightning==1.2.4
 transformers
 tqdm
+jsonlines
+numpy
