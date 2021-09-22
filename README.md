@@ -1,6 +1,6 @@
 # Bi-encoder Entity Linking Architecture
 
-## Install requirmenets
+## Install requirements
 
 First you need to install pytorch with cuda11 support:
 
@@ -13,7 +13,7 @@ Then you can install other packages:
 pip install -r requirements.txt
 ```
 
-## Runing tests
+## Running tests
 
 ```
 PYTHONPATH=.:$PYTHONPATH python -m unittest
@@ -27,7 +27,7 @@ The default path to the data is `/fsx/movb/data/matcha`. You need to modify conf
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el_disambiguation_only
 ```
 
-## Train model on entity linkind data
+## Train model on entity linking data
 
 Config is stored in `bela/conf/joint_el.yaml`. To run training (you should be on machine with GPU):
 
@@ -35,7 +35,7 @@ Config is stored in `bela/conf/joint_el.yaml`. To run training (you should be on
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
 ```
 
-## Train model using SLUMR
+## Train model using SLURM
 
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
