@@ -1,21 +1,21 @@
 defaults:
   - config
   - datamodule: joint_el_datamodule
-  - task/transform: joint_el_xlmr_transform
-  - task/model: xlmr
+  - task/transform: joint_el_bert_transform
+  - task/model: bert
   - task/optim: adamw
   - trainer: gpu_1_host
 
 task:
   _target_: bela.task.joint_el_task.JointELTask
-  embeddings_path: data/es_embeddings.pt
-  faiss_index_path: data/es_index.faiss
+  embeddings_path: data/blink/all_entities_large.t7
+  faiss_index_path: data/blink/faiss_hnsw_index.pkl
 
 datamodule:
   train_path: data/train_joint.txt
   val_path: data/eval_joint.txt
   test_path: data/test_joint.txt
-  ent_catalogue_idx_path: data/es_xlm_ent_idx.txt
+  ent_catalogue_idx_path: data/en_bert_ent_idx.txt
 
 checkpoint_callback:
     monitor: valid_boe_f1
