@@ -94,7 +94,9 @@ def clean(extractor, text, expand_templates=False, html_safe=True):
     text = replaceExternalLinks(text)
 
     # replace internal links
-    text = replaceInternalLinks(text)
+    text, references = replaceInternalLinks(text)
+    for ref in references:
+        extractor.references.add(ref)
 
     # drop MagicWords behavioral switches
     text = magicWordsRE.sub('', text)
@@ -450,6 +452,7 @@ def replaceInternalLinks(text):
     """
     # call this after removal of external links, so we need not worry about
     # triple closing ]]].
+    references = []
     cur = 0
     res = ''
     for s, e in findBalanced(text, ['[['], [']]']):
@@ -477,8 +480,9 @@ def replaceInternalLinks(text):
                 curp = e1
             label = inner[pipe + 1:].strip()
         res += text[cur:s] + makeInternalLink(title, label) + trail
+        references.append(title)
         cur = end
-    return res + text[cur:]
+    return res + text[cur:], references
 
 
 def makeInternalLink(title, label):
@@ -820,6 +824,7 @@ class Extractor():
         self.revid = revid
         self.url = get_url(urlbase, id)
         self.title = title
+        self.references = set()
         self.timestamp = timestamp
         self.revtimestamp = revtimestamp
         self.page = page
@@ -858,6 +863,8 @@ class Extractor():
         logging.debug("%s\t%s", self.id, self.title)
         text = ''.join(self.page)
         text = self.clean_text(text, html_safe=html_safe)
+        print(self.references)
+        input("")
 
         if self.to_json:
             json_data = {
