@@ -295,8 +295,7 @@ class JointELTransform(HFTransform):
             # eos_idx=self.eos_idx,
             max_seq_len=self.max_seq_len,
         )
-        print(token_ids)
-        input("")
+
         entities = [
             text_entities[: len(text_mention_offsets)]
             for text_entities, text_mention_offsets in zip(entities, mention_offsets)
