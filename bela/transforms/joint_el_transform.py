@@ -14,8 +14,8 @@ def pieces_to_texts(
     texts: List[List[str]],
     texts_mention_offsets: List[List[int]],
     texts_mention_lengths: List[List[int]],
-    bos_idx: int,
-    eos_idx: int,
+    # bos_idx: int,
+    # eos_idx: int,
     max_seq_len: int = 256,
 ):
     """
@@ -51,7 +51,7 @@ def pieces_to_texts(
         texts_mention_lengths,
     ):
         mapping: List[Tuple[int, int]] = []
-        text_token_ids: List[int] = [bos_idx]
+        text_token_ids: List[int] = []
         mention_offsets: List[int] = []
         mention_lengths: List[int] = []
 
@@ -64,7 +64,7 @@ def pieces_to_texts(
             text_token_ids.extend(token_ids)
 
         text_token_ids = text_token_ids[: max_seq_len - 1]
-        text_token_ids.append(eos_idx)
+        #text_token_ids.append(eos_idx)
 
         for old_offset, old_length in zip(old_mention_offsets, old_mention_lengths):
             new_offset = mapping[old_offset][0]
@@ -239,8 +239,8 @@ class JointELTransform(HFTransform):
         tokens_mapping_column: str = "tokens_mapping",
     ):
         super().__init__(model_path=model_path)
-        self.bos_idx = self.tokenizer.bos_token_id
-        self.eos_idx = self.tokenizer.eos_token_id
+        # self.bos_idx = self.tokenizer.bos_token_id
+        # self.eos_idx = self.tokenizer.eos_token_id
         self.max_seq_len = max_seq_len
 
         self.texts_column = texts_column
@@ -291,8 +291,8 @@ class JointELTransform(HFTransform):
             texts,
             mention_offsets,
             mention_lengths,
-            bos_idx=self.bos_idx,
-            eos_idx=self.eos_idx,
+            # bos_idx=self.bos_idx,
+            # eos_idx=self.eos_idx,
             max_seq_len=self.max_seq_len,
         )
         print(token_ids)
