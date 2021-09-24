@@ -226,7 +226,7 @@ class JointELCollate(nn.Module):
 class JointELTransform(HFTransform):
     def __init__(
         self,
-        model_path: str = "xlm-roberta-base",
+        model_path: str = "bert-large-cased",
         max_seq_len: int = 256,
         texts_column: str = "texts",
         mention_offsets_column: str = "mention_offsets",
@@ -295,7 +295,8 @@ class JointELTransform(HFTransform):
             eos_idx=self.eos_idx,
             max_seq_len=self.max_seq_len,
         )
-
+        print(token_ids)
+        input("")
         entities = [
             text_entities[: len(text_mention_offsets)]
             for text_entities, text_mention_offsets in zip(entities, mention_offsets)

@@ -10,7 +10,7 @@ from transformers import AutoModel, AutoConfig
 class HFEncoder(nn.Module):
     def __init__(
         self,
-        model_path: str = "xlm-roberta-base",
+        model_path: str = "bert-large-cased",
         projection_dim: Optional[int] = None,
     ):
         super().__init__()

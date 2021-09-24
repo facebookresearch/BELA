@@ -8,7 +8,7 @@ from transformers import AutoTokenizer
 class HFTransform(nn.Module):
     def __init__(
         self,
-        model_path: str = "xlm-roberta-base",
+        model_path: str = "bert-large-cased",
         max_seq_len: int = 256,
         add_special_tokens: bool = True,
     ):

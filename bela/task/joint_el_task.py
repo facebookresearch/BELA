@@ -45,7 +45,7 @@ class ClassificationMetrics(NamedTuple):
 class ClassificationHead(nn.Module):
     def __init__(
         self,
-        ctxt_output_dim=768,
+        ctxt_output_dim=1024,
     ):
         super(ClassificationHead, self).__init__()
 
@@ -76,7 +76,7 @@ class ClassificationHead(nn.Module):
 class SaliencyClassificationHead(nn.Module):
     def __init__(
         self,
-        ctxt_output_dim=768,
+        ctxt_output_dim=1024,
     ):
         super(SaliencyClassificationHead, self).__init__()
 
@@ -123,8 +123,8 @@ class SpanEncoder(nn.Module):
     def __init__(
         self,
         mention_aggregation="linear",
-        ctxt_output_dim=768,
-        cand_output_dim=768,
+        ctxt_output_dim=1024,
+        cand_output_dim=1024,
         dropout=0.1,
     ):
         super(SpanEncoder, self).__init__()
@@ -168,7 +168,7 @@ class SpanEncoder(nn.Module):
 class MentionScoresHead(nn.Module):
     def __init__(
         self,
-        encoder_output_dim=768,
+        encoder_output_dim=1024,
         max_mention_length=10,
     ):
         super(MentionScoresHead, self).__init__()

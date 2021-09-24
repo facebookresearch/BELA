@@ -7,7 +7,7 @@ from bela.transforms.joint_el_transform import JointELTransform
 class TestHFEncoder(unittest.TestCase):
     def test_xlmr_encoder(self):
         transform = JointELTransform()
-        model = HFEncoder(model_path="xlm-roberta-base")
+        model = HFEncoder(model_path="bert-large-cased")
 
         text_model_inputs, mentions_model_inputs = transform(
             {
