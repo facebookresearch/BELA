@@ -459,7 +459,7 @@ def replaceInternalLinks(text):
     references = []
     cur = 0
     res = ''
-    for s, e in findBalanced(text, ['{{w|'], ['}}']):
+    for s, e in findBalanced(text, ['[['], [']]']):
         m = tailRE.match(text, e)
         if m:
             trail = m.group(0)
