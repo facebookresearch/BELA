@@ -82,6 +82,7 @@ def clean(extractor, text, expand_templates=False, html_safe=True):
     for e, a in findBalanced(text, ['{{w|'], ['}}']):
         text = text[:e] + text[e:a].replace("{{w|", "[[") + text[a:]
         text = text[:e] + text[e:a].replace("}}", "]]") + text[a:]
+        print(text)
 
     if expand_templates:
         # expand templates
