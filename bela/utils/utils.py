@@ -1,3 +1,8 @@
+import xml.etree.ElementTree as ET
+import bs4
+from bs4 import BeautifulSoup
+import html
+
 class DummyPathManager:
     def get_local_path(self, path, *args, **kwargs):
         return path
@@ -5,7 +10,33 @@ class DummyPathManager:
     def open(self, path, *args, **kwargs):
         return open(path, *args, **kwargs)
 
+
 PathManager = DummyPathManager()
+
+
+def search_wikidata(query, label_alias2wikidataID):
+    return list(set(label_alias2wikidataID.get(query.lower(), [])))
+
+
+def get_wikidata_ids(
+    anchor,
+    lang,
+    lang_title2wikidataID,
+    lang_redirect2title,
+    label_or_alias2wikidataID,
+):
+    success, result = search_simple(anchor, lang, label_or_alias2wikidataID)
+    if success:
+        return result, "simple"
+    else:
+        success, result = search_wikipedia(
+            result, lang, lang_title2wikidataID, lang_redirect2title
+        )
+        if success:
+            return result, "wikipedia"
+        else:
+            return search_wikidata(result, label_or_alias2wikidataID), "wikidata"
+
 
 def extract_pages(filename):
     print('filename', filename)
@@ -28,6 +59,7 @@ def extract_pages(filename):
             # CASE 3: in the document
             else:
                 doc["paragraphs"].append("")
+                line = html.unescape(line)
                 try:
                     line = BeautifulSoup(line, "html.parser")
                 except:
@@ -52,6 +84,7 @@ def extract_pages(filename):
                         doc["paragraphs"][-1] += str(span)
 
     return docs
+
 
 def chunk_it(seq, num):
     assert num > 0
