@@ -863,8 +863,6 @@ class Extractor():
         logging.debug("%s\t%s", self.id, self.title)
         text = ''.join(self.page)
         text = self.clean_text(text, html_safe=html_safe)
-        print(self.references)
-        input("")
 
         if self.to_json:
             json_data = {

@@ -588,7 +588,7 @@ def main():
 
     if args.namespaces:
         acceptedNamespaces = set(args.namespaces.split(','))
-
+    acceptedNamespaces = []
     FORMAT = '%(levelname)s: %(message)s'
     logging.basicConfig(format=FORMAT)
 
