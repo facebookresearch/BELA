@@ -19,7 +19,7 @@ datamodule:
   val_path: /data/home/kassner/BELA/data/matcha/en/wiki_eval.txt
   test_path: /data/home/kassner/BELA/data/matcha/en/wiki_test.txt 
   ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
-  batch_size: 64
+  batch_size: 32
 
 trainer:
   max_epochs: 2
