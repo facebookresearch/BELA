@@ -455,7 +455,7 @@ def replaceInternalLinks(text):
     references = []
     cur = 0
     res = ''
-    for s, e in findBalanced(text, ['[['], [']]']):
+    for s, e in findBalanced(text, ['{{w|'], ['}}']):
         m = tailRE.match(text, e)
         if m:
             trail = m.group(0)
@@ -473,7 +473,7 @@ def replaceInternalLinks(text):
             title = inner[:pipe].rstrip()
             # find last |
             curp = pipe + 1
-            for s1, e1 in findBalanced(inner, ['[['], [']]']):
+            for s1, e1 in findBalanced(inner, ['{{w|'], ['}}']):
                 last = inner.rfind('|', curp, s1)
                 if last >= 0:
                     pipe = last  # advance
