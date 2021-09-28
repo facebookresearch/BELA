@@ -78,12 +78,12 @@ def clean(extractor, text, expand_templates=False, html_safe=True):
     :param html_safe: whether to convert reserved HTML characters to entities.
     @return: the cleaned text.
     """
-
+    shift = 0
     for e, a in findBalanced(text, ['{{w|'], ['}}']):
-        text = text[:e] + text[e:a].replace("{{w|", "[[") + text[a:]
-        text = text[:e] + text[e:a].replace("}}", "]]") + text[a:]
-        print(text)
-
+        text = text[:e-shift] + text[e-shift:a-shift].replace("{{w|", "[[") + text[a-shift:]
+        text = text[:e-shift] + text[e-shift:a-shift].replace("}}", "]]") + text[a-shift:]
+        shift += 1
+        
     if expand_templates:
         # expand templates
         # See: http://www.mediawiki.org/wiki/Help:Templates
