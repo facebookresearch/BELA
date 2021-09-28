@@ -1,3 +1,8 @@
+import xml.etree.ElementTree as ET
+import bs4
+from bs4 import BeautifulSoup
+import html
+
 class DummyPathManager:
     def get_local_path(self, path, *args, **kwargs):
         return path
@@ -28,6 +33,7 @@ def extract_pages(filename):
             # CASE 3: in the document
             else:
                 doc["paragraphs"].append("")
+                line = html.unescape(line)
                 try:
                     line = BeautifulSoup(line, "html.parser")
                 except:
