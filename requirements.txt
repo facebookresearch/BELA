@@ -8,3 +8,4 @@ transformers
 tqdm
 jsonlines
 numpy
+nltk
