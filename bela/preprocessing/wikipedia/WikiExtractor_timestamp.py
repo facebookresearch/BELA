@@ -296,7 +296,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     urlbase = ''                # This is obtained from <siteinfo>
 
     input = decode_open(input_file)
-
+    f_redirects = open("redirects.txt", "w")
     # collect siteinfo
     for line in input:
         line = line #.decode('utf-8')
@@ -417,7 +417,10 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
                              line.find('<redirect title="')
                              + len('<redirect title="'): line.find('" />')
                              ]
-            print(redirect_title)
+            f_redirects.write(redirect_title)
+            f_redirects.write(",")
+            f_redirects.write(title)
+            f_redirects.write("\n")
         elif tag == 'text':
             inText = True
             line = line[m.start(3):m.end(3)]
@@ -457,7 +460,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     output_queue.put(None)
     # wait for it to finish
     reduce.join()
-
+    f_redirects.close()
     if output != sys.stdout:
         output.close()
     extract_duration = default_timer() - extract_start
