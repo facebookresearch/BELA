@@ -213,7 +213,7 @@ if __name__ == "__main__":
     elif args.step == "redirects":
 
         lang_redirect2title = {}
-        for lang in set(wiki_langs).intersection(set(mbart100_langs)):
+        for lang in ["en"]:
             with open(
                 "wikipedia_redirect/target/{}wiki-redirects.txt".format(lang)
             ) as f:
