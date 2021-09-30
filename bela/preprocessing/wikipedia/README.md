@@ -7,10 +7,14 @@
          1. WikiExtractor with timestamps:
          ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/WikiExtractor_timestamp.py data/wikinews/enwikinews-20210901-pages-articles-multistream.xml -o en -l```
          2. Compress wikidata, generate useful dictionary's, e.g., title -> ID, ID -> title or alias tables:
-         ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_wikidata.py --base_wikidata data/wikipedia compress```
+         ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_wikidata.py --base_wikidata /fsx/kassner/wikidata/ compress```
+         ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_wikidata.py --base_wikidata /fsx/kassner/wikidata/ dicts```
          3. Contruct dictonray from wikinews
          ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_extract.py  --lang en --base_wikipedia data/wikipedia/wikinews/```
-
+         4. anchors
+         ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_anchors.py --lang en --base_wikipedia data/wikinews/ --base_wikidata /fsx/kassner/wikidata/ prepare```
+         ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_anchors.py --lang en --base_wikipedia data/wikinews/ --base_wikidata /fsx/kassner/wikidata/ solve```
+         ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_anchors.py --lang en --base_wikipedia data/wikinews/ --base_wikidata /fsx/kassner/wikidata/ fill```
 
 2. Download BLINK data 
    1. FAISS index
