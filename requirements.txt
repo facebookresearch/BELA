@@ -9,3 +9,4 @@ tqdm
 jsonlines
 numpy
 nltk
+news-please
