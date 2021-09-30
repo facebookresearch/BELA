@@ -215,14 +215,14 @@ if __name__ == "__main__":
         lang_redirect2title = {}
         for lang in ["en"]:
             with open(
-                "wikipedia_redirect/target/{}wiki-redirects.txt".format(lang)
+                "data/wikipedia/{}wiki-redirects.txt".format(lang)
             ) as f:
-                for row in tqdm(csv.reader(f, delimiter="\t"), desc=lang):
-                    title = unquote(row[1]).split("#")[0].replace("_", " ")
+                for row in tqdm(csv.reader(f, delimiter=","), desc=lang):
+                    title = row[0]
                     if title:
                         title = title[0].upper() + title[1:]
-                        assert (lang, row[0]) not in lang_redirect2title
-                        lang_redirect2title[(lang, row[0])] = title
+                        assert (lang, row[1]) not in lang_redirect2title
+                        lang_redirect2title[(lang, row[1])] = title
 
         filename = os.path.join(args.base_wikidata, "lang_redirect2title.pkl")
         logging.info("Saving {}".format(filename))
