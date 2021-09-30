@@ -413,6 +413,11 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
             revtimestamp = m.group(3)
         elif tag == 'redirect':
             redirect = True
+            redirect_title = line[
+                             line.find('<redirect title="')
+                             + len('<redirect title="'): line.find('" />')
+                             ]
+            print(redirect_title)
         elif tag == 'text':
             inText = True
             line = line[m.start(3):m.end(3)]
