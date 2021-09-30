@@ -215,7 +215,7 @@ if __name__ == "__main__":
         lang_redirect2title = {}
         for lang in ["en"]:
             with open(
-                "data/wikipedia/{}wiki-redirects.txt".format(lang)
+                "data/wikidata/{}wiki-redirects.txt".format(lang)
             ) as f:
                 for row in tqdm(csv.reader(f, delimiter=","), desc=lang):
                     title = row[0]
