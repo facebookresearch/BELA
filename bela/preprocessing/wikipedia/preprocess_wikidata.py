@@ -222,9 +222,9 @@ if __name__ == "__main__":
                     if title:
                         title = title[0].upper() + title[1:]
                         if (lang, row[1]) in lang_redirect2title:
-                            print(lang_redirect2title[(lang, row[1])])
-                            print(row[1])
-                            print(title)
+                            print("stored", lang_redirect2title[(lang, row[1])])
+                            print("redirect", row[1])
+                            print("old", title)
                         assert (lang, row[1]) not in lang_redirect2title
                         lang_redirect2title[(lang, row[1])] = title
 
