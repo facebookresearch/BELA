@@ -418,7 +418,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
                              + len('<redirect title="'): line.find('" />')
                              ]
             f_redirects.write(redirect_title)
-            f_redirects.write(",")
+            f_redirects.write("\t")
             f_redirects.write(title)
             f_redirects.write("\n")
         elif tag == 'text':
