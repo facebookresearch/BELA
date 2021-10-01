@@ -498,6 +498,7 @@ def get_macro_f1(guess_entities, gold_entities, mode="strong"):
 
 
 def extract_pages(filename):
+    print(filename)
     docs = {}
     with open(filename) as f:
         for line in f:
@@ -536,6 +537,7 @@ def extract_pages(filename):
                                     + len(span.get_text()),
                                 }
                             )
+                            print(len(doc["anchors"]))
                         doc["paragraphs"][-1] += span.get_text()
                     else:
                         doc["paragraphs"][-1] += str(span)
