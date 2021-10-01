@@ -518,6 +518,7 @@ def extract_pages(filename):
             # CASE 3: in the document
             else:
                 doc["paragraphs"].append("")
+                line = html.unescape(line)
                 try:
                     line = BeautifulSoup(line, "html.parser")
                 except:
@@ -525,7 +526,6 @@ def extract_pages(filename):
                     line = [line]
 
                 for span in line:
-                    print(line)
                     if isinstance(span, bs4.element.Tag):
                         if span.get("href", None):
                             doc["anchors"].append(
@@ -538,7 +538,6 @@ def extract_pages(filename):
                                     + len(span.get_text()),
                                 }
                             )
-                            print(len(doc["anchors"]))
                         doc["paragraphs"][-1] += span.get_text()
                     else:
                         doc["paragraphs"][-1] += str(span)
