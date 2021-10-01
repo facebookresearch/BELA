@@ -525,6 +525,7 @@ def extract_pages(filename):
                     line = [line]
 
                 for span in line:
+                    print(line)
                     if isinstance(span, bs4.element.Tag):
                         if span.get("href", None):
                             doc["anchors"].append(
