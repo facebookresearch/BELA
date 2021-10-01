@@ -63,10 +63,10 @@ if __name__ == "__main__":
         )
     ]
 
-    if args.rank < min(len(filenames), 32):
+    """if args.rank < min(len(filenames), 32):
         filenames = chunk_it(filenames, min(len(filenames), 32))[args.rank]
     else:
-        quit()
+        quit()"""
 
     num_threads = 32
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
