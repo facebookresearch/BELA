@@ -125,11 +125,6 @@ from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
 
-from genre.entity_linking import (
-    get_end_to_end_prefix_allowed_tokens_fn_fairseq,
-    get_end_to_end_prefix_allowed_tokens_fn_hf,
-)
-
 
 def chunk_it(seq, num):
     assert num > 0
