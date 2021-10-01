@@ -11,6 +11,7 @@ import pickle
 import re
 
 from tqdm.auto import tqdm, trange
+from bela.utils.utils import get_wikidata_ids
 
 
 def clean_anchor_lang(anchor, lang):
