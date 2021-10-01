@@ -217,14 +217,14 @@ if __name__ == "__main__":
             with open(
                 "data/wikidata/{}wiki-redirects.txt".format(lang)
             ) as f:
-                for row in tqdm(csv.reader(f, delimiter=","), desc=lang):
+                for row in tqdm(csv.reader(f, delimiter="\t"), desc=lang):
                     title = row[0]
                     if title:
                         title = title[0].upper() + title[1:]
-                        if (lang, row[1]) in lang_redirect2title:
+                        '''if (lang, row[1]) in lang_redirect2title:
                             print("stored", lang_redirect2title[(lang, row[1])])
                             print("redirect", row[1])
-                            print("old", title)
+                            print("old", title)'''
                         assert (lang, row[1]) not in lang_redirect2title
                         lang_redirect2title[(lang, row[1])] = title
 
