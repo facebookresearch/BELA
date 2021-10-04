@@ -101,15 +101,10 @@ def chunk_it(seq, num):
 def search_wikipedia(title, lang, lang_title2wikidataID, lang_redirect2title):
 
     max_redirects = 10
-    switched = False
     while (lang, title) in lang_redirect2title and max_redirects > 0:
-        if title=="USD":
-            print(title)
-            switched = True
+
         title = lang_redirect2title[(lang, title)]
         max_redirects -= 1
-        if switched:
-            print(title)
 
     if (lang, title) in lang_title2wikidataID:
         return True, lang_title2wikidataID[(lang, title)]
@@ -555,7 +550,11 @@ def search_simple(anchor, lang, lang_title2wikidataID):
     if "http" in anchor:
         return True, []
 
-    unquoted = unquote(anchor).split("#")[0].replace("_", " ")
+    unquoted = html.unescape(unquote(anchor).split("#")[0].replace("_", " "))
+    if unquoted[0:2]=="w:":
+        unquoted = unquoted[2:]
+    if unquoted[0:3]==":w:":
+        unquoted = unquoted[3:]
     if unquoted == "":
         return True, []
 
