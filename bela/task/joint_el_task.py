@@ -587,9 +587,13 @@ class JointELTask(LightningModule):
         # compute scores for positive entities
         pos_scores = self.sim_score(flat_mentions_repr, entities_repr)
 
+
         # retrieve candidates indices
+        query_vectors = flat_mentions_repr.detach().cpu().numpy()
+        aux_dim = np.zeros(len(query_vectors), dtype="float32")
+        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         _, neg_cand_indices = self.faiss_index.search(
-            flat_mentions_repr.detach().cpu().numpy(), self.n_retrieve_candidates
+            query_vectors, self.n_retrieve_candidates
         )
 
         # get candidates embeddings
@@ -738,8 +742,11 @@ class JointELTask(LightningModule):
         )
         flat_mentions_repr = flat_mentions_repr[flat_mentions_scores > 0]
 
+        query_vectors = flat_mentions_repr.detach().cpu().numpy()
+        aux_dim = np.zeros(len(query_vectors), dtype="float32")
+        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         cand_scores, cand_indices = self.faiss_index.search(
-            flat_mentions_repr.detach().cpu().numpy(), 1
+            query_vectors, 1
         )
         cand_scores = torch.from_numpy(cand_scores)
         cand_indices = torch.from_numpy(cand_indices)
@@ -920,8 +927,11 @@ class JointELTask(LightningModule):
         n_retrieve_candidates = max(self.eval_compure_recall_at)
 
         # retrieve negative candidates ids and scores
+        query_vectors = flat_mentions_repr.detach().cpu().numpy()
+        aux_dim = np.zeros(len(query_vectors), dtype="float32")
+        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         neg_cand_scores, neg_cand_indices = self.faiss_index.search(
-            flat_mentions_repr.detach().cpu().numpy(), n_retrieve_candidates
+            query_vectors, n_retrieve_candidates
         )
         neg_cand_scores = torch.from_numpy(neg_cand_scores).to(device)
         neg_cand_indices = torch.from_numpy(neg_cand_indices).to(device)
@@ -1011,8 +1021,11 @@ class JointELTask(LightningModule):
         # flat_mentions_repr = flat_mentions_repr[flat_mentions_scores > 0]
 
         # retrieve candidates top-1 ids and scores
+        query_vectors = flat_mentions_repr.detach().cpu().numpy()
+        aux_dim = np.zeros(len(query_vectors), dtype="float32")
+        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         cand_scores, cand_indices = self.faiss_index.search(
-            flat_mentions_repr.detach().cpu().numpy(), 1
+            query_vectors, 1
         )
 
         if self.train_el_classifier:
