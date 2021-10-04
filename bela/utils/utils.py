@@ -101,6 +101,7 @@ def chunk_it(seq, num):
 def search_wikipedia(title, lang, lang_title2wikidataID, lang_redirect2title):
 
     max_redirects = 10
+    print("search_wikipedia")
     while (lang, title) in lang_redirect2title and max_redirects > 0:
         print(title)
         title = lang_redirect2title[(lang, title)]
