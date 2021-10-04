@@ -7,6 +7,7 @@ from typing import NamedTuple, Optional, Tuple
 
 import faiss  # @manual=//faiss/python:pyfaiss
 import hydra
+import numpy as np
 import torch
 import torch.nn as nn
 
