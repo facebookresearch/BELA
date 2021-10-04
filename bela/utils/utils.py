@@ -102,8 +102,10 @@ def search_wikipedia(title, lang, lang_title2wikidataID, lang_redirect2title):
 
     max_redirects = 10
     while (lang, title) in lang_redirect2title and max_redirects > 0:
+        print(title)
         title = lang_redirect2title[(lang, title)]
         max_redirects -= 1
+        print(title)
 
     if (lang, title) in lang_title2wikidataID:
         return True, lang_title2wikidataID[(lang, title)]
