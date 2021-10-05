@@ -1,5 +1,6 @@
 import argparse
 import nltk
+import tqdm
 from nltk.tokenize import word_tokenize
 import pickle
 import json
@@ -55,7 +56,7 @@ def process_wiki_based_data(base_dataset, lang):
         data = pickle.load(f)
     f_out = open(base_dataset + "/" + lang + "_matcha.jsonl", "w")
     data_example_id = 0
-    for d in data:
+    for d in tqdm.tqdm(data):
         paragraph_id = data[d]['anchors'][0]['paragraph_id']
         entities = []
         for anchor in data[d]['anchors']:
