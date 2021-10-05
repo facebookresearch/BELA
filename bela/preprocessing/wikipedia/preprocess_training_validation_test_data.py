@@ -56,18 +56,19 @@ def process_wiki_based_data(base_dataset, lang):
     f_out = open(base_dataset + "/" + lang + "_matcha.jsonl", "w")
     data_example_id = 0
     for d in data:
-        paragraph_id = anchor['paragraph_id']
-        entities = []
-        for anchor in data[d]['anchors']:
-            paragraph_id_current = anchor['paragraph_id']
-            if paragraph_id_current == paragraph_id:
-                entities.append(anchor)
-            else:
-                if paragraph_id > 1 and len(entities) > 0:
-                    write_out(entities, data[d]['paragraphs'][paragraph_id], data_example_id, f_out)
-                    data_example_id += 1
-                paragraph_id = anchor['paragraph_id']
-                entities = []
+        for anchor in data[d]["anchors"]:
+            paragraph_id = anchor['paragraph_id']
+            entities = []
+            for anchor in data[d]['anchors']:
+                paragraph_id_current = anchor['paragraph_id']
+                if paragraph_id_current == paragraph_id:
+                    entities.append(anchor)
+                else:
+                    if paragraph_id > 1 and len(entities) > 0:
+                        write_out(entities, data[d]['paragraphs'][paragraph_id], data_example_id, f_out)
+                        data_example_id += 1
+                    paragraph_id = anchor['paragraph_id']
+                    entities = []
     f_out.close()
 
 
