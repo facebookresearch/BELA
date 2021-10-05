@@ -45,7 +45,7 @@ def write_out(entities, paragraph, data_example_id, f_out):
         "data_example_id": data_example_id,
         "text": paragraph_tokenized,
         "gt_entities": gt_entities}
-    f_out.write(json.dump(template))
+    f_out.write(json.dumps(template))
     f_out.write("\n")
 
 
