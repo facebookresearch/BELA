@@ -3,6 +3,7 @@ import bs4
 from bs4 import BeautifulSoup
 import html
 
+
 class DummyPathManager:
     def get_local_path(self, path, *args, **kwargs):
         return path
@@ -14,8 +15,8 @@ class DummyPathManager:
 PathManager = DummyPathManager()
 
 
-def search_wikidata(query, label_alias2wikidataID):
-    return list(set(label_alias2wikidataID.get(query.lower(), [])))
+def search_wikidata(query, label_alias2wikidata_id):
+    return list(set(label_alias2wikidata_id.get(query.lower(), [])))
 
 
 def get_wikidata_ids(
@@ -82,6 +83,7 @@ def extract_pages(filename):
                         doc["paragraphs"][-1] += span.get_text()
                     else:
                         doc["paragraphs"][-1] += str(span)
+
 
     return docs
 
@@ -542,6 +544,8 @@ def extract_pages(filename):
                         doc["paragraphs"][-1] += span.get_text()
                     else:
                         doc["paragraphs"][-1] += str(span)
+                    if "The weather improved at the end of the" in doc["paragraphs"][-1]:
+                        print(doc["paragraphs"][-1])
 
     return docs
 
