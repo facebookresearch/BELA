@@ -67,7 +67,7 @@ def process_wiki_based_data(base_dataset, lang):
             paragraph_id = data[d]['anchors'][0]['paragraph_id']
             entities = []
             for anchor in data[d]['anchors']:
-                if anchor['wikidata_src']=='wikipedia':
+                if anchor['wikidata_src'] == 'wikipedia':
                     paragraph_id_current = anchor['paragraph_id']
                     if paragraph_id_current == paragraph_id:
                         entities.append(anchor)
