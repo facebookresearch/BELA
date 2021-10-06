@@ -83,7 +83,7 @@ def clean(extractor, text, expand_templates=False, html_safe=True):
         text = text[:e-shift] + text[e-shift:a-shift].replace("{{w|", "[[") + text[a-shift:]
         text = text[:e-shift] + text[e-shift:a-shift].replace("}}", "]]") + text[a-shift:]
         shift += 1
-        
+
     if expand_templates:
         # expand templates
         # See: http://www.mediawiki.org/wiki/Help:Templates
@@ -500,6 +500,8 @@ def makeInternalLink(title, label):
         if colon2 > 1 and title[colon + 1:colon2] not in acceptedNamespaces:
             return ''
     if Extractor.keepLinks:
+        if 'Douglas SBD Dauntless' in label:
+            print('<a href="%s">%s</a>' % (urlencode(title), label))
         return '<a href="%s">%s</a>' % (urlencode(title), label)
     else:
         return label
