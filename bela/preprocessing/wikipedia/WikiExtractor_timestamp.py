@@ -309,7 +309,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     # collect siteinfo
     print_now = "no"
     for line in input:
-        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in line:
+        if "[[" in line[-4:]:
             print(line)
             print_now = "yes"
             print(print_now)
