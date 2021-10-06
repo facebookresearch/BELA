@@ -307,8 +307,13 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     input = decode_open(input_file)
     f_redirects = open("redirects.txt", "w")
     # collect siteinfo
+    print_now = "no"
     for line in input:
         if "The weather improved at the end of the month and operations against Guadalcanal resumed" in line:
+            print(line)
+            print_now = "yes"
+            print(print_now)
+        elif print_now == "yes":
             print(line)
         else:
             continue
