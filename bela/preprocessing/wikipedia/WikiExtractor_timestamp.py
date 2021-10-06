@@ -206,13 +206,13 @@ def load_templates(file, output_file=None):
     inText = False
     if output_file:
         output = open(output_file, 'w')
-    print_now = False
+    print_now = "no"
     for line in file:
         if "The weather improved at the end of the month and operations against Guadalcanal resumed" in line:
             print(line)
-            print_now = True
+            print_now = "yes"
             print(print_now)
-        elif print_now:
+        elif print_now=="yes":
             print(line)
         else:
             continue
