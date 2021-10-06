@@ -500,8 +500,6 @@ def makeInternalLink(title, label):
         if colon2 > 1 and title[colon + 1:colon2] not in acceptedNamespaces:
             return ''
     if Extractor.keepLinks:
-        if 'Douglas SBD Dauntless' in label:
-            print('<a href="%s">%s</a>' % (urlencode(title), label))
         return '<a href="%s">%s</a>' % (urlencode(title), label)
     else:
         return label
@@ -869,8 +867,11 @@ class Extractor():
         """
         logging.debug("%s\t%s", self.id, self.title)
         text = ''.join(self.page)
+        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in text:
+            print(text)
         text = self.clean_text(text, html_safe=html_safe)
-
+        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in text:
+            print(text)
         if self.to_json:
             json_data = {
 		'id': self.id,
