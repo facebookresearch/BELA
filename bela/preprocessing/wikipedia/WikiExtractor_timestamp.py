@@ -206,8 +206,12 @@ def load_templates(file, output_file=None):
     inText = False
     if output_file:
         output = open(output_file, 'w')
+    print_now = False
     for line in file:
         if "The weather improved at the end of the month and operations against Guadalcanal resumed" in line:
+            print(line)
+            print_now = True
+        elif print_now:
             print(line)
         else:
             continue
