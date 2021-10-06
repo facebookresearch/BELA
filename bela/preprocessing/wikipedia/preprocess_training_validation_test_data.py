@@ -21,11 +21,12 @@ def write_out(entities, paragraph, data_example_id, f_out):
             if paragraph[end] == "-":
                 paragraph = paragraph[:end] + " - " + paragraph[end + 1:]
                 diff += 2
-        if paragraph[start - 1] == "-":
-            paragraph = paragraph[:start - 1] + " - " + paragraph[start:]
-            diff += 2
-            entity['start'] += diff
-            entity['end'] += diff
+        if start!=0:
+            if paragraph[start - 1] == "-":
+                paragraph = paragraph[:start - 1] + " - " + paragraph[start:]
+                diff += 2
+                entity['start'] += diff
+                entity['end'] += diff
 
     paragraph_tokenized = []
     gt_entities = []
