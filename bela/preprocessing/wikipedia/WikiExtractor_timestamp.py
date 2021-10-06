@@ -315,6 +315,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
             print(print_now)
         elif print_now == "yes":
             print(line)
+            print_now = 'no'
         else:
             continue
         line = line #.decode('utf-8')
