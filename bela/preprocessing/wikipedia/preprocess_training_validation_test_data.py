@@ -13,11 +13,13 @@ def write_out(entities, paragraph, data_example_id, f_out):
     diff = 0
     for entity in entities:
         print(paragraph, len(paragraph))
+        print(entity)
         entity['start'] += diff
         entity['end'] += diff
 
         start = int(entity['start'])
         end = int(entity['end'])
+        print(paragraph[start:end])
         if end < len(paragraph):
             if paragraph[end] == "-":
                 paragraph = paragraph[:end] + " - " + paragraph[end + 1:]
