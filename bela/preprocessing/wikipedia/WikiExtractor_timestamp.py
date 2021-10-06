@@ -208,7 +208,7 @@ def load_templates(file, output_file=None):
         output = open(output_file, 'w')
     for line in file:
         if line[-3:].strip() == "[[":
-            line = line.strip() + " " + next(inputdata)
+            line = line.strip() + " " + next(file)
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
             if inText:
@@ -303,7 +303,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
 
     for line in input:
         if line[-3:].strip() == "[[":
-            line = line.strip() + " " + next(inputdata)
+            line = line.strip() + " " + next(input)
         line = line #.decode('utf-8')
         m = tagRE.search(line)
         if not m:
