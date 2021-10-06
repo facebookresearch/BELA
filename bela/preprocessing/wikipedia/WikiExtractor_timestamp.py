@@ -207,7 +207,7 @@ def load_templates(file, output_file=None):
     if output_file:
         output = open(output_file, 'w')
     for line in file:
-        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in text:
+        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in line:
             print(line)
         else:
             continue
@@ -303,7 +303,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     f_redirects = open("redirects.txt", "w")
     # collect siteinfo
     for line in input:
-        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in text:
+        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in line:
             print(line)
         else:
             continue
