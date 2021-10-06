@@ -545,7 +545,7 @@ def extract_pages(filename):
                     else:
                         doc["paragraphs"][-1] += str(span)
                     if "The weather improved at the end of the" in doc["paragraphs"][-1]:
-                        print(doc["paragraphs"][-1])
+                        print(line)
 
     return docs
 
