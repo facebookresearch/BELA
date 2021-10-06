@@ -12,6 +12,7 @@ def write_out(entities, paragraph, data_example_id, f_out):
     paragraph = paragraph.strip()
     diff = 0
     for entity in entities:
+        print(paragraph, len(paragraph))
         entity['start'] += diff
         entity['end'] += diff
 
