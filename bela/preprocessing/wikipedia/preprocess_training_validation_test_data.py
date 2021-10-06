@@ -22,6 +22,7 @@ def write_out(entities, paragraph, data_example_id, f_out):
                 paragraph = paragraph[:end] + " - " + paragraph[end + 1:]
                 diff += 2
         if start!=0:
+            print(start)
             if paragraph[start - 1] == "-":
                 paragraph = paragraph[:start - 1] + " - " + paragraph[start:]
                 diff += 2
