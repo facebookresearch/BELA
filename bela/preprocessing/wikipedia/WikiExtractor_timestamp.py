@@ -208,14 +208,8 @@ def load_templates(file, output_file=None):
         output = open(output_file, 'w')
     print_now = "no"
     for line in file:
-        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in line:
-            print(line)
-            print_now = "yes"
-            print(print_now)
-        elif print_now=="yes":
-            print(line)
-        else:
-            continue
+        if line[-3:].strip() == "[[":
+            line = line.strip() + " " + next(inputdata)
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
             if inText:
