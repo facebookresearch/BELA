@@ -302,8 +302,8 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     # collect siteinfo
 
     for line in input:
-        if line[-3:].strip() == "[[":
-            line = line.strip() + " " + next(input)
+        # if line[-3:].strip() == "[[":
+        #    line = line.strip() + " " + next(input)
         line = line #.decode('utf-8')
         m = tagRE.search(line)
         if not m:
