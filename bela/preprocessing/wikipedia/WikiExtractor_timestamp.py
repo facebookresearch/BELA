@@ -206,7 +206,6 @@ def load_templates(file, output_file=None):
     inText = False
     if output_file:
         output = open(output_file, 'w')
-    print_now = "no"
     for line in file:
         if line[-3:].strip() == "[[":
             line = line.strip() + " " + next(inputdata)
@@ -301,17 +300,10 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     input = decode_open(input_file)
     f_redirects = open("redirects.txt", "w")
     # collect siteinfo
-    print_now = "no"
+
     for line in input:
-        if "[[" in line[-4:]:
-            print(line)
-            print_now = "yes"
-            print(print_now)
-        elif print_now == "yes":
-            print(line)
-            print_now = 'no'
-        else:
-            continue
+        if line[-3:].strip() == "[[":
+            line = line.strip() + " " + next(inputdata)
         line = line #.decode('utf-8')
         m = tagRE.search(line)
         if not m:
