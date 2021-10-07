@@ -209,6 +209,7 @@ def load_templates(file, output_file=None):
     for line in file:
         if line[-3:].strip() == "[[":
             line = line.strip() + " " + next(file)
+            print(line)
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
             if inText:
@@ -302,8 +303,9 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     # collect siteinfo
 
     for line in input:
-        # if line[-3:].strip() == "[[":
-        #    line = line.strip() + " " + next(input)
+        if line[-3:].strip() == "[[":
+            line = line.strip() + " " + next(input)
+            print(line)
         line = line #.decode('utf-8')
         m = tagRE.search(line)
         if not m:
