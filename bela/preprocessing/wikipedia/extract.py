@@ -80,10 +80,10 @@ def clean(extractor, text, expand_templates=False, html_safe=True):
     """
     shift = 0
     for e, a in findBalanced(text, ['{{w|'], ['}}']):
+        print(text)
         text = text[:e-shift] + text[e-shift:a-shift].replace("{{w|", "[[") + text[a-shift:]
         text = text[:e-shift] + text[e-shift:a-shift].replace("}}", "]]") + text[a-shift:]
         print(text)
-        input("")
         shift += 1
 
     if expand_templates:
