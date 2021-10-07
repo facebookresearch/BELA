@@ -208,7 +208,6 @@ def load_templates(file, output_file=None):
         output = open(output_file, 'w')
     for line in file:
         print(line)
-        input('')
         if line[-3:].strip() == "[[":
             line = line.strip() + next(file)
             print("!!!!!!!!", line)
