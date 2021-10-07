@@ -304,7 +304,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
 
     for line in input:
         if line[-3:].strip() == "[[":
-            line = line.strip() + " " + next(input)
+            line = line.strip() + next(input)
             print(line)
         line = line #.decode('utf-8')
         m = tagRE.search(line)
@@ -630,7 +630,6 @@ def main():
 
         with open(input_file) as file:
             page = file.read()
-            print(page)
             ids = re.findall(r'<id>(\d*?)</id>', page)
             id = ids[0] if ids else ''
             revid = ids[1] if len(ids) > 1 else ''
