@@ -630,6 +630,7 @@ def main():
 
         with open(input_file) as file:
             page = file.read()
+            print(page)
             ids = re.findall(r'<id>(\d*?)</id>', page)
             id = ids[0] if ids else ''
             revid = ids[1] if len(ids) > 1 else ''
