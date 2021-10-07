@@ -875,7 +875,7 @@ class Extractor():
 
         if self.to_json:
             json_data = {
-		'id': self.id,
+		        'id': self.id,
                 'revid': self.revid,
                 'url': self.url,
                 'title': self.title,
