@@ -867,11 +867,12 @@ class Extractor():
         """
         logging.debug("%s\t%s", self.id, self.title)
         text = ''.join(self.page)
-        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in text:
+        if "[[\n" in text:
+            print(text)
+            text = text.replace("[[\n", "[[")
             print(text)
         text = self.clean_text(text, html_safe=html_safe)
-        if "The weather improved at the end of the month and operations against Guadalcanal resumed" in text:
-            print(text)
+
         if self.to_json:
             json_data = {
 		'id': self.id,
