@@ -211,7 +211,7 @@ def load_templates(file, output_file=None):
         input('')
         if line[-3:].strip() == "[[":
             line = line.strip() + next(file)
-            print(line)
+            print("!!!!!!!!", line)
             input('')
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
