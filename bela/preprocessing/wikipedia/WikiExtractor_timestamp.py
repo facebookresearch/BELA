@@ -208,8 +208,9 @@ def load_templates(file, output_file=None):
         output = open(output_file, 'w')
     for line in file:
         if line[-3:].strip() == "[[":
-            line = line.strip() + " " + next(file)
+            line = line.strip() + next(file)
             print(line)
+            input('')
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
             if inText:
@@ -298,13 +299,13 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
 
     urlbase = ''                # This is obtained from <siteinfo>
 
-    input = decode_open(input_file)
+    input_data = decode_open(input_file)
     f_redirects = open("redirects.txt", "w")
     # collect siteinfo
 
-    for line in input:
+    for line in input_data:
         if line[-3:].strip() == "[[":
-            line = line.strip() + next(input)
+            line = line.strip() + next(input_data)
             print(line)
         line = line #.decode('utf-8')
         m = tagRE.search(line)
@@ -340,9 +341,9 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
                 # can't scan then reset stdin; must error w/ suggestion to specify template_file
                 raise ValueError("to use templates with stdin dump, must supply explicit template-file")
             logging.info("Preprocessing '%s' to collect template definitions: this may take some time.", input_file)
-            templates = load_templates(input, template_file)
-            input.close()
-            input = decode_open(input_file)
+            templates = load_templates(input_data, template_file)
+            input_data.close()
+            input_data = decode_open(input_file)
         template_load_elapsed = default_timer() - template_load_start
         logging.info("Loaded %d templates in %.1fs", templates, template_load_elapsed)
 
@@ -396,7 +397,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     ordinal = 0  # page count
     inText = False
     redirect = False
-    for line in input:
+    for line in input_data:
         if '<' not in line:  # faster than doing re.search()
             if inText:
                 page.append(line)
@@ -454,7 +455,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
             revid = ''
             page = []
 
-    input.close()
+    input_data.close()
 
     # signal termination
     for _ in workers:
