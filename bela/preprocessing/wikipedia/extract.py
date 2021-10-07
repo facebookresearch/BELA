@@ -80,10 +80,10 @@ def clean(extractor, text, expand_templates=False, html_safe=True):
     """
     shift = 0
     for e, a in findBalanced(text, ['{{w|'], ['}}']):
-        print(text[e-shift:a-shift], text[a-shift:a-shift+10])
+        #print(text[e-shift:a-shift], text[a-shift:a-shift+10])
         text = text[:e-shift] + text[e-shift:a-shift].replace("{{w|", "[[") + text[a-shift:]
         text = text[:e-shift] + text[e-shift:a-shift].replace("}}", "]]") + text[a-shift:]
-        print(text[e-shift:a-shift], text[a-shift:a-shift+10])
+        #print(text[e-shift:a-shift], text[a-shift:a-shift+10])
         shift += 1
 
     if expand_templates:
@@ -869,10 +869,10 @@ class Extractor():
         """
         logging.debug("%s\t%s", self.id, self.title)
         text = ''.join(self.page)
-        if "[[\n" in text:
+        """if "[[\n" in text:
             print(text)
             text = text.replace("[[\n", "[[")
-            print(text)
+            print(text)"""
         text = self.clean_text(text, html_safe=html_safe)
 
         if self.to_json:
