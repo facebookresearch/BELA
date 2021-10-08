@@ -430,7 +430,7 @@ def replaceExternalLinks(text):
 def makeExternalLink(url, anchor):
     """Function applied to wikiLinks"""
     if Extractor.keepLinks:
-        return '<a href="%s">%s</a>' % (urlencode(url), anchor)
+        return '<a href="%s">%s</a>' % (urlencode(url.strip()), anchor.strip())
     else:
         return anchor
 
