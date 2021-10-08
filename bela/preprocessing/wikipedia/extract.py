@@ -502,7 +502,7 @@ def makeInternalLink(title, label):
         if colon2 > 1 and title[colon + 1:colon2] not in acceptedNamespaces:
             return ''
     if Extractor.keepLinks:
-        return '<a href="%s">%s</a>' % (urlencode(title), label)
+        return '<a href="%s">%s</a>' % (urlencode(title.strip()), label.strip())
     else:
         return label
 
