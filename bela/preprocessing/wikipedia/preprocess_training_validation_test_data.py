@@ -4,6 +4,7 @@ import tqdm
 from nltk.tokenize import word_tokenize
 import pickle
 import json
+import random
 
 nltk.download('punkt')
 
@@ -12,20 +13,16 @@ def write_out(entities, paragraph, data_example_id, f_out):
     paragraph = paragraph.strip()
     diff = 0
     for entity in entities:
-        print(paragraph, len(paragraph))
-        print(entity)
         entity['start'] += diff
         entity['end'] += diff
 
         start = int(entity['start'])
         end = int(entity['end'])
-        print(paragraph[start:end])
         if end < len(paragraph):
             if paragraph[end] == "-":
                 paragraph = paragraph[:end] + " - " + paragraph[end + 1:]
                 diff += 2
         if start!=0:
-            print(start)
             if paragraph[start - 1] == "-":
                 paragraph = paragraph[:start - 1] + " - " + paragraph[start:]
                 diff += 2
@@ -63,7 +60,7 @@ def process_wiki_based_data(base_dataset, lang):
     f_out = open(base_dataset + "/" + lang + "_matcha.jsonl", "w")
     data_example_id = 0
     for d in tqdm.tqdm(data):
-        if len(data[d]['anchors'])>0:
+        if len(data[d]['anchors']) > 0:
             paragraph_id = data[d]['anchors'][0]['paragraph_id']
             entities = []
             for anchor in data[d]['anchors']:
@@ -79,6 +76,30 @@ def process_wiki_based_data(base_dataset, lang):
                         entities = []
     f_out.close()
 
+
+def split_data(base_dataset, lang, num_train=17000000, num_val=5000):
+
+    with open(base_dataset + "/" + lang + "_matcha.jsonl") as f, \
+            open(base_dataset + "/" + lang + "_matcha_train.jsonl", 'w') as f_train, \
+            open(base_dataset + "/" + lang + "_matcha_dev.jsonl", 'w') as f_valid, \
+            open(base_dataset + "/" + lang + "_matcha_test.jsonl", 'w') as f_test:
+        num_instances = sum(1 for _ in f)
+        f.seek(0)
+        percentage = num_train/num_instances
+        percentage_val = num_val/num_instances
+
+        i = 0
+        j = 0
+        for line in f:
+            r = random.random()
+            if i < num_train and r < percentage:
+                f_train.write(line)
+                i += 1
+            if i < num_val and r < percentage_val:
+                f_valid.write(line)
+                j += 1
+            else:
+                f_test.write(line)
 
 def process_oscar_based_data():
     pass
@@ -102,5 +123,7 @@ if __name__ == "__main__":
     )
 
     args, _ = parser.parse_known_args()
-    if args.data_type=="wiki":
+    if args.data_type == "wiki":
         process_wiki_based_data(args.base_dataset, args.lang)
+
+    split_data(args.base_dataset, args.lang)
