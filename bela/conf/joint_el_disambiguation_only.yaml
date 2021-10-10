@@ -15,9 +15,9 @@ task:
     lr: 1e-05
 
 datamodule:
-  train_path: /data/home/kassner/BELA/data/matcha/en/wiki_train.txt
-  val_path: /data/home/kassner/BELA/data/matcha/en/wiki_eval.txt
-  test_path: /data/home/kassner/BELA/data/matcha/en/wiki_test.txt 
+  train_path: /fsx/kassner/wikipedia/en_matcha_train.jsonl
+  val_path: /fsx/kassner/wikipedia/en_matcha_dev.jsonl
+  test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
   ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
   batch_size: 32
 
