@@ -30,6 +30,7 @@ def write_out(entities, paragraph, data_example_id, f_out):
                     entity['start'] += diff
                     entity['end'] += diff
             except:
+                print(start)
                 print("error", paragraph)
 
     paragraph_tokenized = []
@@ -60,7 +61,7 @@ def process_wiki_based_data(base_dataset, lang):
 
     with open(base_dataset + "/" + lang + "/" + lang + "wiki0.pkl", "rb") as f:
         data = pickle.load(f)
-    f_out = open(base_dataset + "/" + lang + "_matcha.jsonl", "w")
+    f_out = open(base_dataset + "/" + lang + "_matcha_.jsonl", "w")
     data_example_id = 0
     for d in tqdm.tqdm(data):
         if len(data[d]['anchors']) > 0:
