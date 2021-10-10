@@ -39,7 +39,7 @@ def write_out(entities, paragraph, data_example_id, f_out):
         entity_tokenized = word_tokenize(paragraph[start:end])
         pre = end
         paragraph_tokenized.extend(pre_paragraph)
-        gt_entities.append([len(paragraph_tokenized)+1, len(entity_tokenized), entity['text'], "wiki"])
+        gt_entities.append([len(paragraph_tokenized), len(entity_tokenized), entity['text'], "wiki"])
         paragraph_tokenized.extend(entity_tokenized)
 
     post_paragraph = word_tokenize(paragraph[pre:])
