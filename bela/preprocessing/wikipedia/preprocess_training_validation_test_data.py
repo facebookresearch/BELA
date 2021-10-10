@@ -23,11 +23,14 @@ def write_out(entities, paragraph, data_example_id, f_out):
                 paragraph = paragraph[:end] + " - " + paragraph[end + 1:]
                 diff += 2
         if start!=0:
-            if paragraph[start - 1] == "-":
-                paragraph = paragraph[:start - 1] + " - " + paragraph[start:]
-                diff += 2
-                entity['start'] += diff
-                entity['end'] += diff
+            try:
+                if paragraph[start - 1] == "-":
+                    paragraph = paragraph[:start - 1] + " - " + paragraph[start:]
+                    diff += 2
+                    entity['start'] += diff
+                    entity['end'] += diff
+            except:
+                print("error", paragraph)
 
     paragraph_tokenized = []
     gt_entities = []
@@ -70,8 +73,11 @@ def process_wiki_based_data(base_dataset, lang):
                         entities.append(anchor)
                     else:
                         if paragraph_id > 1 and len(entities) > 0:
-                            write_out(entities, data[d]['paragraphs'][paragraph_id], data_example_id, f_out)
-                            data_example_id += 1
+                            if len(data[d]['paragraphs'][paragraph_id])>0:
+                                write_out(entities, data[d]['paragraphs'][paragraph_id], data_example_id, f_out)
+                                data_example_id += 1
+                            else:
+                                print("toot short", data[d]['paragraphs'][paragraph_id])
                         paragraph_id = anchor['paragraph_id']
                         entities = []
     f_out.close()
