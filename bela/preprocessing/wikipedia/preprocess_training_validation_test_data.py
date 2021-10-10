@@ -30,7 +30,7 @@ def write_out(entities, paragraph, data_example_id, f_out):
                     entity['start'] += diff
                     entity['end'] += diff
             except:
-                print(start)
+                print(start, end, diff, entities)
                 print("error", paragraph)
 
     paragraph_tokenized = []
