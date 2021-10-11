@@ -160,7 +160,7 @@ if __name__ == "__main__":
     if args.data_type == "wiki":
         process_wiki_based_data(args.base_dataset, args.lang)
 
-    if args.training_type="pretraining":
+    if args.training_type=="pretraining":
         split_data(args.base_dataset, args.lang)
     else:
         pass
