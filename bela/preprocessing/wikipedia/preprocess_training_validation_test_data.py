@@ -30,7 +30,7 @@ def write_out(entities, paragraph, data_example_id, f_out):
                     entity['start'] += diff
                     entity['end'] += diff
             except:
-                print(start, end, diff, entities)
+                print(start, end, diff, entities, entity)
                 print("error", paragraph)
 
     paragraph_tokenized = []
@@ -80,7 +80,7 @@ def process_wiki_based_data(base_dataset, lang):
                             else:
                                 print("toot short", data[d]['paragraphs'][paragraph_id])
                         paragraph_id = anchor['paragraph_id']
-                        entities = []
+                        entities = [anchor]
     f_out.close()
 
 
@@ -102,7 +102,7 @@ def split_data(base_dataset, lang, num_train=17000000, num_val=5000):
             if i < num_train and r < percentage:
                 f_train.write(line)
                 i += 1
-            if i < num_val and r < percentage_val:
+            if j < num_val and r < percentage_val:
                 f_valid.write(line)
                 j += 1
             else:
