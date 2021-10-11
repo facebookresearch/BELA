@@ -84,29 +84,52 @@ def process_wiki_based_data(base_dataset, lang):
     f_out.close()
 
 
-def split_data(base_dataset, lang, num_train=17000000, num_val=5000):
+def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_jointrain=20000, num_jointval=5000):
 
     with open(base_dataset + "/" + lang + "_matcha.jsonl") as f, \
-            open(base_dataset + "/" + lang + "_matcha_train_.jsonl", 'w') as f_train, \
-            open(base_dataset + "/" + lang + "_matcha_dev_.jsonl", 'w') as f_valid, \
+            open(base_dataset + "/" + lang + "_matcha_pretrain.jsonl", 'w') as f_pretrain, \
+            open(base_dataset + "/" + lang + "_matcha_predev.jsonl", 'w') as f_prevalid, \
+            open(base_dataset + "/" + lang + "_matcha_jointtrain.jsonl", 'w') as f_jointtrain, \
+            open(base_dataset + "/" + lang + "_matcha_jointdev.jsonl", 'w') as f_jointvalid, \
             open(base_dataset + "/" + lang + "_matcha_test_.jsonl", 'w') as f_test:
         num_instances = sum(1 for _ in f)
         f.seek(0)
-        percentage = num_train/num_instances
-        percentage_val = num_val/num_instances
+
+        p_pretrain = num_pretrain/(num_instances-num_jointrain)
+        p_preval = 1-num_preval/(num_instances-num_jointrain)
+
+        p_jointtrain = num_jointrain / (num_instances - num_pretrain)
+        p_jointval = 1 - num_jointval / (num_instances - num_pretrain)
+
+        p_joint = num_pretrain/(num_pretrain+num_jointrain)
 
         i = 0
         j = 0
+        k = 0
+        l = 0
         for line in f:
             r = random.random()
-            if i < num_train and r < percentage:
-                f_train.write(line)
-                i += 1
-            if j < num_val and r < percentage_val:
-                f_valid.write(line)
-                j += 1
+            if r < p_joint:
+                r = random.random()
+                if i < num_pretrain and r < p_pretrain:
+                    f_pretrain.write(line)
+                    i += 1
+                elif j < num_preval and r > p_preval:
+                    f_prevalid.write(line)
+                    j += 1
+                else:
+                    f_test.write(line)
             else:
-                f_test.write(line)
+                r = random.random()
+                if k < num_preval and r < p_jointtrain:
+                    f_jointtrain.write(line)
+                    k += 1
+                elif l < num_preval and r > p_jointval:
+                    f_jointtrain.write(line)
+                    l += 1
+
+                else:
+                    f_test.write(line)
 
 def process_oscar_based_data():
     pass
@@ -121,6 +144,10 @@ if __name__ == "__main__":
         help="Base folder with Wikipedia data.",
     )
     parser.add_argument(
+        "--training_type",
+        type=str,
+    )
+    parser.add_argument(
         "--base_dataset",
         type=str,
     )
@@ -133,4 +160,8 @@ if __name__ == "__main__":
     if args.data_type == "wiki":
         process_wiki_based_data(args.base_dataset, args.lang)
 
-    split_data(args.base_dataset, args.lang)
+    if args.training_type="pretraining":
+        split_data(args.base_dataset, args.lang)
+    else:
+        pass
+
