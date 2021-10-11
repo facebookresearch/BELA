@@ -8,14 +8,14 @@ defaults:
 
 task:
   _target_: bela.task.joint_el_task.JointELTask
-  embeddings_path: data/blink/all_entities_large.t7
-  faiss_index_path: data/blink/faiss_hnsw_index.pkl
+  embeddings_path: /data/home/kassner/BELA/data/blink/all_entities_large.t7
+  faiss_index_path: /data/home/kassner/BELA/data/blink/faiss_hnsw_index.pkl
 
 datamodule:
-  train_path: data/train_joint.txt
-  val_path: data/eval_joint.txt
-  test_path: data/test_joint.txt
-  ent_catalogue_idx_path: data/en_bert_ent_idx.txt
+  train_path: /fsx/kassner/wikipedia/en_matcha_jointtrain.jsonl
+  val_path: /fsx/kassner/wikipedia/en_matcha_jointval.jsonl
+  test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
+  ent_catalogue_idx_path:  /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
 
 checkpoint_callback:
     monitor: valid_boe_f1
