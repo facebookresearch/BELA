@@ -87,9 +87,9 @@ def process_wiki_based_data(base_dataset, lang):
 def split_data(base_dataset, lang, num_train=17000000, num_val=5000):
 
     with open(base_dataset + "/" + lang + "_matcha.jsonl") as f, \
-            open(base_dataset + "/" + lang + "_matcha_train.jsonl", 'w') as f_train, \
-            open(base_dataset + "/" + lang + "_matcha_dev.jsonl", 'w') as f_valid, \
-            open(base_dataset + "/" + lang + "_matcha_test.jsonl", 'w') as f_test:
+            open(base_dataset + "/" + lang + "_matcha_train_.jsonl", 'w') as f_train, \
+            open(base_dataset + "/" + lang + "_matcha_dev_.jsonl", 'w') as f_valid, \
+            open(base_dataset + "/" + lang + "_matcha_test_.jsonl", 'w') as f_test:
         num_instances = sum(1 for _ in f)
         f.seek(0)
         percentage = num_train/num_instances
