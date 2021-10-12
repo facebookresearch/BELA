@@ -15,7 +15,7 @@ def plot_histogram(count_dict, title, output_path):
 
 
 def stats(base_dataset, lang):
-    with open("/fsx/kassner/wikidata/en_title2wikidataID.pkl", "rb") as f:
+    with open("/fsx/kassner/wikidata/en_title2wikidataID.pkl", "r") as f:
         title2wikidataID = pickle.load(f)
 
     novel_entities = {}
