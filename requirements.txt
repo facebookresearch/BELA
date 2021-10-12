@@ -10,3 +10,6 @@ jsonlines
 numpy
 nltk
 news-please
+download-oscar
+spacy
+matplotlib
