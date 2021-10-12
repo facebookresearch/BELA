@@ -20,7 +20,7 @@ def stats(base_dataset, lang):
 
     novel_entities = {}
     known_entities = {}
-    with open("/data/wikipedia/enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
+    with open("data/wikipedia/enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
         for line in f:
             line = json.loads(line)
             novel_entities[title2wikidataID[line["wikipedia_title"]]] = 0
