@@ -10,18 +10,18 @@ def plot_histogram(count_dict, title, output_path):
     plt.ylabel('Counts')
     plt.title(title)
 
-    plt.hist(list(count_dict.values()), 1)
+    plt.hist(list(count_dict.values()), max(list(count_dict.values())))
     plt.savefig(output_path + title + ".png")
 
 
-def stats(base_dataset, lang):
-    with open("/fsx/kassner/wikidata/en_title2wikidataID.pkl", "rb") as f:
+def stats(base_dataset, lang, base_wikidata, base_wikipedia):
+    with open(base_wikidata + "en_title2wikidataID.pkl", "rb") as f:
         title2wikidataID = pickle.load(f)
 
     novel_entities = {}
     known_entities = {}
     out_of_wikidata = 0
-    with open("data/wikipedia/enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
+    with open(base_wikipedia + "enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
         for line in f:
             line = json.loads(line)
             if line["wikipedia_title"] in title2wikidataID:
@@ -64,6 +64,14 @@ if __name__ == "__main__":
         "--lang",
         type=str,
     )
+    parser.add_argument(
+        "--base_wikidata",
+        type=str,
+    )
+    parser.add_argument(
+        "--base_wikipedia",
+        type=str,
+    )
     args, _ = parser.parse_known_args()
 
-    stats(args.base_dataset, args.lang)
+    stats(args.base_dataset, args.lang, args.base_wikidata, args.base_wikipedia)
