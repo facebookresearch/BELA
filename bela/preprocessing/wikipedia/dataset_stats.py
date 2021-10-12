@@ -47,6 +47,7 @@ def stats(base_dataset, lang):
     plot_histogram(novel_entities, "novel entities", base_dataset)
     plot_histogram(known_entities, "known entities", base_dataset)
 
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -58,5 +59,6 @@ if __name__ == "__main__":
         "--lang",
         type=str,
     )
+    args, _ = parser.parse_known_args()
 
     stats(args.base_dataset, args.lang)
