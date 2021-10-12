@@ -91,15 +91,17 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
             open(base_dataset + "/" + lang + "_matcha_predev.jsonl", 'w') as f_prevalid, \
             open(base_dataset + "/" + lang + "_matcha_jointtrain.jsonl", 'w') as f_jointtrain, \
             open(base_dataset + "/" + lang + "_matcha_jointdev.jsonl", 'w') as f_jointvalid, \
-            open(base_dataset + "/" + lang + "_matcha_test_.jsonl", 'w') as f_test:
+            open(base_dataset + "/" + lang + "_matcha_test.jsonl", 'w') as f_test:
         num_instances = sum(1 for _ in f)
         f.seek(0)
 
         p_pretrain = num_pretrain/(num_instances-num_jointrain)
-        p_preval = 1-num_preval/(num_instances-num_jointrain)
+        p_preval = 1-(num_preval/(num_instances-num_jointrain))
+        print(p_pretrain, p_preval)
 
         p_jointtrain = num_jointrain / (num_instances - num_pretrain)
-        p_jointval = 1 - num_jointval / (num_instances - num_pretrain)
+        p_jointval = 1 - (num_jointval / (num_instances - num_pretrain))
+        print(p_jointtrain, p_jointval)
 
         p_joint = num_pretrain/(num_pretrain+num_jointrain)
 
@@ -157,8 +159,8 @@ if __name__ == "__main__":
     )
 
     args, _ = parser.parse_known_args()
-    if args.data_type == "wiki":
-        process_wiki_based_data(args.base_dataset, args.lang)
+    #if args.data_type == "wiki":
+    #    process_wiki_based_data(args.base_dataset, args.lang)
 
     if args.training_type=="pretraining":
         split_data(args.base_dataset, args.lang)
