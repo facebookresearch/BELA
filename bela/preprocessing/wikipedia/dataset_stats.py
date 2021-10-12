@@ -20,10 +20,15 @@ def stats(base_dataset, lang):
 
     novel_entities = {}
     known_entities = {}
+    out_of_wikidata = 0
     with open("data/wikipedia/enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
         for line in f:
             line = json.loads(line)
-            novel_entities[title2wikidataID[line["wikipedia_title"]]] = 0
+            if line["wikipedia_title"] in title2wikidataID:
+                novel_entities[title2wikidataID[line["wikipedia_title"]]] = 0
+            else:
+                out_of_wikidata += 1
+    print(out_of_wikidata)
 
     with open(base_dataset + "/" + lang + "/" + lang + "wiki0.pkl", "rb") as f:
         data = pickle.load(f)
