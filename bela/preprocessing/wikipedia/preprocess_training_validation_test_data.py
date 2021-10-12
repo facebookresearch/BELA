@@ -93,6 +93,7 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
             open(base_dataset + "/" + lang + "_matcha_jointdev.jsonl", 'w') as f_jointvalid, \
             open(base_dataset + "/" + lang + "_matcha_test.jsonl", 'w') as f_test:
         num_instances = sum(1 for _ in f)
+        print(num_instances)
         f.seek(0)
 
         p_pretrain = num_pretrain/(num_instances-num_jointrain)
