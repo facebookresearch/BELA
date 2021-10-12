@@ -86,7 +86,7 @@ def process_wiki_based_data(base_dataset, lang):
 
 def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_jointrain=20000, num_jointval=5000):
 
-    with open(base_dataset + "/" + lang + "_matcha.jsonl") as f, \
+    with open(base_dataset + "/" + lang + "_matcha_.jsonl") as f, \
             open(base_dataset + "/" + lang + "_matcha_pretrain.jsonl", 'w') as f_pretrain, \
             open(base_dataset + "/" + lang + "_matcha_predev.jsonl", 'w') as f_prevalid, \
             open(base_dataset + "/" + lang + "_matcha_jointtrain.jsonl", 'w') as f_jointtrain, \
