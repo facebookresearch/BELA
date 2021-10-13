@@ -95,14 +95,16 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
         num_instances = sum(1 for _ in f)
         f.seek(0)
 
-        p_pretrain = num_pretrain/(num_instances-num_jointrain-num_jointval)
-        p_preval = 1-(num_preval/(num_instances-num_jointrain-num_jointval))
+        num_test = num_instances-num_pretrain-num_preval-num_jointrain-num_jointval
 
-        p_jointtrain = num_jointrain / (num_instances - num_pretrain-num_preval)
+        p_pretrain = num_pretrain/(num_instances-num_jointrain-num_jointval-(num_test/2))
+        p_preval = 1-(num_preval/(num_instances-num_jointrain-num_jointval-(num_test/2)))
 
-        p_jointval = 1 - (num_jointval / (num_instances - num_pretrain-num_preval))
+        p_jointtrain = num_jointrain / (num_instances - num_pretrain-num_preval-(num_test/2))
 
-        p_joint = num_pretrain/(num_pretrain+num_jointrain)
+        p_jointval = 1 - (num_jointval / (num_instances - num_pretrain-num_preval-(num_test/2)))
+
+        p_joint = (num_pretrain+num_preval+(num_test/2))/num_instances
 
         n_pretrain = 0
         n_preval = 0
@@ -122,7 +124,7 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
                     f_test.write(line)
             else:
                 r = random.random()
-                if n_jointrain < num_preval and r < p_jointtrain:
+                if n_jointrain < num_jointrain and r < p_jointtrain:
                     f_jointtrain.write(line)
                     n_jointrain += 1
                 elif n_joinval < num_preval and r > p_jointval:
@@ -131,7 +133,6 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
 
                 else:
                     f_test.write(line)
-
 
 def process_oscar_based_data():
     pass
