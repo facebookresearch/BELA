@@ -93,16 +93,13 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
             open(base_dataset + "/" + lang + "_matcha_jointdev.jsonl", 'w') as f_jointvalid, \
             open(base_dataset + "/" + lang + "_matcha_test.jsonl", 'w') as f_test:
         num_instances = sum(1 for _ in f)
-        print(num_instances)
         f.seek(0)
 
         p_pretrain = num_pretrain/(num_instances-num_jointrain)
         p_preval = 1-(num_preval/(num_instances-num_jointrain))
-        print(p_pretrain, p_preval)
 
         p_jointtrain = num_jointrain / (num_instances - num_pretrain)
         p_jointval = 1 - (num_jointval / (num_instances - num_pretrain))
-        print(p_jointtrain, p_jointval)
 
         p_joint = num_pretrain/(num_pretrain+num_jointrain)
 
@@ -133,6 +130,7 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
 
                 else:
                     f_test.write(line)
+
 
 def process_oscar_based_data():
     pass
