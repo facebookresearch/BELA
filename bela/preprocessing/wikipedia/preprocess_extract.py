@@ -10,7 +10,7 @@ import os
 import pickle
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from bela.utils.utils import chunk_it, extract_pages
+from bela.utils.utitls_preprocess import extract_pages
 from tqdm.auto import tqdm
 
 if __name__ == "__main__":

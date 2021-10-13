@@ -465,6 +465,7 @@ class JointELTask(LightningModule):
         train_el_classifier: bool = True,
         train_saliency: bool = True,
         md_threshold: float = 0.2,
+        ue_threshold: float = 0.0,
         el_threshold: float = 0.4,
         saliency_threshold: float = 0.4,
     ):
@@ -493,6 +494,7 @@ class JointELTask(LightningModule):
         self.md_threshold = md_threshold
         self.el_threshold = el_threshold
         self.saliency_threshold = saliency_threshold
+        self.novel_entities = ''
 
     @staticmethod
     def _get_encoder_state(state, encoder_name):
@@ -548,6 +550,9 @@ class JointELTask(LightningModule):
 
         self.embeddings = torch.load(self.embeddings_path)
         self.faiss_index = faiss.read_index(self.faiss_index_path)
+        if self.novel_entities!='':
+            pass
+
 
     def sim_score(self, mentions_repr, entities_repr):
         # bs x emb_dim , bs x emb_dim

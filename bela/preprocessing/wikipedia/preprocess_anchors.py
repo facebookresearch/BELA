@@ -11,7 +11,7 @@ import pickle
 import re
 
 from tqdm.auto import tqdm, trange
-from bela.utils.utils import get_wikidata_ids
+from bela.utils.utitls_preprocess import get_wikidata_ids
 
 
 def clean_anchor_lang(anchor, lang):
@@ -179,6 +179,7 @@ if __name__ == "__main__":
                     "{}".format(lang),
                     "{}wiki{}.pkl".format(lang, rank),
                 )
+                print(filename)
                 if os.path.exists(filename):
                     logging.info("Loading {}".format(filename))
                     with open(filename, "rb") as f:

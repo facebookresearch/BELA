@@ -23,11 +23,9 @@ import html
 import json
 from itertools import zip_longest
 from urllib.parse import quote as urlencode
-#from urllib.parse import urlencode
 from html.entities import name2codepoint
 import logging
 import time
-import urllib.parse
 # ----------------------------------------------------------------------
 
 # match tail after wikilink
@@ -273,6 +271,9 @@ def compact(text, mark_headers=False):
 
         # Drop residuals of lists
         elif line[0] in '{|' or line[-1] == '}':
+            continue
+        # Drop ! colspan=
+        elif line[0]=="! cols":
             continue
         # Drop irrelevant lines
         elif (line[0] == '(' and line[-1] == ')') or line.strip('.-') == '':
@@ -1273,7 +1274,8 @@ def findMatchingBraces(text, ldelim=0):
     # takes precedence, even if this is the opening of a link without any
     # closing, so not producing an actual link.
 
-    # In the case of more than three opening braces the last three are assumed
+    # In the case of more
+    # than three opening braces the last three are assumed
     # to belong to a tplarg, unless there is no matching triple of closing
     # braces, in which case the last two opening braces are are assumed to
     # belong to a template.

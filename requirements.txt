@@ -13,3 +13,4 @@ news-please
 download-oscar
 spacy
 matplotlib
+bs4

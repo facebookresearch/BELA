@@ -95,11 +95,12 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
         num_instances = sum(1 for _ in f)
         f.seek(0)
 
-        p_pretrain = num_pretrain/(num_instances-num_jointrain)
-        p_preval = 1-(num_preval/(num_instances-num_jointrain))
+        p_pretrain = num_pretrain/(num_instances-num_jointrain-num_jointval)
+        p_preval = 1-(num_preval/(num_instances-num_jointrain-num_jointval))
 
-        p_jointtrain = num_jointrain / (num_instances - num_pretrain)
-        p_jointval = 1 - (num_jointval / (num_instances - num_pretrain))
+        p_jointtrain = num_jointrain / (num_instances - num_pretrain-num_preval)
+
+        p_jointval = 1 - (num_jointval / (num_instances - num_pretrain-num_preval))
 
         p_joint = num_pretrain/(num_pretrain+num_jointrain)
 

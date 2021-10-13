@@ -10,12 +10,9 @@
 mkdir wikipedia
 cd wikipedia
 
-for LANG in en
-do
-    wget http://wikipedia.c3sl.ufpr.br/${LANG}wiki/20191001/${LANG}wiki-20191001-pages-articles-multistream.xml.bz2
-done
+# new dump
+wget http://wikipedia.c3sl.ufpr.br/$enwiki/20210920/$enwiki-20210920-pages-articles-multistream.xml.bz2
 
-for LANG in en
-do
-    wikiextractor ${LANG}wikinews-20191001-pages-articles-multistream.xml.bz2 -o ${LANG} --links --lists --sections
-done
+# old dump
+wget wget http://dl.fbaipublicfiles.com/BLINK/enwiki-pages-articles.xml.bz2
+

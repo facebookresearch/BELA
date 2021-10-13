@@ -40,3 +40,26 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
 ```
+
+## Data
+
+# Pre-training
+
+# Joint Training
+
+1. Wikipedia:
+   1. t2
+   2. t1
+   3. Number of novel entities:
+   4. Counts novel entities:
+2. Wikinews:
+   1. t2
+   2. t1
+   3. Number of novel entities:
+   4. Counts novel entities:
+3. BBC:
+   1. t2: 5.101
+   2. t1: 6.775 
+   3. Number of novel entities:
+   4. Counts novel entities:
+

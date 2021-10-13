@@ -26,7 +26,7 @@
    ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_anchors.py --lang en --base_wikipedia data/wikipedia/ --base_wikidata /fsx/kassner/wikidata/ solve```
    ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_anchors.py --lang en --base_wikipedia data/wikipedia/ --base_wikidata /fsx/kassner/wikidata/ fill```
    6. Prepare pretraining data
-   ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_training_validation_test_data.py --lang en --base_dataset /fsx/kassner/wikipedia/ --data_type wiki```
+   ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_training_validation_test_data.py --lang en --base_dataset /fsx/kassner/wikipedia/ --data_type wiki --training_type pretraining```
 
 3. Download BLINK data 
    1. FAISS index
