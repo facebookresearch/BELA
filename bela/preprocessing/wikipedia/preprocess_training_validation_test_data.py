@@ -106,30 +106,30 @@ def split_data(base_dataset, lang, num_pretrain=17000000, num_preval=5000, num_j
 
         p_joint = num_pretrain/(num_pretrain+num_jointrain)
 
-        i = 0
-        j = 0
-        k = 0
-        l = 0
+        n_pretrain = 0
+        n_preval = 0
+        n_jointrain = 0
+        n_joinval = 0
         for line in f:
             r = random.random()
             if r < p_joint:
                 r = random.random()
-                if i < num_pretrain and r < p_pretrain:
+                if n_pretrain < num_pretrain and r < p_pretrain:
                     f_pretrain.write(line)
-                    i += 1
-                elif j < num_preval and r > p_preval:
+                    n_pretrain += 1
+                elif n_preval < num_preval and r > p_preval:
                     f_prevalid.write(line)
-                    j += 1
+                    n_preval += 1
                 else:
                     f_test.write(line)
             else:
                 r = random.random()
-                if k < num_preval and r < p_jointtrain:
+                if n_jointrain < num_preval and r < p_jointtrain:
                     f_jointtrain.write(line)
-                    k += 1
-                elif l < num_preval and r > p_jointval:
-                    f_jointtrain.write(line)
-                    l += 1
+                    n_jointrain += 1
+                elif n_joinval < num_preval and r > p_jointval:
+                    f_jointvalid.write(line)
+                    n_joinval += 1
 
                 else:
                     f_test.write(line)
