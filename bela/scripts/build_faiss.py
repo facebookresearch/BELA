@@ -7,7 +7,7 @@ ent_embeddings = torch.load(emb_file)
 d = ent_embeddings.shape[1] # 768
 buffer_size = 50000
 store_n = 128
-ef_search = 256
+ef_search = 512
 ef_construction = 200
 
 index = faiss.IndexHNSWFlat(d, store_n, faiss.METRIC_INNER_PRODUCT)

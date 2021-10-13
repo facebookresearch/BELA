@@ -8,3 +8,10 @@ class DummyPathManager:
 
 PathManager = DummyPathManager()
 
+def embed_novel_entites():
+    pass
+
+def add_novel_entities2faiss(path2entities):
+    with open(path2entities)
+
+

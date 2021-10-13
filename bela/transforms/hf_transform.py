@@ -9,7 +9,7 @@ class HFTransform(nn.Module):
     def __init__(
         self,
         model_path: str = "bert-large-cased",
-        max_seq_len: int = 256,
+        max_seq_len: int = 512,
         add_special_tokens: bool = True,
     ):
         super().__init__()

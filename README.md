@@ -32,13 +32,18 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el_disambiguati
 Config is stored in `bela/conf/joint_el.yaml`. To run training (you should be on machine with GPU):
 
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
+PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el_disambiguation_only
 ```
 
 ## Train model using SLURM
 
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
+```
+
+## Start interactive SLURM session
+```
+srun --gres=gpu:8 --partition=a100 --time=72:00:00 --pty /bin/bash -l
 ```
 
 ## Data

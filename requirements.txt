@@ -14,3 +14,4 @@ download-oscar
 spacy
 matplotlib
 bs4
+scipy

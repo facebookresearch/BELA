@@ -16,7 +16,7 @@ def pieces_to_texts(
     texts_mention_lengths: List[List[int]],
     # bos_idx: int,
     # eos_idx: int,
-    max_seq_len: int = 256,
+    max_seq_len: int = 512,
 ):
     """
     Function takes an array with SP tokenized word tokens and original texts
@@ -227,7 +227,7 @@ class JointELTransform(HFTransform):
     def __init__(
         self,
         model_path: str = "bert-large-cased",
-        max_seq_len: int = 256,
+        max_seq_len: int = 512,
         texts_column: str = "texts",
         mention_offsets_column: str = "mention_offsets",
         mention_lengths_column: str = "mention_lengths",
