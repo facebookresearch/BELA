@@ -14,7 +14,7 @@ task:
 
 datamodule:
   train_path: /fsx/kassner/wikipedia/en_matcha_jointtrain.jsonl
-  val_path: /fsx/kassner/wikipedia/en_matcha_jointval.jsonl
+  val_path: /fsx/kassner/wikipedia/en_matcha_jointdev.jsonl
   test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
   ent_catalogue_idx_path:  /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
 
