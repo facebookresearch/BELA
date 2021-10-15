@@ -18,13 +18,20 @@ def get_seq_lengths(batch: List[List[int]]):
 
 
 class EntityCatalogue:
-    def __init__(self, idx_path):
+    def __init__(self, idx_path, novel_entity_idx_path):
         logger.info(f"Reading entity catalogue index {idx_path}")
         self.idx = {}
         with open(idx_path, "rt") as fd:
             for idx, line in enumerate(fd):
                 ent_id = line.strip()
                 self.idx[ent_id] = idx
+        if novel_entity_idx_path != "":
+            with open(novel_entity_idx_path, "r") as f:
+                for line in f.readline():
+                    idx += 1
+                    line = json.loads(line)
+                    self.idx[line["entity"]] = idx
+
 
     def __len__(self):
         return len(self.idx)
@@ -41,7 +48,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
     """
     A memory mapped dataset for EL in Matcha format
     Each example in this dataset contains several mentions.
-    We laso filter out mentions, that are not present in entity catalogue
+    We also filter out mentions, that are not present in entity catalogue
     """
 
     def __init__(self, path, ent_catalogue):
@@ -139,6 +146,7 @@ class JointELDataModule(LightningDataModule):
         val_path: str,
         test_path: str,
         ent_catalogue_idx_path: str,
+        novel_entity_idx_path: str = "",
         batch_size: int = 2,
         drop_last: bool = False,  # drop last batch if len(dataset) not multiple of batch_size
         num_workers: int = 0,  # increasing this bugs out right now
@@ -152,7 +160,7 @@ class JointELDataModule(LightningDataModule):
         self.num_workers = num_workers
         self.transform = transform
 
-        self.ent_catalogue = EntityCatalogue(ent_catalogue_idx_path)
+        self.ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, novel_entity_idx_path)
 
         self.datasets = {
             "train": ElMatchaDataset(
