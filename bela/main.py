@@ -25,7 +25,7 @@ def main(cfg: MainConfig):
                   'out_dim': 1,
                   'pull_from_layer': -1,
                   'add_linear': False,
-                  'entity_dict_path': '/data/home/kassner/BELA/data/blink/novel_entities.jsonl',
+                  'entity_dict_path': '/data/home/kassner/BELA/data/blink/entities_test.jsonl',
                   'debug': False,
                   'max_cand_length': 128,
                   'encode_batch_size': 8,
