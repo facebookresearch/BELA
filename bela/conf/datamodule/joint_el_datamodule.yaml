@@ -2,5 +2,5 @@
 _target_: bela.datamodule.joint_el_datamodule.JointELDataModule
 batch_size: 32
 drop_last: False
-novel_entity_idx_path: ""
+novel_entity_idx_path: /data/home/kassner/BELA/data/blink/entities_test.t7
 path_to_model: /data/home/kassner/BELA/data/blink/biencoder_wiki_large.bin
