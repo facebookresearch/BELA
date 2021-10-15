@@ -1,4 +1,4 @@
 # @package _group_
 _target_: bela.task.joint_el_task.JointELTask
 datamodule: null
-novel_entity_embeddings_path: 
+novel_entity_embeddings_path: ''
