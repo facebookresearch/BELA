@@ -14,8 +14,9 @@ def collect_novel_entities(base_blink, base_wikidata, base_wikipedia):
                 if line["wikipedia_title"] in title2wikidataID:
                     text = ""
                     for p in line["text"][1:]:
-                        text += p.strip()
-                    output = {'title': line["wikipedia_title"], 'text': '.'.join(text.split('.')[0:10]),
+                        if "::::" not in p:
+                            text += p.strip()
+                    output = {'title': line["wikipedia_title"], 'text': '. '.join(text.split('.')[0:10]),
                               'entity': line["wikipedia_title"], 'idx': line["wikipedia_id"]}
                     f_out.write(json.dumps(output))
                     f_out.write('\n')
