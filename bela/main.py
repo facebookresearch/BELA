@@ -13,7 +13,7 @@ def main(cfg: MainConfig):
     print(OmegaConf.to_yaml(cfg))
     # cfg.task.datamodule = None
 
-    if cfg.datamodule.novel_entity_idx_path != "":
+    if cfg.datamodule.novel_entity_idx_path:
         # TODO: externalize into conf folder
         params = {'lower_case': True,
                   'path_to_model': './biencoder_wiki_large.bin',
