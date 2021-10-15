@@ -13,7 +13,7 @@ def main(cfg: MainConfig):
     print(OmegaConf.to_yaml(cfg))
     # cfg.task.datamodule = None
 
-    if cfg.datamodule.novel_entity_idx_path:
+    '''if cfg.datamodule.novel_entity_idx_path:
         # TODO: externalize into conf folder
         params = {'lower_case': True,
                   'path_to_model': './biencoder_wiki_large.bin',
@@ -31,7 +31,7 @@ def main(cfg: MainConfig):
                   'silent': False,
                   }
         embed(params)
-        cfg.task = '.'.join(params['entity_dict_path'].split('.')[:-1]) + ".t7"
+        cfg.task = '.'.join(params['entity_dict_path'].split('.')[:-1]) + ".t7"'''
 
     task = hydra.utils.instantiate(cfg.task, _recursive_=False)
 
