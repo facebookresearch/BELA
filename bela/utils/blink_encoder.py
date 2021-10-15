@@ -6,10 +6,14 @@ import json
 from pytorch_transformers.modeling_bert import BertModel
 from pytorch_transformers.tokenization_bert import BertTokenizer
 
+from torch.utils.data import DataLoader, SequentialSampler
+
+
 ENT_START_TAG = "[unused0]"
 ENT_END_TAG = "[unused1]"
 ENT_TITLE_TAG = "[unused2]"
 NULL_IDX = 0
+
 
 class BertEncoder(nn.Module):
     def __init__(
@@ -215,6 +219,7 @@ class BiEncoderRanker(torch.nn.Module):
         return loss, scores
 
 
+
 def load_entity_dict(params):
 
     path = params.get("entity_dict_path", None)
@@ -234,6 +239,34 @@ def load_entity_dict(params):
     return entity_list
 
 
+def get_candidate_representation(
+    candidate_desc,
+    tokenizer,
+    max_seq_length,
+    candidate_title=None,
+    title_tag=ENT_TITLE_TAG,
+):
+    cls_token = tokenizer.cls_token
+    sep_token = tokenizer.sep_token
+    cand_tokens = tokenizer.tokenize(candidate_desc)
+    if candidate_title is not None:
+        title_tokens = tokenizer.tokenize(candidate_title)
+        cand_tokens = title_tokens + [title_tag] + cand_tokens
+
+    cand_tokens = cand_tokens[: max_seq_length - 2]
+    cand_tokens = [cls_token] + cand_tokens + [sep_token]
+
+    input_ids = tokenizer.convert_tokens_to_ids(cand_tokens)
+    padding = [0] * (max_seq_length - len(input_ids))
+    input_ids += padding
+    assert len(input_ids) == max_seq_length
+
+    return {
+        "tokens": cand_tokens,
+        "ids": input_ids,
+    }
+
+
 def get_candidate_pool_tensor(
     entity_desc_list,
     tokenizer,
@@ -249,7 +282,7 @@ def get_candidate_pool_tensor(
             title = None
             entity_text = entity_desc
 
-        rep = data.get_candidate_representation(
+        rep = get_candidate_representation(
                 entity_text,
                 tokenizer,
                 max_seq_length,
@@ -276,7 +309,7 @@ def get_candidate_pool_tensor_helper(
 def load_or_generate_candidate_pool(
     tokenizer,
     params,
-    cand_pool_path,
+    cand_pool_path=None,
 ):
     candidate_pool = None
     if cand_pool_path is not None:
@@ -344,11 +377,32 @@ def to_bert_input(token_idx, null_idx):
     return token_idx, segment_idx, mask
 
 
-def encode_candidate(cands, null_idx, model):
-    token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
-        cands, null_idx
+def encode_candidate(
+        reranker,
+        candidate_pool,
+        encode_batch_size,
+        silent,
+):
+
+    reranker.model.eval()
+    device = reranker.device
+    sampler = SequentialSampler(candidate_pool)
+    data_loader = DataLoader(
+        candidate_pool, sampler=sampler, batch_size=encode_batch_size
     )
-    _, embedding_cands = model(
-        None, None, None, token_idx_cands, segment_idx_cands, mask_cands
-    )
-    return embedding_cands.cpu().detach()
+    if silent:
+        iter_ = data_loader
+    else:
+        iter_ = tqdm(data_loader)
+
+    cand_encode_list = None
+    for step, batch in enumerate(iter_):
+        cands = batch
+        cands = cands.to(device)
+        cand_encode = reranker.encode_candidate(cands)
+        if cand_encode_list is None:
+            cand_encode_list = cand_encode
+        else:
+            cand_encode_list = torch.cat((cand_encode_list, cand_encode))
+
+    return cand_encode_list
