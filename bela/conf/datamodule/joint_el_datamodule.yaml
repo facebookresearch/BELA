@@ -2,3 +2,4 @@
 _target_: bela.datamodule.joint_el_datamodule.JointELDataModule
 batch_size: 32
 drop_last: False
+novel_entity_idx_path: ""
