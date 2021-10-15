@@ -31,9 +31,10 @@ def main(cfg: MainConfig):
                   'encode_batch_size': 8,
                   'silent': False,
                   }
-        cfg.task = '.'.join(params['entity_dict_path'].split('.')[:-1]) + ".t7"
-        if not os.path.isfile(cfg.task):
+        cfg.task.novel_entity_embeddings_path = '.'.join(params['entity_dict_path'].split('.')[:-1]) + ".t7"
+        if not os.path.isfile(cfg.task.novel_entity_embeddings_path):
             embed(params)
+    print(cfg.task)
 
     task = hydra.utils.instantiate(cfg.task, _recursive_=False)
 
