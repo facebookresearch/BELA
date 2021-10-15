@@ -17,7 +17,7 @@ def collect_novel_entities(base_blink, base_wikidata, base_wikipedia):
                         text += p.strip()
                     output = {'title': line["wikipedia_title"], 'text': '.'.join(text.split('.')[0:10]),
                               'entity': line["wikipedia_title"], 'idx': line["wikipedia_id"]}
-                    f_out.write(json.dump(output))
+                    f_out.write(json.dumps(output))
                     f_out.write('\n')
 
 
