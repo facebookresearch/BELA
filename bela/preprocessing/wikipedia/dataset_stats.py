@@ -28,7 +28,6 @@ def stats(base_dataset, lang, base_wikidata, base_wikipedia):
                 novel_entities[title2wikidataID[line["wikipedia_title"]]] = 0
             else:
                 out_of_wikidata += 1
-    print(out_of_wikidata)
 
     with open(base_dataset + "/" + lang + "/" + lang + "wiki0.pkl", "rb") as f:
         data = pickle.load(f)
