@@ -1,4 +1,3 @@
-import argparse
 import torch
 
 from bela.utils.blink_encoder import BiEncoderRanker
