@@ -2,6 +2,7 @@
 
 import hydra
 from bela.conf.config import MainConfig
+from bela.datamodule.entity_encoder import embed
 
 from omegaconf import OmegaConf
 from pytorch_lightning.trainer import Trainer
@@ -11,6 +12,27 @@ from pytorch_lightning.trainer import Trainer
 def main(cfg: MainConfig):
     print(OmegaConf.to_yaml(cfg))
     # cfg.task.datamodule = None
+
+    if cfg.datamodule.novel_entity_idx_path != "":
+        # TODO: externalize into conf folder
+        params = {'lower_case': True,
+                  'path_to_model': './biencoder_wiki_large.bin',
+                  'data_parallel': True,
+                  'no_cuda': True,
+                  'bert_model': 'bert-large-uncased',
+                  'lowercase': True,
+                  'out_dim': 1,
+                  'pull_from_layer': -1,
+                  'add_linear': False,
+                  'entity_dict_path': 'entities_test.jsonl',
+                  'debug': False,
+                  'max_cand_length': 128,
+                  'encode_batch_size': 8,
+                  'silent': False,
+                  }
+        embed(params)
+        cfg.task = '.'.join(params['entity_dict_path'].split('.')[:-1]) + ".t7"
+
     task = hydra.utils.instantiate(cfg.task, _recursive_=False)
 
     assert cfg.task.model.model_path == cfg.task.transform.model_path
@@ -20,7 +42,7 @@ def main(cfg: MainConfig):
     trainer = Trainer(**cfg.trainer, callbacks=[checkpoint_callback])
 
     if cfg.test_only:
-        ckpt_path = cfg.task.pretrained_checkpoint_path
+        ckpt_path = cfg.task.load_from_checkpoint
         trainer.test(
             model=task,
             ckpt_path=ckpt_path,
