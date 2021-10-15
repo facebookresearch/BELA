@@ -17,7 +17,7 @@ task:
 datamodule:
   train_path: /data/home/kassner/BELA/data/wikipedia/en_matcha_pretrain.jsonl
   val_path: /data/home/kassner/BELA/data/wikipedia/en_matcha_predev.jsonl
-  test_path: /data/home/kassner/BELA/data/wikipedia/wikipedia/en_matcha_test.jsonl
+  test_path: /data/home/kassner/BELA/data/wikipedia/en_matcha_test.jsonl
   ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
   novel_entity_idx_path: /data/home/kassner/BELA/data/blink/entities_test.jsonl
   batch_size: 40
