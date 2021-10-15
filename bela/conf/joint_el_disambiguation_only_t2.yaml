@@ -1,0 +1,32 @@
+defaults:
+  - config
+  - datamodule: joint_el_datamodule
+  - task/transform: joint_el_bert_transform
+  - task/model: bert
+  - task/optim: adamw
+  - trainer: gpu_1_host
+
+task:
+  _target_: bela.task.joint_el_task.JointELTask
+  only_train_disambiguation: true
+  embeddings_path: /data/home/kassner/BELA/data/blink/all_entities_large.t7
+  faiss_index_path: /data/home/kassner/BELA/data/blink/faiss_hnsw_index.pkl
+  optim:
+    lr: 1e-05
+
+datamodule:
+  train_path: /fsx/kassner/wikipedia/en_matcha_pretrain.jsonl
+  val_path: /fsx/kassner/wikipedia/en_matcha_predev.jsonl
+  test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
+  ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
+  novel_entity_idx_path: /data/home/kassner/BELA/data/blink/novel_entities.jsonl
+  batch_size: 40
+
+trainer:
+  max_epochs: 2
+  val_check_interval: 500
+
+
+checkpoint_callback:
+    monitor: valid_recall_at_1
+    # every_n_train_steps: 301
