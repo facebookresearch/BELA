@@ -3,7 +3,7 @@ gpus: 8
 distributed_backend: ddp
 reload_dataloaders_every_epoch: true
 max_epochs: 40
-num_nodes: 1
+num_nodes: 2
 num_sanity_val_steps: 0
 log_every_n_steps: 10
 gradient_clip_val: 2.0
