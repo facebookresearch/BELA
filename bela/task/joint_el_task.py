@@ -10,6 +10,7 @@ import hydra
 import numpy as np
 import torch
 import torch.nn as nn
+import os.path
 
 from pytorch_lightning import LightningModule
 
@@ -19,6 +20,8 @@ from bela.conf import (
     OptimConf,
     TransformConf,
 )
+
+from bela.datamodule.entity_encoder import embed
 
 
 logger = logging.getLogger(__name__)
@@ -178,7 +181,7 @@ class MentionScoresHead(nn.Module):
 
     def forward(self, text_encodings, mask_ctxt, tokens_mapping):
         """
-        Retuns scores for *inclusive* mention boundaries
+        Returns scores for *inclusive* mention boundaries
         """
         device = text_encodings.device
         # (bs, seqlen, 3)
@@ -455,10 +458,11 @@ class JointELTask(LightningModule):
         model: ModelConf,
         datamodule: DataModuleConf,
         optim: OptimConf,
-        embeddings_path: str,
         faiss_index_path: str,
+        novel_entity_embeddings_path: str,
+        embeddings_path: str = "",
         n_retrieve_candidates: int = 10,
-        eval_compure_recall_at: Tuple[int] = (1, 10, 100),
+        eval_compute_recall_at: Tuple[int] = (1, 10, 100),
         warmup_steps: int = 0,
         load_from_checkpoint: Optional[str] = None,
         only_train_disambiguation: bool = False,
@@ -479,7 +483,7 @@ class JointELTask(LightningModule):
         self.faiss_index_path = faiss_index_path
 
         self.n_retrieve_candidates = n_retrieve_candidates
-        self.eval_compure_recall_at = eval_compure_recall_at
+        self.eval_compute_recall_at = eval_compute_recall_at
 
         self.warmup_steps = warmup_steps
         self.load_from_checkpoint = load_from_checkpoint
@@ -494,7 +498,8 @@ class JointELTask(LightningModule):
         self.md_threshold = md_threshold
         self.el_threshold = el_threshold
         self.saliency_threshold = saliency_threshold
-        self.novel_entities = ''
+
+        self.novel_entity_embeddings_path = novel_entity_embeddings_path
 
     @staticmethod
     def _get_encoder_state(state, encoder_name):
@@ -550,8 +555,10 @@ class JointELTask(LightningModule):
 
         self.embeddings = torch.load(self.embeddings_path)
         self.faiss_index = faiss.read_index(self.faiss_index_path)
-        if self.novel_entities!='':
-            pass
+
+        if self.novel_entity_embeddings_path != "":
+            novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
+            self.faiss_index.add(novel_entities_embeddings.numpy())
 
 
     def sim_score(self, mentions_repr, entities_repr):
@@ -930,7 +937,7 @@ class JointELTask(LightningModule):
         pos_scores = self.sim_score(flat_mentions_repr, entities_repr)
 
         # candidates to retrieve
-        n_retrieve_candidates = max(self.eval_compure_recall_at)
+        n_retrieve_candidates = max(self.eval_compute_recall_at)
 
         # retrieve negative candidates ids and scores
         query_vectors = flat_mentions_repr.detach().cpu().numpy()
@@ -962,7 +969,7 @@ class JointELTask(LightningModule):
         neg_cand_indices = neg_cand_indices.cpu().tolist()
 
         recalls = []
-        for k in self.eval_compure_recall_at:
+        for k in self.eval_compute_recall_at:
             recall = sum(
                 entity_id in cand_entity_ids[:k]
                 for entity_id, cand_entity_ids in zip(
@@ -1159,7 +1166,7 @@ class JointELTask(LightningModule):
         )
 
     def _compute_disambiguation_metrics(self, outputs, log_prefix):
-        total_recalls = [0] * len(self.eval_compure_recall_at)
+        total_recalls = [0] * len(self.eval_compute_recall_at)
         total_ent_count = 0
         total_loss = 0
 
@@ -1174,7 +1181,7 @@ class JointELTask(LightningModule):
             log_prefix + "_loss": total_loss,
         }
 
-        for idx, recall_at in enumerate(self.eval_compure_recall_at):
+        for idx, recall_at in enumerate(self.eval_compute_recall_at):
             metrics[log_prefix + f"_recall_at_{recall_at}"] = (
                 total_recalls[idx] / total_ent_count
             )
