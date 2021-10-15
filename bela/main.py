@@ -2,6 +2,7 @@
 
 import hydra
 from bela.conf.config import MainConfig
+import os.path
 from bela.datamodule.entity_encoder import embed
 
 from omegaconf import OmegaConf
@@ -13,25 +14,26 @@ def main(cfg: MainConfig):
     print(OmegaConf.to_yaml(cfg))
     # cfg.task.datamodule = None
 
-    '''if cfg.datamodule.novel_entity_idx_path:
+    if cfg.datamodule.novel_entity_idx_path:
         # TODO: externalize into conf folder
         params = {'lower_case': True,
-                  'path_to_model': './biencoder_wiki_large.bin',
+                  'path_to_model': '/data/home/kassner/BELA/data/blink/biencoder_wiki_large.bin',
                   'data_parallel': True,
-                  'no_cuda': True,
+                  'no_cuda': False,
                   'bert_model': 'bert-large-uncased',
                   'lowercase': True,
                   'out_dim': 1,
                   'pull_from_layer': -1,
                   'add_linear': False,
-                  'entity_dict_path': 'entities_test.jsonl',
+                  'entity_dict_path': '/data/home/kassner/BELA/data/blink/novel_entities.jsonl',
                   'debug': False,
                   'max_cand_length': 128,
                   'encode_batch_size': 8,
                   'silent': False,
                   }
-        embed(params)
-        cfg.task = '.'.join(params['entity_dict_path'].split('.')[:-1]) + ".t7"'''
+        cfg.task = '.'.join(params['entity_dict_path'].split('.')[:-1]) + ".t7"
+        if not os.path.isfile(cfg.task):
+            embed(params)
 
     task = hydra.utils.instantiate(cfg.task, _recursive_=False)
 
