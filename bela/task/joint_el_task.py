@@ -857,10 +857,11 @@ class JointELTask(LightningModule):
         return el_loss, saliency_loss
 
     def training_step(self, batch, batch_idx):
+        print("Training step start")
         """
         This receives queries, each with mutliple contexts.
         """
-
+        print()
         text_inputs = batch["input_ids"]  # bs x mention_len
         text_pad_mask = batch["attention_mask"]
         gold_mention_offsets = batch["mention_offsets"]  # bs x max_mentions_num
@@ -914,7 +915,7 @@ class JointELTask(LightningModule):
                     loss += saliency_loss
 
         self.log("train_loss", loss, prog_bar=True)
-
+        print("Training step end")
         return loss
 
     def _disambiguation_eval_step(
@@ -1312,6 +1313,7 @@ class JointELTask(LightningModule):
         self.log_dict(metrics, on_epoch=True, sync_dist=True)
 
     def validation_step(self, batch, batch_idx):
+        print("VALIDATION step start")
         return self._eval_step(batch, batch_idx)
 
     def validation_epoch_end(self, valid_outputs):
