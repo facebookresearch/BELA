@@ -1,9 +1,9 @@
 fairscale==0.3.2
 faiss-cpu
-hydra-core==1.1.0.dev3
-hydra-submitit-launcher==1.0.1
+hydra-core
+hydra-submitit-launcher
 pyyaml
-pytorch-lightning==1.2.4
+pytorch-lightning
 transformers
 tqdm
 jsonlines

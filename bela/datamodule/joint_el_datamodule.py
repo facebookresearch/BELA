@@ -55,7 +55,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
 
     def __init__(self, path, ent_catalogue):
         self.ent_catalogue = ent_catalogue
-
+        self.debug_file = open("debug.jsonl", 'w')
         self.file = open(path, mode="rt")
         self.mm = mmap.mmap(self.file.fileno(), 0, prot=mmap.PROT_READ)
         self.offsets = []
@@ -63,6 +63,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
 
         logger.info(f"Build mmap index for {path}")
         line = self.mm.readline()
+        #line = line[0:2500]
         offset = 0
         while line:
             self.offsets.append(offset)
@@ -74,10 +75,13 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         return self.count
 
     def __getitem__(self, index):
+        print(index)
         offset = self.offsets[index]
         self.mm.seek(offset)
         line = self.mm.readline()
         example = json.loads(line)
+        self.debug_file.write(json.dumps(example))
+        self.debug_file.write("\n")
         gt_entities = []
         for gt_entity in example["gt_entities"]:
             offset, length, entity, ent_type = gt_entity[:4]
@@ -160,6 +164,7 @@ class JointELDataModule(LightningDataModule):
         self.drop_last = drop_last
 
         self.num_workers = num_workers
+        print('num workers, ', self.num_workers)
         self.transform = transform
 
         self.ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, novel_entity_idx_path)
@@ -226,7 +231,6 @@ class JointELDataModule(LightningDataModule):
         lengths = []
         entities = []
         salient_entities = []
-        print("in", batch)
 
         for example in batch:
             texts.append(example["text"])
@@ -251,7 +255,7 @@ class JointELDataModule(LightningDataModule):
                 "entities": entities,
             }
         )
-        print("out")
+        print(text_tensors["input_ids"].shape)
         return {
             "input_ids": text_tensors["input_ids"],
             "attention_mask": text_tensors["attention_mask"],
