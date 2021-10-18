@@ -32,7 +32,6 @@ class EntityCatalogue:
                     line = json.loads(line)
                     self.idx[line["entity"]] = idx
 
-
     def __len__(self):
         return len(self.idx)
 
@@ -224,6 +223,7 @@ class JointELDataModule(LightningDataModule):
         lengths = []
         entities = []
         salient_entities = []
+        print("in", batch)
 
         for example in batch:
             texts.append(example["text"])
@@ -248,7 +248,7 @@ class JointELDataModule(LightningDataModule):
                 "entities": entities,
             }
         )
-
+        print("out")
         return {
             "input_ids": text_tensors["input_ids"],
             "attention_mask": text_tensors["attention_mask"],
