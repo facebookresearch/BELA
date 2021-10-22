@@ -66,11 +66,7 @@ def pieces_to_texts(
         text_token_ids = text_token_ids[: max_seq_len - 1]
         # text_token_ids.append(eos_idx)
         for old_offset, old_length in zip(old_mention_offsets, old_mention_lengths):
-            # print(mapping, old_offset)
-            try:
-                new_offset = mapping[old_offset][0]
-            except:
-                print(text, mapping, old_offset)
+            new_offset = mapping[old_offset][0]
             new_end = mapping[old_offset + old_length - 1][1]
             new_length = new_end - new_offset
 
@@ -282,7 +278,6 @@ class JointELTransform(HFTransform):
         texts_pieces_token_ids: List[List[int]] = super().forward(
             texts_pieces
         )
-        print(texts_pieces_token_ids)
 
         (
             token_ids,
