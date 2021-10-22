@@ -75,7 +75,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         return self.count
 
     def __getitem__(self, index):
-        print(index)
+        # print(index)
         offset = self.offsets[index]
         self.mm.seek(offset)
         line = self.mm.readline()
@@ -164,7 +164,7 @@ class JointELDataModule(LightningDataModule):
         self.drop_last = drop_last
 
         self.num_workers = num_workers
-        print('num workers, ', self.num_workers)
+        # print('num workers, ', self.num_workers)
         self.transform = transform
 
         self.ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, novel_entity_idx_path)
@@ -255,7 +255,7 @@ class JointELDataModule(LightningDataModule):
                 "entities": entities,
             }
         )
-        print(text_tensors["input_ids"].shape)
+        #print(text_tensors["input_ids"].shape)
         return {
             "input_ids": text_tensors["input_ids"],
             "attention_mask": text_tensors["attention_mask"],

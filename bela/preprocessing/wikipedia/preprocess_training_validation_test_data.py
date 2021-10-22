@@ -27,11 +27,12 @@ def write_out(entities, paragraph, data_example_id, f_out):
                 if paragraph[start - 1] == "-":
                     paragraph = paragraph[:start - 1] + " - " + paragraph[start:]
                     diff += 2
-                    entity['start'] += diff
-                    entity['end'] += diff
+                    entity['start'] += 2
+                    entity['end'] += 2
             except:
-                print(start, end, diff, entities, entity)
-                print("error", paragraph)
+                pass
+                #print(start, end, diff, entities, entity)
+                #print("error", paragraph)
 
     paragraph_tokenized = []
     gt_entities = []
@@ -48,7 +49,7 @@ def write_out(entities, paragraph, data_example_id, f_out):
 
     post_paragraph = word_tokenize(paragraph[pre:])
     paragraph_tokenized.extend(post_paragraph)
-
+    p = paragraph_tokenized
     template = {
         "data_example_id": data_example_id,
         "text": paragraph_tokenized,
@@ -74,11 +75,17 @@ def process_wiki_based_data(base_dataset, lang):
                         entities.append(anchor)
                     else:
                         if paragraph_id > 1 and len(entities) > 0:
-                            if len(data[d]['paragraphs'][paragraph_id])>0:
-                                write_out(entities, data[d]['paragraphs'][paragraph_id], data_example_id, f_out)
-                                data_example_id += 1
-                            else:
-                                print("toot short", data[d]['paragraphs'][paragraph_id])
+                            keep = True
+                            paragraph = data[d]['paragraphs'][paragraph_id]
+                            if len(data[d]['paragraphs'][paragraph_id])>10:
+                                for ent in entities:
+                                    start_id = ent['start']
+                                    end_id = ent['end']
+                                    if start_id >=len(paragraph)-1 or end_id > len(paragraph)-1 or start_id==end_id:
+                                        keep = False
+                                if keep:
+                                    write_out(entities, data[d]['paragraphs'][paragraph_id], data_example_id, f_out)
+                                    data_example_id += 1
                         paragraph_id = anchor['paragraph_id']
                         entities = [anchor]
     f_out.close()
@@ -161,7 +168,7 @@ if __name__ == "__main__":
 
     args, _ = parser.parse_known_args()
     #if args.data_type == "wiki":
-    #    process_wiki_based_data(args.base_dataset, args.lang)
+    #process_wiki_based_data(args.base_dataset, args.lang)
 
     if args.training_type=="pretraining":
         split_data(args.base_dataset, args.lang)
