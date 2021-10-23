@@ -9,7 +9,6 @@ from omegaconf import OmegaConf
 from pytorch_lightning.trainer import Trainer
 from pytorch_lightning import seed_everything
 import os
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 seed_everything(1)
 
 @hydra.main(config_path="conf", config_name="config")
