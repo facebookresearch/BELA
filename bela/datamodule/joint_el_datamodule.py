@@ -34,6 +34,7 @@ class EntityCatalogue:
                     idx += 1
                     line = json.loads(line)
                     self.idx[line["entity"]] = idx
+        logger.info(f"Number of entities {len(self.idx)}")
 
     def __len__(self):
         return len(self.idx)
