@@ -27,7 +27,7 @@ class EntityCatalogue:
             for idx, line in enumerate(fd):
                 ent_id = line.strip()
                 self.idx[ent_id] = idx
-        print(novel_entity_idx_path)
+        logger.info(f"Reading novel entity catalogue index {novel_entity_idx_path}")
         if novel_entity_idx_path != "":
             with open(novel_entity_idx_path, "r") as f:
                 for line in f:
