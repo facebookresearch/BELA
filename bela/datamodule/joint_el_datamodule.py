@@ -153,7 +153,7 @@ class JointELDataModule(LightningDataModule):
         val_path: str,
         test_path: str,
         ent_catalogue_idx_path: str,
-        novel_entity_idx_path: str = "",
+        novel_entity_idx_path: str,
         batch_size: int = 2,
         drop_last: bool = False,  # drop last batch if len(dataset) not multiple of batch_size
         num_workers: int = 0,  # increasing this bugs out right now
