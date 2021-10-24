@@ -23,6 +23,7 @@ def embed(params):
 
     # if params['path_novel_embeddings']!="":
     output_path = '.'.join(params['entity_dict_path'].split('.')[:-1])
+    print(output_path)
     torch.save(candidate_encoding, output_path + ".t7")
 
     return candidate_encoding
