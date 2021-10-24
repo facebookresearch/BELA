@@ -561,6 +561,7 @@ class JointELTask(LightningModule):
         if self.novel_entity_embeddings_path != "":
             updated_faiss_index = self.novel_entity_embeddings_path.split('.')[0] + "_updated_index.faiss"
             novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
+            logger.info(f"Loaded novel entity embeddings from {len(self.novel_entity_embeddings_path)}")
             if not os.path.isfile(updated_faiss_index):
 
                 phi = 0
