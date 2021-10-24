@@ -560,6 +560,7 @@ class JointELTask(LightningModule):
             updated_faiss_index = self.novel_entity_embeddings_path.split('.')[0] + "_updated_index.faiss"
             if not os.path.isfile(updated_faiss_index):
                 novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
+                phi = 0
                 for i, item in enumerate(self.embeddings):
                     norms = (item ** 2).sum()
                     phi = max(phi, norms)
@@ -573,7 +574,8 @@ class JointELTask(LightningModule):
                     hnsw_vectors = [np.hstack((doc_vector, aux_dims[i])) for i, doc_vector in enumerate(vectors)]
                     self.faiss_index.add(np.array(hnsw_vectors))
                     num_indexed += bs
-                    print("data indexed %d", num_indexed)
+                    logger.info("data indexed %d", num_indexed)
+                logger.info("Saved updated faiss index to %d", updated_faiss_index)
                 faiss.write_index(self.faiss_index, updated_faiss_index)
             else:
                 self.faiss_index = faiss.read_index(updated_faiss_index)
