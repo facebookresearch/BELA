@@ -1,7 +1,10 @@
+import logging
 import torch
 
 from bela.utils.blink_encoder import BiEncoderRanker
 from bela.utils.blink_encoder import encode_candidate, load_or_generate_candidate_pool
+
+logger = logging.getLogger(__name__)
 
 
 def embed(params):
@@ -21,9 +24,8 @@ def embed(params):
         silent=params["silent"],
     )
 
-    # if params['path_novel_embeddings']!="":
     output_path = '.'.join(params['entity_dict_path'].split('.')[:-1])
-    print(output_path)
+    logger.info("Saved novel entity embeddings to %d", output_path)
     torch.save(candidate_encoding, output_path + ".t7")
 
     return candidate_encoding
