@@ -567,6 +567,7 @@ class JointELTask(LightningModule):
                 buffer_size = 50000
                 bs = int(buffer_size)
                 num_indexed = 0
+                n = len(novel_entities_embeddings)
                 for i in range(0, n, bs):
                     vectors = novel_entities_embeddings[i: i + bs]
                     norms = [(doc_vector ** 2).sum() for doc_vector in vectors]
