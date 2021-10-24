@@ -554,6 +554,7 @@ class JointELTask(LightningModule):
         self.optimizer = hydra.utils.instantiate(self.optim_conf, self.parameters())
 
         self.embeddings = torch.load(self.embeddings_path)
+        logger.info(f"Number of entities {len(self.embeddings)}")
         self.faiss_index = faiss.read_index(self.faiss_index_path)
 
         # load embeddings of novel entities and add to faiss index
@@ -583,6 +584,7 @@ class JointELTask(LightningModule):
             else:
                 self.faiss_index = faiss.read_index(updated_faiss_index)
             self.embeddings = torch.cat((self.embeddings, novel_entities_embeddings), 0)
+            logger.info(f"Number of entities {len(self.embeddings)}")
 
     def sim_score(self, mentions_repr, entities_repr):
         # bs x emb_dim , bs x emb_dim
