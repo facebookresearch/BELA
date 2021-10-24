@@ -152,6 +152,7 @@ class BiEncoderRanker(torch.nn.Module):
         return embedding_context.cpu().detach()
 
     def encode_candidate(self, cands):
+        print(cands)
         token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
             cands, self.NULL_IDX
         )
