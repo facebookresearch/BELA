@@ -556,10 +556,12 @@ class JointELTask(LightningModule):
         self.embeddings = torch.load(self.embeddings_path)
         self.faiss_index = faiss.read_index(self.faiss_index_path)
 
+        # load embeddings of novel entities and add to faiss index
         if self.novel_entity_embeddings_path != "":
             updated_faiss_index = self.novel_entity_embeddings_path.split('.')[0] + "_updated_index.faiss"
+            novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
             if not os.path.isfile(updated_faiss_index):
-                novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
+
                 phi = 0
                 for i, item in enumerate(self.embeddings):
                     norms = (item ** 2).sum()
@@ -577,9 +579,10 @@ class JointELTask(LightningModule):
                     num_indexed += bs
                     logger.info("data indexed %d", num_indexed)
                 logger.info("Saved updated faiss index to %d", updated_faiss_index)
-                faiss.write_index(self.faiss_index, updated_faiss_index)
+                faiss.write_index(self.faiss_index, novel_entities_embeddings)
             else:
                 self.faiss_index = faiss.read_index(updated_faiss_index)
+            self.embeddings = torch.cat((self.embeddings, novel_entities_embeddings), 0)
 
     def sim_score(self, mentions_repr, entities_repr):
         # bs x emb_dim , bs x emb_dim
