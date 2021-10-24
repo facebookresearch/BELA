@@ -557,9 +557,26 @@ class JointELTask(LightningModule):
         self.faiss_index = faiss.read_index(self.faiss_index_path)
 
         if self.novel_entity_embeddings_path != "":
-            novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
-            self.faiss_index.add(novel_entities_embeddings.numpy())
-
+            updated_faiss_index = self.novel_entity_embeddings_path.split('.')[0] + "_updated_index.faiss"
+            if not os.path.isfile(updated_faiss_index):
+                novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
+                for i, item in enumerate(self.embeddings):
+                    norms = (item ** 2).sum()
+                    phi = max(phi, norms)
+                buffer_size = 50000
+                bs = int(buffer_size)
+                num_indexed = 0
+                for i in range(0, n, bs):
+                    vectors = novel_entities_embeddings[i: i + bs]
+                    norms = [(doc_vector ** 2).sum() for doc_vector in vectors]
+                    aux_dims = [np.sqrt(phi - norm) for norm in norms]
+                    hnsw_vectors = [np.hstack((doc_vector, aux_dims[i])) for i, doc_vector in enumerate(vectors)]
+                    self.faiss_index.add(np.array(hnsw_vectors))
+                    num_indexed += bs
+                    print("data indexed %d", num_indexed)
+                faiss.write_index(self.faiss_index, updated_faiss_index)
+            else:
+                self.faiss_index = faiss.read_index(updated_faiss_index)
 
     def sim_score(self, mentions_repr, entities_repr):
         # bs x emb_dim , bs x emb_dim
