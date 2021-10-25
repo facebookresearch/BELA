@@ -66,7 +66,7 @@ def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
 
     f_out = open(base_dataset + "/" + lang + "_internal_" + filter_subset + ".jsonl", "w")
     with open(base_dataset + "/" + lang + "_internal.jsonl") as f:
-        for line in tqdm.tqdem(f):
+        for line in tqdm.tqdm(f):
             line = json.loads(line)
             idx = line["id"]
             if idx in all_idcs:
