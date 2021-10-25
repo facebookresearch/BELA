@@ -581,7 +581,7 @@ class JointELTask(LightningModule):
                     num_indexed += bs
                     logger.info("data indexed %d", num_indexed)
                 logger.info("Saved updated faiss index to %d", updated_faiss_index)
-                faiss.write_index(self.faiss_index, novel_entities_embeddings)
+                faiss.write_index(self.faiss_index, updated_faiss_index)
             else:
                 self.faiss_index = faiss.read_index(updated_faiss_index)
             self.embeddings = torch.cat((self.embeddings, novel_entities_embeddings), 0)
