@@ -8,6 +8,8 @@ from pytorch_transformers.tokenization_bert import BertTokenizer
 
 from torch.utils.data import DataLoader, SequentialSampler
 
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 
 ENT_START_TAG = "[unused0]"
 ENT_END_TAG = "[unused1]"
@@ -113,7 +115,8 @@ class BiEncoderRanker(torch.nn.Module):
         self.model = self.model.to(self.device)
         self.data_parallel = params.get("data_parallel")
         if self.data_parallel:
-            self.model = torch.nn.DataParallel(self.model)
+            # self.model = torch.nn.DataParallel(self.model)
+            self.model = DDP(self.model, device_ids=[self.device])
 
     def load_model(self, fname, cpu=False):
         if cpu:
@@ -384,9 +387,10 @@ def encode_candidate(
         encode_batch_size,
         silent,
 ):
-
+    print("in")
     reranker.model.eval()
     device = reranker.device
+    print(device)
     sampler = SequentialSampler(candidate_pool)
     data_loader = DataLoader(
         candidate_pool, sampler=sampler, batch_size=encode_batch_size
