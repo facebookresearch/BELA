@@ -1,4 +1,5 @@
 import argparse
+import glob
 import tqdm
 import pickle
 import json
@@ -41,7 +42,34 @@ def process_wiki_based_data(base_dataset, lang):
                                     data_example_id += 1
                         paragraph_id = anchor['paragraph_id']
                         entities = [anchor]
+    f_out_l.close()
+
+def filter2id_set(base_dataset, lang, filter_subset="joint"):
+    all_idcs =[]
+    filenames = glob.glob(base_dataset + "/" + lang + '_matcha_' + filter_subset + '*.jsonl')
+    for filename in filenames:
+        with open(filename) as f:
+            for line in f:
+                line = json.loads(line)
+                idx = line["data_example_id"]
+                all_idcs.append(idx)
+
+    with open(base_dataset + "/" + lang + '_matcha_test.jsonl') as f:
+        for line in f:
+            line = json.loads(line)
+            idx = line["data_example_id"]
+            all_idcs.append(idx)
+
+    f_out = open(base_dataset + "/" + lang + "_internal_joint.jsonl", "w")
+    with open(base_dataset + "/" + lang + "_internal.jsonl") as f:
+        for line in f:
+            line = json.loads(line)
+            idx = line["id"]
+            if idx in all_idcs
+                f_out.write(json.dumps(line))
+                f_out.write("\n")
     f_out.close()
+
 
 
 if __name__ == "__main__":
@@ -67,5 +95,5 @@ if __name__ == "__main__":
 
     args, _ = parser.parse_known_args()
     #if args.data_type == "wiki":
-    process_wiki_based_data(args.base_dataset, args.lang)
-    #filter2id_set(args.base_dataset, args.lang)
+    #process_wiki_based_data(args.base_dataset, args.lang)
+    filter2id_set(args.base_dataset, args.lang)
