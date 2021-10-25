@@ -7,9 +7,7 @@ import tqdm
 import os
 
 
-def filter_data(base_path, url, name, date):
-    year = int(date.split('_')[0])
-    month = int(date.split('_')[1])
+def filter_data(base_path, url, name):
     filenames = glob.glob(base_path + "/metadata/en_meta_part_*_.jsonl")
     idx_dict = {}
 
@@ -23,14 +21,17 @@ def filter_data(base_path, url, name, date):
                 if url in line['uri']:
                     try:
                         article = NewsPlease.from_url(line['uri'])
-                        line["timestamp"] = article.date_publish
-                        if line["timestamp"]:
-                            if line["timestamp"].year > year:
+                        current_year = article.date_publish.year
+                        current_month = article.date_publish.month
+                        line["timestamp"] = str(current_year) + '_' + str(current_month)
+                        idx_dict[idx].append(line)
+                        """if line["timestamp"]:
+                            if current_year > year:
                                 idx_dict[idx].append(line)
-                            elif line["timestamp"].year >= year and line["timestamp"].month >= month:
+                            elif current_year >= year and current_month >= month:
                                 idx_dict[idx].append(line)
                             else:
-                                idx_dict[idx].append(line)
+                                idx_dict[idx].append(line)"""
                     except:
                         pass
 
@@ -39,7 +40,6 @@ def filter_data(base_path, url, name, date):
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--url",
@@ -55,9 +55,5 @@ if __name__ == "__main__":
         "--base_path",
         type=str,
     )
-    parser.add_argument(
-        "--date",
-        type=str,
-    )
     args, _ = parser.parse_known_args()
-    filter_data(args.base_path, args.url, args.name, args.date)
+    filter_data(args.base_path, args.url, args.name)
