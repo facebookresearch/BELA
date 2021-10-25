@@ -95,7 +95,7 @@ def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
                         current_length += len(sentence_tokenized)
                         current_paragraph += sentence
                         num += 1
-                if len(current_paragraph)==0:
+                if len(current_paragraph)!=0:
                     data = {"text": current_paragraph, "id": str(idx) + "_" + str(num)}
                     f_out.write(json.dumps(data))
                     num_new_line += 1
