@@ -65,7 +65,7 @@ def filter2id_set(base_dataset, lang, filter_subset="joint"):
         for line in f:
             line = json.loads(line)
             idx = line["id"]
-            if idx in all_idcs
+            if idx in all_idcs:
                 f_out.write(json.dumps(line))
                 f_out.write("\n")
     f_out.close()
