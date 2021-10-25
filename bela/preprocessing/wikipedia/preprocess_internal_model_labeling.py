@@ -1,12 +1,7 @@
 import argparse
-import nltk
 import tqdm
-from nltk.tokenize import word_tokenize
 import pickle
 import json
-import random
-
-nltk.download('punkt')
 
 def write_out_for_labeling(paragraph, data_example_id, f_out):
     paragraph = paragraph.strip()
@@ -14,58 +9,11 @@ def write_out_for_labeling(paragraph, data_example_id, f_out):
     f_out.write(json.dumps(output))
     f_out.write("\n")
 
-def write_out(entities, paragraph, data_example_id, f_out):
-    paragraph = paragraph.strip()
-    diff = 0
-    for entity in entities:
-        entity['start'] += diff
-        entity['end'] += diff
-
-        start = int(entity['start'])
-        end = int(entity['end'])
-        if end < len(paragraph):
-            if paragraph[end] == "-":
-                paragraph = paragraph[:end] + " - " + paragraph[end + 1:]
-                diff += 2
-        if start!=0:
-            try:
-                if paragraph[start - 1] == "-":
-                    paragraph = paragraph[:start - 1] + " - " + paragraph[start:]
-                    diff += 2
-                    entity['start'] += 2
-                    entity['end'] += 2
-            except:
-                pass
-
-    paragraph_tokenized = []
-    gt_entities = []
-    pre = 0
-    for entity in entities:
-        start = int(entity['start'])
-        end = int(entity['end'])
-        pre_paragraph = word_tokenize(paragraph[pre:start])
-        entity_tokenized = word_tokenize(paragraph[start:end])
-        pre = end
-        paragraph_tokenized.extend(pre_paragraph)
-        gt_entities.append([len(paragraph_tokenized), len(entity_tokenized), entity['text'], "wiki"])
-        paragraph_tokenized.extend(entity_tokenized)
-
-    post_paragraph = word_tokenize(paragraph[pre:])
-    paragraph_tokenized.extend(post_paragraph)
-    p = paragraph_tokenized
-    template = {
-        "data_example_id": data_example_id,
-        "text": paragraph_tokenized,
-        "gt_entities": gt_entities}
-    f_out.write(json.dumps(template))
-    f_out.write("\n")
-
 
 def process_wiki_based_data(base_dataset, lang):
 
     with open(base_dataset + "/" + lang + "/" + lang + "wiki0.pkl", "rb") as f:
         data = pickle.load(f)
-    f_out = open(base_dataset + "/" + lang + "_matcha.jsonl", "w")
     f_out_l = open(base_dataset + "/" + lang + "_internal.jsonl", "w")
     data_example_id = 0
     for d in tqdm.tqdm(data):
@@ -120,3 +68,4 @@ if __name__ == "__main__":
     args, _ = parser.parse_known_args()
     #if args.data_type == "wiki":
     process_wiki_based_data(args.base_dataset, args.lang)
+    #filter2id_set(args.base_dataset, args.lang)
