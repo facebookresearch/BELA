@@ -20,7 +20,7 @@ def main(cfg: MainConfig):
         # TODO: externalize into conf folder
         params = {'lower_case': True,
                   'path_to_model': '/data/home/kassner/BELA/data/blink/biencoder_wiki_large.bin',
-                  'data_parallel': True,
+                  'data_parallel': False,
                   'no_cuda': False,
                   'bert_model': 'bert-large-uncased',
                   'lowercase': True,
@@ -30,7 +30,7 @@ def main(cfg: MainConfig):
                   'entity_dict_path': cfg.datamodule.novel_entity_idx_path,
                   'debug': False,
                   'max_cand_length': 128,
-                  'encode_batch_size': 8,
+                  'encode_batch_size': 32,
                   'silent': False,
                   }
         cfg.task.novel_entity_embeddings_path = '.'.join(params['entity_dict_path'].split('.')[:-1]) + ".t7"
