@@ -125,7 +125,7 @@ def extract_pages(filename):
     return docs
 
 
-def split_paragraph_max_seq_length(text, f_out):
+def split_paragraph_max_seq_length(text, f_out, tokenizer, seq_length=256):
     current_paragraph = ""
     current_length = 0
     sentences = text.split(".")
