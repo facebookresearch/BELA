@@ -17,8 +17,8 @@ def filter_data(base_path, name):
         file_path = base_path + "/splits/en_part_" + str(idx) + ".txt.gz"
         j = 0
         idx_dict[idx][j]['text'] = ''
-        current_offset = idx_dict[idx]["old"][j]['offset']
-        current_nb_sentences = idx_dict[idx]["old"][j]['nb_sentences']
+        current_offset = idx_dict[idx][j]['offset']
+        current_nb_sentences = idx_dict[idx][j]['nb_sentences']
         if os.path.exists(file_path):
             with gzip.open(file_path, 'rb') as f:
                 for i, line in enumerate(f):
