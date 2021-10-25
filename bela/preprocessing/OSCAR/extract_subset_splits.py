@@ -7,7 +7,7 @@ import tqdm
 import os
 
 
-def filter_data(base_path, url, name):
+def filter_data(base_path, name):
     with open(base_path + "/subset/" + name + ".json") as f:
         idx_dict = json.load(f)
 
@@ -53,4 +53,4 @@ if __name__ == "__main__":
         type=str,
     )
     args, _ = parser.parse_known_args()
-    filter_data(args.base_path, args.url, args.name)
+    filter_data(args.base_path, args.name)
