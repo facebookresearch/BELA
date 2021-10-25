@@ -4,6 +4,8 @@ import tqdm
 import pickle
 import json
 
+from transformers import AutoTokenizer
+
 def write_out_for_labeling(paragraph, data_example_id, f_out):
     paragraph = paragraph.strip()
     output = {'text': paragraph, 'id': data_example_id}
@@ -44,32 +46,41 @@ def process_wiki_based_data(base_dataset, lang):
                         entities = [anchor]
     f_out_l.close()
 
-def filter2id_set(base_dataset, lang, filter_subset="joint"):
-    all_idcs =[]
+def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
+    tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
+    all_idcs = set()
     filenames = glob.glob(base_dataset + "/" + lang + '_matcha_' + filter_subset + '*.jsonl')
     for filename in filenames:
         with open(filename) as f:
             for line in f:
                 line = json.loads(line)
                 idx = line["data_example_id"]
-                all_idcs.append(idx)
+                all_idcs.add(idx)
 
     with open(base_dataset + "/" + lang + '_matcha_test.jsonl') as f:
         for line in f:
             line = json.loads(line)
             idx = line["data_example_id"]
-            all_idcs.append(idx)
+            all_idcs.add(idx)
+    print("Number of entities: ", len(all_idcs))
 
-    f_out = open(base_dataset + "/" + lang + "_internal_joint.jsonl", "w")
+    f_out = open(base_dataset + "/" + lang + "_internal_" + filter_subset + ".jsonl", "w")
     with open(base_dataset + "/" + lang + "_internal.jsonl") as f:
         for line in f:
             line = json.loads(line)
             idx = line["id"]
             if idx in all_idcs:
-                f_out.write(json.dumps(line))
-                f_out.write("\n")
+                output = {}
+                line_tokenized = tokenizer.tokenize(line['text'])
+                if len(line_tokenized) > seq_length:
+                    for i in range(0, len(line_tokenized), seq_length):
+                        output['text'] = line_tokenized[i: i + seq_length]
+                        print(output['text'])
+                        input('')
+                        output['id'] = idx + "_" + str(sub_idx)
+                        f_out.write(json.dumps(output))
+                        f_out.write("\n")
     f_out.close()
-
 
 
 if __name__ == "__main__":
