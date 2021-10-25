@@ -51,7 +51,7 @@ def prep4labeling(data_dict, base_path, name):
     tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
     for idx in data_dict:
         for article in data_dict[idx]:
-            split_paragraph_max_seq_length(article, f_out, tokenizer)
+            split_paragraph_max_seq_length(article['text'], f_out, idx, tokenizer)
     f_out.close()
 
 
@@ -68,8 +68,6 @@ if __name__ == "__main__":
     )
     args, _ = parser.parse_known_args()
     if not os.path.exists(args.base_path + "/subset/" + args.name + "_filled.json"):
-        print("Collecting text")
-        input("")
         idx_dict = filter_data(args.base_path, args.name)
     else:
         with open(args.base_path + "/subset/" + args.name + "_filled.json") as f:
