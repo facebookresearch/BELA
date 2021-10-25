@@ -14,7 +14,7 @@ def filter_data(base_path, name):
     # collect text
     num_articles = 0
     for idx in tqdm.tqdm(idx_dict):
-        file_path = path_oscar + "en_part_" + str(idx) + ".txt.gz"
+        file_path = base_path + "/splits/en_part_" + str(idx) + ".txt.gz"
         j = 0
         idx_dict[idx][j]['text'] = ''
         current_offset = idx_dict[idx]["old"][j]['offset']
