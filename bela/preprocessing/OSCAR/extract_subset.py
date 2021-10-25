@@ -36,7 +36,7 @@ def filter_data(base_path, url, name):
                         pass
 
     with open(base_path + "/subset/" + name + ".json", "w") as f:
-        json.dump(idx_dict)
+        json.dump(idx_dict, f)
 
 
 if __name__ == "__main__":
