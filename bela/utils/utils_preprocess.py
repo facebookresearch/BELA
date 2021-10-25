@@ -1,6 +1,7 @@
 import bs4
 from bs4 import BeautifulSoup
 import html
+import json
 from urllib.parse import unquote
 import xml.etree.ElementTree as ET
 
@@ -73,6 +74,7 @@ def chunk_it(seq, num):
 
     return chunks
 
+
 def extract_pages(filename):
     print(filename)
     docs = {}
@@ -121,3 +123,26 @@ def extract_pages(filename):
                         print(line, filename)
 
     return docs
+
+
+def split_paragraph_max_seq_length(text, f_out):
+    current_paragraph = ""
+    current_length = 0
+    sentences = text.split(".")
+    num = 0
+    for sentence in sentences:
+        sentence_tokenized = tokenizer.tokenize(sentence)
+        if len(sentence_tokenized) > seq_length:
+            continue
+        if current_length + len(sentence_tokenized) <= seq_length:
+            current_length += len(sentence_tokenized)
+            current_paragraph += sentence
+        else:
+            data = {"text": current_paragraph, "id": str(idx) + "_" + str(num)}
+            f_out.write(json.dumps(data))
+            f_out.write("\n")
+            current_paragraph = ""
+            current_length = 0
+            current_length += len(sentence_tokenized)
+            current_paragraph += sentence
+            num += 1
