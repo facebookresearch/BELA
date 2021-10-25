@@ -68,6 +68,8 @@ if __name__ == "__main__":
     )
     args, _ = parser.parse_known_args()
     if not os.path.exists(args.base_path + "/subset/" + args.name + "_filled.json"):
+        print("Collecting text")
+        input("")
         idx_dict = filter_data(args.base_path, args.name)
     else:
         with open(args.base_path + "/subset/" + args.name + "_filled.json") as f:
