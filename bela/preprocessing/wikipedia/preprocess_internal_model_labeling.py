@@ -62,24 +62,33 @@ def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
             line = json.loads(line)
             idx = line["data_example_id"]
             all_idcs.add(idx)
-    print("Number of entities: ", len(all_idcs))
+    print("Number of samples: ", len(all_idcs))
 
     f_out = open(base_dataset + "/" + lang + "_internal_" + filter_subset + ".jsonl", "w")
     with open(base_dataset + "/" + lang + "_internal.jsonl") as f:
-        for line in f:
+        for line in tqdm.tqdem(f):
             line = json.loads(line)
             idx = line["id"]
             if idx in all_idcs:
-                output = {}
-                line_tokenized = tokenizer.tokenize(line['text'])
-                if len(line_tokenized) > seq_length:
-                    for i in range(0, len(line_tokenized), seq_length):
-                        output['text'] = line_tokenized[i: i + seq_length]
-                        print(output['text'])
-                        input('')
-                        output['id'] = idx + "_" + str(sub_idx)
-                        f_out.write(json.dumps(output))
+                current_paragraph = ""
+                current_length = 0
+                sentences = line['text'].split(".")
+                num = 0
+                for sentence in sentences:
+                    sentence_tokenized = tokenizer.tokenize(sentence)
+                    if current_length + len(sentence_tokenized) <= seq_length:
+                        current_length += len(sentence_tokenized)
+                        current_paragraph += sentence
+                    else:
+                        data = {"text": current_paragraph, "id": idx + "_" + str(num)}
+                        f_out.write(json.dum(data))
                         f_out.write("\n")
+                        current_paragraph = ""
+                        current_length = 0
+                        current_length += len(sentence_tokenized)
+                        current_paragraph += sentence
+                        num += 1
+
     f_out.close()
 
 
