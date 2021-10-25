@@ -63,7 +63,8 @@ def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
             idx = line["data_example_id"]
             all_idcs.add(idx)
     print("Number of samples: ", len(all_idcs))
-
+    num_in = 0
+    num_new_line = 0
     f_out = open(base_dataset + "/" + lang + "_internal_" + filter_subset + ".jsonl", "w")
     with open(base_dataset + "/" + lang + "_internal.jsonl") as f:
         for line in tqdm.tqdm(f):
@@ -74,6 +75,8 @@ def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
                 current_length = 0
                 sentences = line['text'].split(".")
                 num = 0
+                num_in += 1
+
                 for sentence in sentences:
                     sentence_tokenized = tokenizer.tokenize(sentence)
                     if len(sentence_tokenized) > seq_length:
@@ -85,12 +88,14 @@ def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
                     else:
                         data = {"text": current_paragraph, "id": str(idx) + "_" + str(num)}
                         f_out.write(json.dumps(data))
+                        num_new_line +=1
                         f_out.write("\n")
                         current_paragraph = ""
                         current_length = 0
                         current_length += len(sentence_tokenized)
                         current_paragraph += sentence
                         num += 1
+                print(num_in, num_new_line)
 
     f_out.close()
 
