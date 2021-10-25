@@ -49,22 +49,22 @@ def process_wiki_based_data(base_dataset, lang):
 def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
     tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
     all_idcs = set()
-    filenames = glob.glob(base_dataset + "/" + lang + '_matcha_' + filter_subset + '*.jsonl')
+    """filenames = glob.glob(base_dataset + "/" + lang + '_matcha_' + filter_subset + '*.jsonl')
     for filename in filenames:
         with open(filename) as f:
             for line in f:
                 line = json.loads(line)
                 idx = line["data_example_id"]
-                all_idcs.add(idx)
+                all_idcs.add(idx)"""
 
-    '''with open(base_dataset + "/" + lang + '_matcha_test.jsonl') as f:
+    with open(base_dataset + "/" + lang + '_matcha_test.jsonl') as f:
         for line in f:
             line = json.loads(line)
             idx = line["data_example_id"]
-            all_idcs.add(idx)'''
+            all_idcs.add(idx)
     print("Number of samples: ", len(all_idcs))
 
-    f_out = open(base_dataset + "/" + lang + "_internal_" + filter_subset + ".jsonl", "w")
+    f_out = open(base_dataset + "/" + lang + "_internal_" + filter_subset + "_test.jsonl", "w")
     with open(base_dataset + "/" + lang + "_internal.jsonl") as f:
         for line in tqdm.tqdm(f):
             line = json.loads(line)
