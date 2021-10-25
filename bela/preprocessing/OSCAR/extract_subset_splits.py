@@ -5,6 +5,9 @@ import glob
 from newsplease import NewsPlease
 import tqdm
 import os
+from transformers import AutoTokenizer
+
+from bela.utils.utils_preprocess import split_paragraph_max_seq_length
 
 
 def filter_data(base_path, name):
@@ -36,9 +39,20 @@ def filter_data(base_path, name):
                             idx_dict[idx][j]['text'] = ''
                             current_offset = idx_dict[idx][j]['offset']
                             current_nb_sentences = idx_dict[idx][j]['nb_sentences']
-            print(num_articles)
+
     with open(base_path + "/subset/" + name + "_filled.json", "w") as f:
         json.dump(idx_dict, f)
+
+    return idx_dict
+
+
+def prep4labeling(data_dict, base_path, name):
+    f_out = open(base_path + "/subset/" + name + '_4labeling.jsonl', 'w')
+    tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
+    for idx in data_dict:
+        for article in data_dict[idx]:
+            split_paragraph_max_seq_length(article, f_out, tokenizer)
+    f_out.close()
 
 
 if __name__ == "__main__":
@@ -53,4 +67,9 @@ if __name__ == "__main__":
         type=str,
     )
     args, _ = parser.parse_known_args()
-    filter_data(args.base_path, args.name)
+    if not os.path.exists(args.base_path + "/subset/" + args.name + "_filled.json"):
+        idx_dict = filter_data(args.base_path, args.name)
+    else:
+        with open(args.base_path + "/subset/" + args.name + "_filled.json") as f:
+            idx_dict = json.load(f)
+    prep4labeling(idx_dict, args.base_path, args.name)
