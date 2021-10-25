@@ -51,7 +51,7 @@ def prep4labeling(data_dict, base_path, name):
     tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
     for idx in data_dict:
         for article in data_dict[idx]:
-            split_paragraph_max_seq_length(article['text'], f_out, idx, tokenizer)
+            split_paragraph_max_seq_length(article['text'], f_out, tokenizer, idx)
     f_out.close()
 
 
