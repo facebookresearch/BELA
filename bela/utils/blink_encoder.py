@@ -113,10 +113,10 @@ class BiEncoderRanker(torch.nn.Module):
             self.load_model(model_path)
 
         self.model = self.model.to(self.device)
-        self.data_parallel = params.get("data_parallel")
+        '''self.data_parallel = params.get("data_parallel")
         if self.data_parallel:
             # self.model = torch.nn.DataParallel(self.model)
-            self.model = DDP(self.model, device_ids=[self.device])
+            self.model = DDP(self.model, device_ids=[self.device])'''
 
     def load_model(self, fname, cpu=False):
         if cpu:
