@@ -76,6 +76,8 @@ def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
                 num = 0
                 for sentence in sentences:
                     sentence_tokenized = tokenizer.tokenize(sentence)
+                    if len(sentence_tokenized) > seq_length:
+                        continue
                     if current_length + len(sentence_tokenized) <= seq_length:
                         current_length += len(sentence_tokenized)
                         current_paragraph += sentence
