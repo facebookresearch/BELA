@@ -24,10 +24,7 @@ def filter_data(idx_dict, idx, base_path):
                 if i in range(current_offset, current_offset + current_nb_sentences):
                     text = line.decode('UTF-8').strip()
                     if 'image caption' not in text:
-                        if idx_dict[idx][j]['text']=='':
-                            text = text.strip()
                         idx_dict[idx][j]['text'] += text
-                        idx_dict[idx][j]['text'] += "."
                 if i == current_offset + current_nb_sentences:
                     if j >= len(idx_dict[idx]) - 1:
                         break
