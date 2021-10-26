@@ -34,13 +34,17 @@ def filter_data(idx_dict, idx, base_path):
                         current_offset = idx_dict[idx][j]['offset']
                         current_nb_sentences = idx_dict[idx][j]['nb_sentences']
 
+
 def prep4labeling(data_dict, base_path, name):
     f_out = open(base_path + "/subset/" + name + '_4labeling.jsonl', 'w')
     tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
     for idx in data_dict:
+        num_article = 0
         for article in data_dict[idx]:
             if 'text' in article and len(article['text'])!=0:
-                split_paragraph_max_seq_length(article['text'], f_out, tokenizer, idx)
+                identifier = str(idx) + "_" + str(num_article)
+                split_paragraph_max_seq_length(article['text'], f_out, tokenizer, identifier)
+                num_article += 1
     f_out.close()
 
 
