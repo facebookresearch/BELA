@@ -6,44 +6,37 @@ from newsplease import NewsPlease
 import tqdm
 import os
 from transformers import AutoTokenizer
+import concurrent.futures
 
 from bela.utils.utils_preprocess import split_paragraph_max_seq_length
 
 
-def filter_data(base_path, name):
-    with open(base_path + "/subset/" + name + ".json") as f:
-        idx_dict = json.load(f)
+def filter_data(idx_dict, idx, base_path, name):
 
     # collect text
-    num_articles = 0
-    for idx in tqdm.tqdm(idx_dict):
-        file_path = base_path + "/splits/en_part_" + str(idx) + ".txt.gz"
-        j = 0
-        idx_dict[idx][j]['text'] = ''
-        current_offset = idx_dict[idx][j]['offset']
-        current_nb_sentences = idx_dict[idx][j]['nb_sentences']
-        if os.path.exists(file_path):
-            with gzip.open(file_path, 'rb') as f:
-                for i, line in enumerate(f):
-                    if i in range(current_offset, current_offset + current_nb_sentences):
-                        text = line.decode('UTF-8').strip()
-                        if 'image caption' not in text:
-                            if idx_dict[idx][j]['text']=='':
-                                text = text.strip()
-                            idx_dict[idx][j]['text'] += text
-                            idx_dict[idx][j]['text'] += "."
-                    if i == current_offset + current_nb_sentences:
-                        if j >= len(idx_dict[idx]) - 1:
-                            break
-                        else:
-                            j += 1
-                            num_articles += 1
-                            idx_dict[idx][j]['text'] = ''
-                            current_offset = idx_dict[idx][j]['offset']
-                            current_nb_sentences = idx_dict[idx][j]['nb_sentences']
-
-    with open(base_path + "/subset/" + name + "_filled.json", "w") as f:
-        json.dump(idx_dict, f)
+    file_path = base_path + "/splits/en_part_" + str(idx) + ".txt.gz"
+    j = 0
+    idx_dict[idx][j]['text'] = ''
+    current_offset = idx_dict[idx][j]['offset']
+    current_nb_sentences = idx_dict[idx][j]['nb_sentences']
+    if os.path.exists(file_path):
+        with gzip.open(file_path, 'rb') as f:
+            for i, line in enumerate(f):
+                if i in range(current_offset, current_offset + current_nb_sentences):
+                    text = line.decode('UTF-8').strip()
+                    if 'image caption' not in text:
+                        if idx_dict[idx][j]['text']=='':
+                            text = text.strip()
+                        idx_dict[idx][j]['text'] += text
+                        idx_dict[idx][j]['text'] += "."
+                if i == current_offset + current_nb_sentences:
+                    if j >= len(idx_dict[idx]) - 1:
+                        break
+                    else:
+                        j += 1
+                        idx_dict[idx][j]['text'] = ''
+                        current_offset = idx_dict[idx][j]['offset']
+                        current_nb_sentences = idx_dict[idx][j]['nb_sentences']
 
     return idx_dict
 
@@ -71,7 +64,14 @@ if __name__ == "__main__":
     )
     args, _ = parser.parse_known_args()
     if not os.path.exists(args.base_path + "/subset/" + args.name + "_filled.json"):
-        idx_dict = filter_data(args.base_path, args.name)
+        with open(args.base_path + "/subset/" + args.name + ".json") as f:
+            idx_dict = json.load(f)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            # Start the load operations and mark each future with its URL
+            idx_dict = {executor.submit(filter_data, idx_dict, idx, args.base_path, args.name): idx for idx in idx_dict}
+        with open(base_path + "/subset/" + name + "_filled.json", "w") as f:
+            json.dump(idx_dict, f)
+
     else:
         with open(args.base_path + "/subset/" + args.name + "_filled.json") as f:
             idx_dict = json.load(f)
