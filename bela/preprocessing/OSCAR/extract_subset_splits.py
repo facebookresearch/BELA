@@ -26,10 +26,12 @@ def filter_data(base_path, name):
             with gzip.open(file_path, 'rb') as f:
                 for i, line in enumerate(f):
                     if i in range(current_offset, current_offset + current_nb_sentences):
-                        idx_dict[idx][j]['text'] += " "
                         text = line.decode('UTF-8').strip()
                         if 'image caption' not in text:
+                            if idx_dict[idx][j]['text']=='':
+                                text = text.strip()
                             idx_dict[idx][j]['text'] += text
+                            idx_dict[idx][j]['text'] += "."
                     if i == current_offset + current_nb_sentences:
                         if j >= len(idx_dict[idx]) - 1:
                             break
