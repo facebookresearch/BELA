@@ -11,7 +11,8 @@ import concurrent.futures
 from bela.utils.utils_preprocess import split_paragraph_max_seq_length
 
 
-def filter_data(idx_dict, idx, base_path, name):
+def filter_data(idx_dict, idx, base_path):
+    print(idx)
 
     # collect text
     file_path = base_path + "/splits/en_part_" + str(idx) + ".txt.gz"
@@ -68,7 +69,7 @@ if __name__ == "__main__":
         with open(dict_path + ".json") as f:
             idx_dict = json.load(f)
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-            idx_dict = {executor.submit(filter_data, idx_dict, idx, args.base_path, args.name): idx for idx in idx_dict}
+            idx_dict = {executor.submit(filter_data, idx_dict, idx, args.base_path): idx for idx in idx_dict}
         with open(dict_path + "_filled.json", "w") as f:
             json.dump(idx_dict, f)
 
