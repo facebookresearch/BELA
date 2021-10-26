@@ -460,6 +460,7 @@ class JointELTask(LightningModule):
         optim: OptimConf,
         faiss_index_path: str,
         novel_entity_embeddings_path: Optional[str] = None,
+        # save_mention_embeddings: Optional[bool] = False,
         embeddings_path: str = "",
         n_retrieve_candidates: int = 10,
         eval_compute_recall_at: Tuple[int] = (1, 10, 100),
@@ -487,6 +488,7 @@ class JointELTask(LightningModule):
 
         self.warmup_steps = warmup_steps
         self.load_from_checkpoint = load_from_checkpoint
+        self.save_mention_embeddings = save_mention_embeddings
 
         self.disambiguation_loss = nn.CrossEntropyLoss()
         self.md_loss = nn.BCEWithLogitsLoss()
@@ -554,11 +556,10 @@ class JointELTask(LightningModule):
         self.optimizer = hydra.utils.instantiate(self.optim_conf, self.parameters())
 
         self.embeddings = torch.load(self.embeddings_path)
-        logger.info(f"Number of entities {len(self.embeddings)}")
         self.faiss_index = faiss.read_index(self.faiss_index_path)
 
         # load embeddings of novel entities and add to faiss index
-        if self.novel_entity_embeddings_path != "":
+        if self.novel_entity_embeddings_path is not None:
             updated_faiss_index = self.novel_entity_embeddings_path.split('.')[0] + "_updated_index.faiss"
             novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
             logger.info(f"Loaded novel entity embeddings from {len(self.novel_entity_embeddings_path)}")
@@ -1347,3 +1348,68 @@ class JointELTask(LightningModule):
 
     def test_epoch_end(self, test_outputs):
         self._eval_epoch_end(test_outputs, "test")
+
+
+class ClusterTask(LightningModule):
+    def __init__(
+        self,
+        model: ModelConf,
+        load_from_checkpoint: Optional[str] = None,
+    ):
+        super().__init__()
+
+        # encoder setup
+        self.encoder_conf = model
+        self.load_from_checkpoint = load_from_checkpoint
+
+    @staticmethod
+    def _get_encoder_state(state, encoder_name):
+        encoder_state = OrderedDict()
+        for key, value in state["state_dict"].items():
+            if key.startswith(encoder_name):
+                encoder_state[key[len(encoder_name) + 1 :]] = value
+        return encoder_state
+
+    def setup(self, stage: str):
+        if self.load_from_checkpoint is not None:
+            logger.info(f"Load encoders state from {self.load_from_checkpoint}")
+            with open(self.load_from_checkpoint, "rb") as f:
+                checkpoint = torch.load(f, map_location=torch.device("cpu"))
+
+            encoder_state = self._get_encoder_state(checkpoint, "encoder")
+            self.encoder.load_state_dict(encoder_state)
+
+            span_encoder_state = self._get_encoder_state(checkpoint, "span_encoder")
+            self.span_encoder.load_state_dict(span_encoder_state)
+
+    def embedding_step(self, batch, batch_idx):
+        """
+        This receives queries, each with mutliple contexts.
+        """
+        text_inputs = batch["input_ids"]  # bs x mention_len
+        text_pad_mask = batch["attention_mask"]
+        gold_mention_offsets = batch["mention_offsets"]  # bs x max_mentions_num
+        gold_mention_lengths = batch["mention_lengths"]  # bs x max_mentions_num
+
+        # mention representations (bs x max_mentions_num x embedding_dim)
+        text_encodings, mentions_repr = self(
+            text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
+        )
+        print(mentions_repr)
+
+
+    def forward(
+        self,
+        text_inputs,
+        attention_mask,
+        mention_offsets,
+        mention_lengths,
+    ):
+        # encode query and contexts
+        _, last_layer = self.encoder(text_inputs, attention_mask)
+        text_encodings = last_layer
+
+        mentions_repr = self.span_encoder(
+            text_encodings, mention_offsets, mention_lengths
+        )
+        return text_encodings, mentions_repr
