@@ -63,16 +63,16 @@ if __name__ == "__main__":
         type=str,
     )
     args, _ = parser.parse_known_args()
-    if not os.path.exists(args.base_path + "/subset/" + args.name + "_filled.json"):
-        with open(args.base_path + "/subset/" + args.name + ".json") as f:
+    dict_path = args.base_path + "/subset/" + args.name
+    if not os.path.exists(dict_path + "_filled.json"):
+        with open(dict_path + ".json") as f:
             idx_dict = json.load(f)
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-            # Start the load operations and mark each future with its URL
             idx_dict = {executor.submit(filter_data, idx_dict, idx, args.base_path, args.name): idx for idx in idx_dict}
-        with open(base_path + "/subset/" + name + "_filled.json", "w") as f:
+        with open(dict_path + "_filled.json", "w") as f:
             json.dump(idx_dict, f)
 
     else:
-        with open(args.base_path + "/subset/" + args.name + "_filled.json") as f:
+        with open(dict_path + "_filled.json") as f:
             idx_dict = json.load(f)
     prep4labeling(idx_dict, args.base_path, args.name)
