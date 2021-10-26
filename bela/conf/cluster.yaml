@@ -1,0 +1,19 @@
+defaults:
+  - config
+  - datamodule: joint_el_datamodule
+  - task/transform: joint_el_bert_transform
+  - task/model: bert
+  - task/optim: adamw
+  - trainer: gpu_1_host
+
+task:
+  _target_: bela.task.joint_el_task.ClusterTask
+  load_from_checkpoint: /checkpoints/kassner/hydra_outputs/main/2021-10-22-150101/0/lightning_logs/version_360818/checkpoints/checkpoint_best.ckpt
+
+datamodule:
+  train_path: /fsx/kassner/wikipedia/en_matcha_jointtrain.jsonl
+  val_path: /fsx/kassner/wikipedia/en_matcha_jointdev.jsonl
+  test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
+
+checkpoint_callback:
+    monitor: valid_boe_f1
