@@ -459,7 +459,7 @@ class JointELTask(LightningModule):
         datamodule: DataModuleConf,
         optim: OptimConf,
         faiss_index_path: str,
-        novel_entity_embeddings_path: str,
+        novel_entity_embeddings_path: Optional[str] = None,
         embeddings_path: str = "",
         n_retrieve_candidates: int = 10,
         eval_compute_recall_at: Tuple[int] = (1, 10, 100),
@@ -469,7 +469,7 @@ class JointELTask(LightningModule):
         train_el_classifier: bool = True,
         train_saliency: bool = True,
         md_threshold: float = 0.2,
-        ue_threshold: float = 0.0,
+        # ue_threshold: float = 0.0,
         el_threshold: float = 0.4,
         saliency_threshold: float = 0.4,
     ):
