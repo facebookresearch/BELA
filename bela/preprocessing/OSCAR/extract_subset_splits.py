@@ -69,7 +69,7 @@ if __name__ == "__main__":
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
             result = {executor.submit(filter_data, idx_dict, idx, args.base_path): idx for idx in [1013]}
         with open(dict_path + "_filled.json", "w") as f:
-            json.dump(result.result(), f)
+            json.dump(result, f)
 
     else:
         with open(dict_path + "_filled.json") as f:
