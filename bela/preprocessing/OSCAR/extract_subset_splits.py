@@ -39,8 +39,6 @@ def filter_data(idx_dict, idx, base_path):
                         current_offset = idx_dict[idx][j]['offset']
                         current_nb_sentences = idx_dict[idx][j]['nb_sentences']
 
-    return idx_dict
-
 
 def prep4labeling(data_dict, base_path, name):
     f_out = open(base_path + "/subset/" + name + '_4labeling.jsonl', 'w')
@@ -68,8 +66,8 @@ if __name__ == "__main__":
     if not os.path.exists(dict_path + "_filled.json"):
         with open(dict_path + ".json") as f:
             idx_dict = json.load(f)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-            idx_dict = {executor.submit(filter_data, idx_dict, idx, args.base_path): idx for idx in idx_dict}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+            {executor.submit(filter_data, idx_dict, idx, args.base_path): idx for idx in [1013]}
         with open(dict_path + "_filled.json", "w") as f:
             json.dump(idx_dict, f)
 
