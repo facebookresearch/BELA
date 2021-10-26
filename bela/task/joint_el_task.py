@@ -488,7 +488,6 @@ class JointELTask(LightningModule):
 
         self.warmup_steps = warmup_steps
         self.load_from_checkpoint = load_from_checkpoint
-        self.save_mention_embeddings = save_mention_embeddings
 
         self.disambiguation_loss = nn.CrossEntropyLoss()
         self.md_loss = nn.BCEWithLogitsLoss()
