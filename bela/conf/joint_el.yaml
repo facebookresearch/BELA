@@ -18,5 +18,8 @@ datamodule:
   test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
   ent_catalogue_idx_path:  /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
 
+trainer:
+  val_check_interval: 10
+
 checkpoint_callback:
     monitor: valid_boe_f1
