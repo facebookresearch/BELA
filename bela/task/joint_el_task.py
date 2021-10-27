@@ -1352,7 +1352,10 @@ class JointELTask(LightningModule):
 class ClusterTask(LightningModule):
     def __init__(
         self,
+        transform: TransformConf,
         model: ModelConf,
+        datamodule: DataModuleConf,
+        optim: OptimConf,
         load_from_checkpoint: Optional[str] = None,
     ):
         super().__init__()
@@ -1381,7 +1384,7 @@ class ClusterTask(LightningModule):
             span_encoder_state = self._get_encoder_state(checkpoint, "span_encoder")
             self.span_encoder.load_state_dict(span_encoder_state)
 
-    def embedding_step(self, batch, batch_idx):
+    def _eval_step(self, batch, batch_idx):
         """
         This receives queries, each with mutliple contexts.
         """
