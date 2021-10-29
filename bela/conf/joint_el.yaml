@@ -13,13 +13,10 @@ task:
   load_from_checkpoint: /checkpoints/kassner/hydra_outputs/main/2021-10-22-150101/0/lightning_logs/version_360818/checkpoints/checkpoint_best.ckpt
 
 datamodule:
-  train_path: /fsx/kassner/wikipedia/en_matcha_jointtrain.jsonl
-  val_path: /fsx/kassner/wikipedia/en_matcha_jointdev.jsonl
-  test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
+  train_path: /fsx/kassner/wikipedia/en_matcha_predev.jsonl
+  val_path: /fsx/kassner/wikipedia/en_matcha_predev.jsonl
+  test_path: /fsx/kassner/wikipedia/en_matcha_predev.jsonl
   ent_catalogue_idx_path:  /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
-
-trainer:
-  val_check_interval: 10
 
 checkpoint_callback:
     monitor: valid_boe_f1

@@ -128,7 +128,7 @@ def extract_pages(filename):
 def split_paragraph_max_seq_length(text, f_out, tokenizer, idx, seq_length=256):
     current_paragraph = ""
     current_length = 0
-    sentences = text.split(".")
+    sentences = text['text'].split(".")
     num = 0
     for sentence in sentences:
         if sentence=="":
@@ -153,6 +153,6 @@ def split_paragraph_max_seq_length(text, f_out, tokenizer, idx, seq_length=256):
             current_paragraph += "."
             num += 1
     if len(current_paragraph)!=0:
-        data = {"text": current_paragraph, "id": idx + "_" + str(num)}
+        data = {"text": current_paragraph, "id": idx + "_" + str(num), 'time_stamp': text['timestamp']}
         f_out.write(json.dumps(data))
         f_out.write("\n")

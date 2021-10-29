@@ -1,5 +1,5 @@
-# Preprocessing Wikipedia dta
-
+# Preprocessing Wikipedia data
+# TO DO: write shell scripts for these processes
 1. Download wikipedia data
 2. Process wikipedia data
    1. WikiExtractor with timestamps

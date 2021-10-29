@@ -15,7 +15,18 @@ seed_everything(1)
 def main(cfg: MainConfig):
     print(OmegaConf.to_yaml(cfg))
 
+    test_data_name = cfg.datamodule.test_path.split('/')[-1].split(".")[0]
+    print(cfg.task)
+    
+    if not os.path.isdir(cfg.task.save_embeddings_path):
+        os.mkdir(cfg.task.save_embeddings_path)
+    cfg.task.save_embeddings_path += test_data_name
+    cfg.task.save_embeddings_path += '/'
+    if not os.path.isdir(cfg.task.save_embeddings_path):
+        os.mkdir(cfg.task.save_embeddings_path)
+
     task = hydra.utils.instantiate(cfg.task, _recursive_=False)
+
 
     assert cfg.task.model.model_path == cfg.task.transform.model_path
     transform = hydra.utils.instantiate(cfg.task.transform)

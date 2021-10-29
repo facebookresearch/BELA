@@ -43,7 +43,7 @@ def prep4labeling(data_dict, base_path, name):
         for article in data_dict[idx]:
             if 'text' in article and len(article['text'])!=0:
                 identifier = str(idx) + "_" + str(num_article)
-                split_paragraph_max_seq_length(article['text'], f_out, tokenizer, identifier)
+                split_paragraph_max_seq_length(article, f_out, tokenizer, identifier)
                 num_article += 1
     f_out.close()
 

@@ -460,6 +460,7 @@ class JointELTask(LightningModule):
         optim: OptimConf,
         faiss_index_path: str,
         novel_entity_embeddings_path: Optional[str] = None,
+        path_blink_model: Optional[str] = None,
         # save_mention_embeddings: Optional[bool] = False,
         embeddings_path: str = "",
         n_retrieve_candidates: int = 10,
@@ -483,6 +484,9 @@ class JointELTask(LightningModule):
         self.embeddings_path = embeddings_path
         self.faiss_index_path = faiss_index_path
 
+        self.novel_entity_embeddings_path = novel_entity_embeddings_path
+        self.path_blink_model = path_blink_model
+
         self.n_retrieve_candidates = n_retrieve_candidates
         self.eval_compute_recall_at = eval_compute_recall_at
 
@@ -499,8 +503,6 @@ class JointELTask(LightningModule):
         self.md_threshold = md_threshold
         self.el_threshold = el_threshold
         self.saliency_threshold = saliency_threshold
-
-        self.novel_entity_embeddings_path = novel_entity_embeddings_path
 
     @staticmethod
     def _get_encoder_state(state, encoder_name):
@@ -557,9 +559,16 @@ class JointELTask(LightningModule):
         self.embeddings = torch.load(self.embeddings_path)
         self.faiss_index = faiss.read_index(self.faiss_index_path)
 
-        # load embeddings of novel entities and add to faiss index
+        # embed novel entities and add to faiss index
         if self.novel_entity_embeddings_path is not None:
-            updated_faiss_index = self.novel_entity_embeddings_path.split('.')[0] + "_updated_index.faiss"
+
+            # embed novel entities
+            novel_base_path = ".".join(self.novel_entity_embeddings_path.split('.')[:-1])
+            novel_embedding_path = novel_base_path + "t7"
+            if not os.path.isfile(novel_embedding_path):
+                embed(self.path_blink_model, novel_embedding_path)
+            # index novel entities
+            updated_faiss_index = novel_base_path + "_updated_index.faiss"
             novel_entities_embeddings = torch.load(self.novel_entity_embeddings_path)
             logger.info(f"Loaded novel entity embeddings from {len(self.novel_entity_embeddings_path)}")
             if not os.path.isfile(updated_faiss_index):
@@ -1357,12 +1366,17 @@ class ClusterTask(LightningModule):
         datamodule: DataModuleConf,
         optim: OptimConf,
         load_from_checkpoint: Optional[str] = None,
+        save_embeddings_path: Optional[str] = None,
     ):
         super().__init__()
 
         # encoder setup
         self.encoder_conf = model
         self.load_from_checkpoint = load_from_checkpoint
+        self.save_embeddings_path = save_embeddings_path
+        self.all_tensors = []
+        self.buffer = 500
+        self.buffer_idx = 0
 
     @staticmethod
     def _get_encoder_state(state, encoder_name):
@@ -1373,6 +1387,14 @@ class ClusterTask(LightningModule):
         return encoder_state
 
     def setup(self, stage: str):
+        self.call_configure_sharded_model_hook = False
+
+        self.encoder = hydra.utils.instantiate(
+            self.encoder_conf,
+        )
+        self.span_encoder = SpanEncoder()
+        self.mention_encoder = MentionScoresHead()
+
         if self.load_from_checkpoint is not None:
             logger.info(f"Load encoders state from {self.load_from_checkpoint}")
             with open(self.load_from_checkpoint, "rb") as f:
@@ -1397,7 +1419,11 @@ class ClusterTask(LightningModule):
         text_encodings, mentions_repr = self(
             text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
         )
-        print(mentions_repr)
+        self.all_tensors.append(mentions_repr)
+        if len(self.all_tensors)==self.buffer:
+            torch.save(self.all_tensors, self.save_embeddings_path + str(self.buffer_idx) + ".t7")
+            self.all_tensors = []
+            self.buffer_idx += 1
 
 
     def forward(
@@ -1415,3 +1441,11 @@ class ClusterTask(LightningModule):
             text_encodings, mention_offsets, mention_lengths
         )
         return text_encodings, mentions_repr
+
+    def test_step(self, batch, batch_idx):
+        return self._eval_step(batch, batch_idx)
+
+    def test_epoch_end(self):
+        if self.save_embeddings_path is not None:
+            torch.save(self.output, self.save_embeddings_path + str(self.buffer_idx) + ".t7")
+            

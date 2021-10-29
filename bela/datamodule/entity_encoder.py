@@ -7,7 +7,23 @@ from bela.utils.blink_encoder import encode_candidate, load_or_generate_candidat
 logger = logging.getLogger(__name__)
 
 
-def embed(params):
+def embed(path_to_model, entity_dict_path):
+    # TO DO: params
+    params = {'lower_case': True,
+            'path_to_model': path_to_model,
+            'data_parallel': False,
+            'no_cuda': False,
+            'bert_model': 'bert-large-uncased',
+            'lowercase': True,
+            'out_dim': 1,
+            'pull_from_layer': -1,
+            'add_linear': False,
+            'entity_dict_path': entity_dict_path,
+            'debug': False,
+            'max_cand_length': 128,
+            'encode_batch_size': 32,
+            'silent': False,
+            }
     reranker = BiEncoderRanker(params)
     tokenizer = reranker.tokenizer
     # model = reranker.model

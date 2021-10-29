@@ -3,7 +3,7 @@
 import json
 import logging
 import mmap
-from typing import List
+from typing import List, Optional
 
 import torch
 from pytorch_lightning import LightningDataModule
@@ -28,7 +28,7 @@ class EntityCatalogue:
                 ent_id = line.strip()
                 self.idx[ent_id] = idx
         logger.info(f"Reading novel entity catalogue index {novel_entity_idx_path}")
-        if novel_entity_idx_path != "":
+        if novel_entity_idx_path is not None:
             with open(novel_entity_idx_path, "r") as f:
                 for line in f:
                     idx += 1
@@ -148,12 +148,12 @@ class JointELDataModule(LightningDataModule):
     def __init__(
         self,
         transform: JointELTransform,
-        # Dataset args
-        train_path: str,
-        val_path: str,
-        test_path: str,
         ent_catalogue_idx_path: str,
-        novel_entity_idx_path: str,
+        # Dataset args
+        test_path: str,
+        train_path: Optional[str] = None,
+        val_path: Optional[str] = None,
+        novel_entity_idx_path: Optional[str] = None,
         batch_size: int = 2,
         drop_last: bool = False,  # drop last batch if len(dataset) not multiple of batch_size
         num_workers: int = 0,  # increasing this bugs out right now
@@ -170,14 +170,20 @@ class JointELDataModule(LightningDataModule):
 
         self.ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, novel_entity_idx_path)
 
-        self.datasets = {
-            "train": ElMatchaDataset(
-                train_path,
-                self.ent_catalogue,
-            ),
-            "valid": ElMatchaDataset(val_path, self.ent_catalogue),
-            "test": ElMatchaDataset(test_path, self.ent_catalogue),
-        }
+        if train_path is not None:
+            self.datasets = {
+                "train": ElMatchaDataset(
+                    train_path,
+                    self.ent_catalogue,
+                ),
+                "valid": ElMatchaDataset(val_path, self.ent_catalogue),
+                "test": ElMatchaDataset(test_path, self.ent_catalogue),
+            }
+        else:
+            self.datasets = {
+                    "test": ElMatchaDataset(test_path, self.ent_catalogue),
+                }
+
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(

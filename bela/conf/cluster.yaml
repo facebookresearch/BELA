@@ -9,14 +9,14 @@ defaults:
 task:
   _target_: bela.task.joint_el_task.ClusterTask
   load_from_checkpoint: /data/home/kassner/BELA/outputs/2021-10-26/09-40-28/lightning_logs/version_0/checkpoints/checkpoint_best.ckpt
+  save_embeddings_path: /fsx/kassner/embeddings/ 
 
 datamodule:
-  train_path: /fsx/kassner/wikipedia/en_matcha_jointtrain.jsonl
-  val_path: /fsx/kassner/wikipedia/en_matcha_jointdev.jsonl
   test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
+  ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
 
 trainer:
-  gpus: 8
+  gpus: 2
 
 checkpoint_callback:
     monitor: valid_boe_f1
