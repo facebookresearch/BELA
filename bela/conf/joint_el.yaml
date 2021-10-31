@@ -10,11 +10,12 @@ task:
   _target_: bela.task.joint_el_task.JointELTask
   embeddings_path: data/es_embeddings.pt
   faiss_index_path: data/es_index.faiss
+  load_from_checkpoint: /checkpoints/movb/hydra_outputs/main/2021-09-13-001149/0/lightning_logs/version_89311/checkpoints/checkpoint_best-v1.ckpt
 
 datamodule:
-  train_path: data/train_joint.txt
-  val_path: data/eval_joint.txt
-  test_path: data/test_joint.txt
+  train_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
+  val_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointdev.jsonl
+  test_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_test.jsonl
   ent_catalogue_idx_path: data/es_xlm_ent_idx.txt
 
 checkpoint_callback:
