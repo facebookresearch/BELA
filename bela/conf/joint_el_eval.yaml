@@ -8,17 +8,18 @@ defaults:
 
 task:
   _target_: bela.task.joint_el_task.JointELTask
-  faiss_index_path: /data/home/kassner/BELA/data/blink/faiss_hnsw_index.pkl
   embeddings_path: /data/home/kassner/BELA/data/blink/all_entities_large.t7
-  novel_entity_embeddings_path: /data/home/kassner/BELA/data/blink/entities_test.t7
-  load_from_checkpoint: /checkpoints/kassner/hydra_outputs/main/2021-10-04-074540/0/lightning_logs/version_252068/checkpoints/checkpoint_best.ckpt
+  faiss_index_path: /data/home/kassner/BELA/data/blink/faiss_hnsw_index.pkl
+  load_from_checkpoint: /checkpoints/kassner/hydra_outputs/main/2021-11-01-114957/0/lightning_logs/version_397549/checkpoints/checkpoint_best.ckpt
 
 datamodule:
-  train_path: /fsx/kassner/wikipedia/en_matcha_jointtrain.jsonl
-  val_path: /fsx/kassner/wikipedia/en_matcha_jointdev.jsonl
-  test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
+  train_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
+  val_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
+  test_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointdev.jsonl
   ent_catalogue_idx_path:  /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
-  novel_entity_idx_path: /data/home/kassner/BELA/data/blink/novel_entities.jsonl
 
 checkpoint_callback:
     monitor: valid_boe_f1
+
+trainer:
+  val_check_interval: 1

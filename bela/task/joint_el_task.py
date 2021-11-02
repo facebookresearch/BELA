@@ -470,9 +470,9 @@ class JointELTask(LightningModule):
         only_train_disambiguation: bool = False,
         train_el_classifier: bool = True,
         train_saliency: bool = True,
-        md_threshold: float = 0.2,
+        md_threshold: float = 0.0,
         # ue_threshold: float = 0.0,
-        el_threshold: float = 0.4,
+        el_threshold: float = 0.0,
         saliency_threshold: float = 0.4,
     ):
         super().__init__()
@@ -608,6 +608,7 @@ class JointELTask(LightningModule):
         mention_offsets,
         mention_lengths,
     ):
+
         # encode query and contexts
         _, last_layer = self.encoder(text_inputs, attention_mask)
         text_encodings = last_layer
@@ -995,7 +996,6 @@ class JointELTask(LightningModule):
 
         # cosntruct targets
         targets = torch.tensor([0] * neg_cand_scores.shape[0]).to(device)
-
         loss = self.disambiguation_loss(scores, targets)
 
         # compute recall at (1, 10, 100)

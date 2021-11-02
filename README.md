@@ -43,7 +43,7 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambigu
 
 ## Start interactive SLURM session
 ```
-srun --gres=gpu:8 --partition=a100 --time=72:00:00 --pty /bin/bash -l
+srun --gres=gpu:1 --partition=a100 --time=24:00:00 --pty /bin/bash -l
 ```
 
 ## Data

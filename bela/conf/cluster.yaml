@@ -14,9 +14,10 @@ task:
 datamodule:
   test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
   ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
+  time_stamp: 2019_09
 
 trainer:
-  gpus: 2
+  gpus: 3
 
 checkpoint_callback:
     monitor: valid_boe_f1

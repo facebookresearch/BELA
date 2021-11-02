@@ -54,23 +54,44 @@ class ElMatchaDataset(torch.utils.data.Dataset):
     We also filter out mentions, that are not present in entity catalogue
     """
 
-    def __init__(self, path, ent_catalogue):
+    def __init__(self, path, ent_catalogue, time_stamp):
         self.ent_catalogue = ent_catalogue
         self.debug_file = open("debug.jsonl", 'w')
         self.file = open(path, mode="rt")
         self.mm = mmap.mmap(self.file.fileno(), 0, prot=mmap.PROT_READ)
         self.offsets = []
         self.count = 0
+        self.time_stamp = time_stamp
 
         logger.info(f"Build mmap index for {path}")
         line = self.mm.readline()
+        line = json.loads(line)
         #line = line[0:2500]
         offset = 0
+
+        if self.time_stamp is not None:
+            year_ref, month_ref = self.time_stamp.split('_')
+            year_ref = int(year_ref)
+            month_ref = int(month_ref)
         while line:
-            self.offsets.append(offset)
-            self.count += 1
+            keep = True
+            if self.time_stamp is not None:
+                year, month = line['time_stamp'].split('_')
+                year = int(year)
+                month = int(month)
+                if year < year_ref:
+                    keep = False
+                elif year == year_ref and month < month_ref:
+                    keep = False
+            if keep:
+                self.offsets.append(offset)
+                self.count += 1
             offset = self.mm.tell()
             line = self.mm.readline()
+            try:
+                line = json.loads(line)
+            except:
+                pass
 
     def __len__(self):
         return self.count
@@ -86,8 +107,6 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         gt_entities = []
         for gt_entity in example["gt_entities"]:
             offset, length, entity, ent_type = gt_entity[:4]
-            if ent_type != "wiki":
-                continue
             if entity in self.ent_catalogue:
                 gt_entities.append((offset, length, self.ent_catalogue[entity]))
 
@@ -154,6 +173,7 @@ class JointELDataModule(LightningDataModule):
         train_path: Optional[str] = None,
         val_path: Optional[str] = None,
         novel_entity_idx_path: Optional[str] = None,
+        time_stamp: Optional[str] = None,
         batch_size: int = 2,
         drop_last: bool = False,  # drop last batch if len(dataset) not multiple of batch_size
         num_workers: int = 0,  # increasing this bugs out right now
@@ -169,19 +189,20 @@ class JointELDataModule(LightningDataModule):
         self.transform = transform
 
         self.ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, novel_entity_idx_path)
+        self.time_stamp = time_stamp
 
         if train_path is not None:
             self.datasets = {
                 "train": ElMatchaDataset(
                     train_path,
-                    self.ent_catalogue,
+                    self.ent_catalogue, self.time_stamp
                 ),
-                "valid": ElMatchaDataset(val_path, self.ent_catalogue),
-                "test": ElMatchaDataset(test_path, self.ent_catalogue),
+                "valid": ElMatchaDataset(val_path, self.ent_catalogue, self.time_stamp),
+                "test": ElMatchaDataset(test_path, self.ent_catalogue, self.time_stamp),
             }
         else:
             self.datasets = {
-                    "test": ElMatchaDataset(test_path, self.ent_catalogue),
+                    "test": ElMatchaDataset(test_path, self.ent_catalogue, self.time_stamp),
                 }
 
 

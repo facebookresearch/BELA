@@ -10,12 +10,12 @@ task:
   _target_: bela.task.joint_el_task.JointELTask
   embeddings_path: /data/home/kassner/BELA/data/blink/all_entities_large.t7
   faiss_index_path: /data/home/kassner/BELA/data/blink/faiss_hnsw_index.pkl
-  load_from_checkpoint: /checkpoints/kassner/hydra_outputs/main/2021-10-22-150101/0/lightning_logs/version_360818/checkpoints/checkpoint_best.ckpt
+  load_from_checkpoint: /checkpoints/kassner/hydra_outputs/main/2021-11-01-114957/0/lightning_logs/version_397549/checkpoints/checkpoint_best.ckpt
 
 datamodule:
-  train_path: /fsx/kassner/wikipedia/en_matcha_predev.jsonl
-  val_path: /fsx/kassner/wikipedia/en_matcha_predev.jsonl
-  test_path: /fsx/kassner/wikipedia/en_matcha_predev.jsonl
+  train_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
+  val_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointdev.jsonl
+  test_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointdev.jsonl
   ent_catalogue_idx_path:  /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
 
 checkpoint_callback:
