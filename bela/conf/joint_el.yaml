@@ -15,7 +15,7 @@ task:
 datamodule:
   train_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
   val_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointdev.jsonl
-  test_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_test.jsonl
+  test_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointdev.jsonl
   ent_catalogue_idx_path: /data/home/kassner/BELA/data/matcha/en/en_xlm_ent_idx.txt
 
 checkpoint_callback:
