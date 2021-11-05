@@ -43,28 +43,8 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambigu
 
 ## Start interactive SLURM session
 ```
-srun --gres=gpu:1 --partition=a100 --time=24:00:00 --pty /bin/bash -l
+srun --gres=gpu:1 --partition=a100 --time=3:00:00 --pty /bin/bash -l
 ```
-
-## Data
-
-# Pre-training
-
-# Joint Training
-
-1. Wikipedia:
-   1. t2
-   2. t1
-   3. Number of novel entities:
-   4. Counts novel entities:
-2. Wikinews:
-   1. t2
-   2. t1
-   3. Number of novel entities:
-   4. Counts novel entities:
-3. BBC:
-   1. t2: 5.101
-   2. t1: 6.775 
-   3. Number of novel entities:
-   4. Counts novel entities:
-
+## run tensorboard
+tensorboard --logdir ./ --port 6017                                                                               
+                                                                                       
