@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
+import logging
 
 class Grinch(object):
 

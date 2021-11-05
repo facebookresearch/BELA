@@ -59,7 +59,9 @@ def main(args):
         target = len(entity_vocab)
         clusters = find_threshold(grinch, target)
 
-    with open(args.output, 'w') as g:
+    output_name = args.input
+    output_name = args.input.split('/')[-1].split('.')[0]
+    with open(args.output + output_name + "_grinch.txt", 'w') as g:
         for t, p in zip(entity_ids, clusters):
             g.write('%i, %i\n' % (t, p))
 
