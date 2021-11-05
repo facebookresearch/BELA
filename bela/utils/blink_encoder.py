@@ -387,7 +387,6 @@ def encode_candidate(
         encode_batch_size,
         silent,
 ):
-    print("in")
     reranker.model.eval()
     device = reranker.device
     print(device)
@@ -405,6 +404,36 @@ def encode_candidate(
         cands = batch
         cands = cands.to(device)
         cand_encode = reranker.encode_candidate(cands)
+        if cand_encode_list is None:
+            cand_encode_list = cand_encode
+        else:
+            cand_encode_list = torch.cat((cand_encode_list, cand_encode))
+
+    return cand_encode_list
+
+def encode_context(
+        reranker,
+        candidate_pool,
+        encode_batch_size,
+        silent,
+):
+    reranker.model.eval()
+    device = reranker.device
+    print(device)
+    sampler = SequentialSampler(candidate_pool)
+    data_loader = DataLoader(
+        candidate_pool, sampler=sampler, batch_size=encode_batch_size
+    )
+    if silent:
+        iter_ = data_loader
+    else:
+        iter_ = tqdm(data_loader)
+
+    cand_encode_list = None
+    for step, batch in enumerate(iter_):
+        cands = batch
+        cands = cands.to(device)
+        cand_encode = reranker.encode_context(cands)
         if cand_encode_list is None:
             cand_encode_list = cand_encode
         else:
