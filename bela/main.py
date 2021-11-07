@@ -20,7 +20,7 @@ def main(cfg: MainConfig):
     trainer = Trainer(**cfg.trainer, callbacks=[checkpoint_callback])
 
     if cfg.test_only:
-        ckpt_path = cfg.task.pretrained_checkpoint_path
+        ckpt_path = cfg.task.load_from_checkpoint
         trainer.test(
             model=task,
             ckpt_path=ckpt_path,
