@@ -3,7 +3,7 @@
 
 import logging
 from collections import OrderedDict
-from typing import NamedTuple, Optional, Tuple
+from typing import NamedTuple, Optional, Tuple, Union
 
 import faiss  # @manual=//faiss/python:pyfaiss
 import hydra
@@ -299,13 +299,16 @@ class MentionScoresHead(nn.Module):
             mention_scores, mention_bounds = self.filter_by_mention_size(
                 mention_scores,
                 mention_bounds,
-                self.max_mention_length,
             )
 
         return mention_scores, mention_bounds
 
     def batch_reshape_mask_left(
-        self, input_t, selected, pad_idx=0, left_align_mask=None
+        self,
+        input_t: torch.Tensor,
+        selected: torch.Tensor,
+        pad_idx: Union[int, float] = 0,
+        left_align_mask: Optional[torch.Tensor] = None,
     ):
         """
         Left-aligns all ``selected" values in input_t, which is a batch of examples.
@@ -331,7 +334,9 @@ class MentionScoresHead(nn.Module):
 
         if left_align_mask is None:
             # (bsz, 2)
-            left_align_mask = torch.zeros(input_t.size(0), 2).to(input_t.device).bool()
+            left_align_mask = (
+                torch.zeros(input_t.size(0), 2).to(input_t.device).to(torch.bool)
+            )
             left_align_mask[:, 0] = 1
             # (bsz x 2,): [1,0,1,0,...]
             left_align_mask = left_align_mask.view(-1)
@@ -342,7 +347,7 @@ class MentionScoresHead(nn.Module):
 
         # reshape to (bsz, max_num_selected, *)
         input_reshape = (
-            torch.Tensor(left_align_mask.size() + input_t.size()[2:])
+            torch.empty(left_align_mask.size() + input_t.size()[2:])
             .to(input_t.device, input_t.dtype)
             .fill_(pad_idx)
         )
@@ -352,10 +357,10 @@ class MentionScoresHead(nn.Module):
 
     def prune_ctxt_mentions(
         self,
-        mention_logits,
-        mention_bounds,
-        num_cand_mentions,
-        threshold,
+        mention_logits: torch.Tensor,
+        mention_bounds: torch.Tensor,
+        num_cand_mentions: int,
+        threshold: float,
     ):
         """
             Prunes mentions based on mention scores/logits (by either
@@ -372,6 +377,7 @@ class MentionScoresHead(nn.Module):
             torch.BoolTensor(bsz, total_possible_mentions): mask for reshaping from total possible mentions -> max # pred mentions
         """
         # (bsz, num_cand_mentions); (bsz, num_cand_mentions)
+        num_cand_mentions = min(num_cand_mentions, mention_logits.shape[1])
         top_mention_logits, mention_pos = mention_logits.topk(
             num_cand_mentions, sorted=True
         )
@@ -427,7 +433,7 @@ class MentionScoresHead(nn.Module):
         )
 
     def filter_by_mention_size(
-        self, mention_scores, mention_bounds, max_mention_length
+        self, mention_scores: torch.Tensor, mention_bounds: torch.Tensor
     ):
         """
         Filter all mentions > maximum mention length
@@ -436,7 +442,7 @@ class MentionScoresHead(nn.Module):
         """
         # (bsz, num_mentions)
         mention_bounds_mask = (
-            mention_bounds[:, :, 1] - mention_bounds[:, :, 0] <= max_mention_length
+            mention_bounds[:, :, 1] - mention_bounds[:, :, 0] <= self.max_mention_length
         )
         # (bsz, num_filtered_mentions)
         mention_scores = mention_scores[mention_bounds_mask]
