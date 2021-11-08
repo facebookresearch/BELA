@@ -11,6 +11,8 @@ task:
   embeddings_path: /data/home/kassner/BELA/data/matcha/en/en_embeddings.pt
   faiss_index_path: /data/home/kassner/BELA/data/matcha/en/en_index.faiss
   load_from_checkpoint: /checkpoints/movb/hydra_outputs/main/2021-09-13-001149/0/lightning_logs/version_89311/checkpoints/checkpoint_best-v1.ckpt
+  optim:
+    lr: 5e-05
 
 datamodule:
   train_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
