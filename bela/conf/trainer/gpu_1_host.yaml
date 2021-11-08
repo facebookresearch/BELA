@@ -1,5 +1,5 @@
 # @package _group_
-gpus: 3
+gpus: 8
 distributed_backend: ddp
 reload_dataloaders_every_epoch: true
 max_epochs: 40

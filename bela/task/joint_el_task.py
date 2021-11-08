@@ -476,9 +476,9 @@ class JointELTask(LightningModule):
         only_train_disambiguation: bool = False,
         train_el_classifier: bool = True,
         train_saliency: bool = True,
-        md_threshold: float = 0.0,
+        md_threshold: float = 0.2,
         # ue_threshold: float = 0.0,
-        el_threshold: float = 0.0,
+        el_threshold: float = 0.4,
         saliency_threshold: float = 0.4,
     ):
         super().__init__()
@@ -1144,12 +1144,14 @@ class JointELTask(LightningModule):
         mentions_scores = mentions_scores.detach().cpu().tolist()
 
         el_predictions = []
+        novel_el_predictions = []
         saliency_predictions = []
         cand_idx = 0
         for offsets, lengths, md_scores in zip(
             mention_offsets, mention_lengths, mentions_scores
         ):
             example_predictions = {}
+            novel_predictions = {}
             example_saliency_predictions = {}
             for offset, length, md_score in zip(offsets, lengths, md_scores):
                 if length != 0:
@@ -1161,6 +1163,10 @@ class JointELTask(LightningModule):
                             example_predictions[(offset, length)] = cand_indices[
                                 cand_idx
                             ][0]
+                        elif el_scores[cand_idx] < self.el_threshold:
+                             novel_predictions[(offset, length)] = cand_indices[
+                                cand_idx
+                            ][0]
                         if (
                             self.train_saliency
                             and saliency_scores[cand_idx] >= self.saliency_threshold
@@ -1170,9 +1176,10 @@ class JointELTask(LightningModule):
                             ] = cand_indices[cand_idx][0]
                     cand_idx += 1
             el_predictions.append(example_predictions)
+            novel_el_predictions.append(novel_predictions)
             saliency_predictions.append(example_saliency_predictions)
 
-        return el_targets, el_predictions, saliency_targets, saliency_predictions
+        return el_targets, el_predictions, saliency_targets, saliency_predictions, novel_el_predictions
 
     def _eval_step(self, batch, batch_idx):
         text_inputs = batch["input_ids"]  # bs x mention_len
