@@ -469,6 +469,7 @@ class JointELTask(LightningModule):
         path_blink_model: Optional[str] = None,
         # save_mention_embeddings: Optional[bool] = False,
         embeddings_path: str = "",
+        save_novel_md_path: str = "",
         n_retrieve_candidates: int = 10,
         eval_compute_recall_at: Tuple[int] = (1, 10, 100),
         warmup_steps: int = 0,
@@ -476,6 +477,7 @@ class JointELTask(LightningModule):
         only_train_disambiguation: bool = False,
         train_el_classifier: bool = True,
         train_saliency: bool = True,
+        novel_md: bool = True,
         md_threshold: float = 0.2,
         # ue_threshold: float = 0.0,
         el_threshold: float = 0.4,
@@ -491,6 +493,7 @@ class JointELTask(LightningModule):
         self.faiss_index_path = faiss_index_path
 
         self.novel_entity_embeddings_path = novel_entity_embeddings_path
+        self.save_novel_md_path = save_novel_md_path
         self.path_blink_model = path_blink_model
 
         self.n_retrieve_candidates = n_retrieve_candidates
@@ -504,6 +507,7 @@ class JointELTask(LightningModule):
         self.el_loss = nn.BCEWithLogitsLoss()
         self.saliency_loss = nn.BCEWithLogitsLoss()
         self.only_train_disambiguation = only_train_disambiguation
+        self.novel_md = novel_md
         self.train_el_classifier = train_el_classifier
         self.train_saliency = train_saliency
         self.md_threshold = md_threshold
@@ -519,8 +523,8 @@ class JointELTask(LightningModule):
         return encoder_state
 
     def setup(self, stage: str):
-        if stage == "test":
-            return
+        #if stage == "test":
+        #    return
         # resetting call_configure_sharded_model_hook attribute so that we could configure model
         self.call_configure_sharded_model_hook = False
 
@@ -532,6 +536,10 @@ class JointELTask(LightningModule):
         self.el_encoder = ClassificationHead()
         if self.train_saliency:
             self.saliency_encoder = SaliencyClassificationHead()
+        if self.md_threshold:
+            self.novel_el_predictions = []
+            self.novel_el_buffer = 500
+            self.buffer_md_idx = 0
 
         if self.load_from_checkpoint is not None:
             logger.info(f"Load encoders state from {self.load_from_checkpoint}")
@@ -1033,6 +1041,7 @@ class JointELTask(LightningModule):
         entities_ids,
         tokens_mapping,
         salient_entities,
+        batch_idx
     ):
         device = text_inputs.device
 
@@ -1144,7 +1153,6 @@ class JointELTask(LightningModule):
         mentions_scores = mentions_scores.detach().cpu().tolist()
 
         el_predictions = []
-        novel_el_predictions = []
         saliency_predictions = []
         cand_idx = 0
         for offsets, lengths, md_scores in zip(
@@ -1163,7 +1171,7 @@ class JointELTask(LightningModule):
                             example_predictions[(offset, length)] = cand_indices[
                                 cand_idx
                             ][0]
-                        elif el_scores[cand_idx] < self.el_threshold:
+                        elif el_scores[cand_idx] < self.el_threshold and self.novel_md:
                              novel_predictions[(offset, length)] = cand_indices[
                                 cand_idx
                             ][0]
@@ -1176,10 +1184,15 @@ class JointELTask(LightningModule):
                             ] = cand_indices[cand_idx][0]
                     cand_idx += 1
             el_predictions.append(example_predictions)
-            novel_el_predictions.append(novel_predictions)
+            novel_predictions = self.all_gather(novel_predictions)
+            self.novel_el_predictions.append([batch_idx, novel_predictions])
             saliency_predictions.append(example_saliency_predictions)
+            if len(self.novel_el_predictions)==self.novel_el_buffer:
+                torch.save(self.novel_el_predictions, self.save_novel_md_path + "_" + str(self.buffer_md_idx) + ".t7")
+                self.novel_el_predictions = []
+                self.buffer_md_idx += 1
 
-        return el_targets, el_predictions, saliency_targets, saliency_predictions, novel_el_predictions
+        return el_targets, el_predictions, saliency_targets, saliency_predictions
 
     def _eval_step(self, batch, batch_idx):
         text_inputs = batch["input_ids"]  # bs x mention_len
@@ -1210,6 +1223,7 @@ class JointELTask(LightningModule):
             entities_ids,
             tokens_mapping,
             salient_entities,
+            batch_idx
         )
 
     def _compute_disambiguation_metrics(self, outputs, log_prefix):
@@ -1427,17 +1441,35 @@ class ClusterTask(LightningModule):
         text_pad_mask = batch["attention_mask"]
         gold_mention_offsets = batch["mention_offsets"]  # bs x max_mentions_num
         gold_mention_lengths = batch["mention_lengths"]  # bs x max_mentions_num
+        entities_ids = batch["entities"]  # bs x max_mentions_num
+        tokens_mapping = batch["tokens_mapping"]  # bs x max_tokens_in_input x 2
+        salient_entities = batch["salient_entities"]  # bs
 
         # mention representations (bs x max_mentions_num x embedding_dim)
         text_encodings, mentions_repr = self(
             text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
         )
-        self.all_tensors.append(mentions_repr)
+
+        device = mentions_repr.get_device()
+
+        # flat mentions and entities indices (mentions_num x embedding_dim)
+        flat_mentions_repr = mentions_repr[gold_mention_lengths != 0]
+        flat_entities_ids = entities_ids[gold_mention_lengths != 0]
+
+        ent_mentions_repr = torch.cat([torch.unsqueeze(flat_entities_ids, 1), flat_mentions_repr], 1)
+
+        self.all_tensors.append(ent_mentions_repr.to(torch.device("cpu")))
         if len(self.all_tensors)==self.buffer:
-            torch.save(self.all_tensors, self.save_embeddings_path + str(self.buffer_idx) + ".t7")
+            torch.save(self.all_tensors, self.save_embeddings_path + "_" + str(self.buffer_idx) + ".t7")
             self.all_tensors = []
             self.buffer_idx += 1
 
+        with open(self.save_embeddings_path + ".tsv", "a") as f:
+            for mention in ent_mentions_repr:
+                mention = mention.cpu().detach().numpy()
+                mention = '\t'.join(mention.astype('str'))
+                f.write(mention)
+                f.write('\n')
 
     def forward(
         self,
@@ -1458,7 +1490,6 @@ class ClusterTask(LightningModule):
     def test_step(self, batch, batch_idx):
         return self._eval_step(batch, batch_idx)
 
-    def test_epoch_end(self):
+    def test_epoch_end(self, test_outputs):
         if self.save_embeddings_path is not None:
-            torch.save(self.output, self.save_embeddings_path + str(self.buffer_idx) + ".t7")
-            
+            torch.save(self.all_tensors, self.save_embeddings_path + "_" + str(self.buffer_idx) + ".t7")

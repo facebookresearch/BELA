@@ -30,7 +30,7 @@ class MainConfig:
     task: Any = MISSING
     datamodule: Any = MISSING
     trainer: Any = MISSING
-    test_only: bool = False
+    test_only: bool = True
     checkpoint_callback: Any = MISSING
 
 cs = ConfigStore.instance()

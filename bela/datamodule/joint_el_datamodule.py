@@ -65,12 +65,12 @@ class ElMatchaDataset(torch.utils.data.Dataset):
 
         logger.info(f"Build mmap index for {path}")
         line = self.mm.readline()
+  
         line = json.loads(line)
-        #line = line[0:2500]
         offset = 0
 
         if self.time_stamp is not None:
-            year_ref, month_ref = self.time_stamp.split('_')
+            year_ref, month_ref = self.time_stamp.split('-')
             year_ref = int(year_ref)
             month_ref = int(month_ref)
         while line:
@@ -155,7 +155,6 @@ class ElMatchaDataset(torch.utils.data.Dataset):
             "md_pred_lengths": md_pred_lengths,
             "md_pred_scores": md_pred_scores,
         }
-
         return result
 
 
@@ -212,6 +211,7 @@ class JointELDataModule(LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_train,
+            drop_last=True,
         )
 
     def val_dataloader(self):
@@ -221,6 +221,7 @@ class JointELDataModule(LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_eval,
+            drop_last=True,
         )
 
     def test_dataloader(self):
@@ -230,6 +231,7 @@ class JointELDataModule(LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_eval,
+            drop_last=True,
         )
 
     def collate_eval(self, batch):

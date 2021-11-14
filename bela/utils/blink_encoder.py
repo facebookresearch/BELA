@@ -8,9 +8,6 @@ from pytorch_transformers.tokenization_bert import BertTokenizer
 
 from torch.utils.data import DataLoader, SequentialSampler
 
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-
 ENT_START_TAG = "[unused0]"
 ENT_END_TAG = "[unused1]"
 ENT_TITLE_TAG = "[unused2]"
@@ -419,7 +416,7 @@ def encode_context(
 ):
     reranker.model.eval()
     device = reranker.device
-    print(device)
+
     sampler = SequentialSampler(candidate_pool)
     data_loader = DataLoader(
         candidate_pool, sampler=sampler, batch_size=encode_batch_size

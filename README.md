@@ -43,8 +43,29 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambigu
 
 ## Start interactive SLURM session
 ```
-srun --gres=gpu:1 --partition=a100 --time=3:00:00 --pty /bin/bash -l
+srun --gres=gpu:1 --partition=a100 --time=3:00:00 --pty /bin/bash -l --memory
 ```
 ## run tensorboard
-tensorboard --logdir ./ --port 6017                                                                               
-                                                                                       
+tensorboard --logdir ./ --port 6017  
+
+## run jupyterlab
+jupyter-lab --ip=0.0.0.0 --port=8888
+ssh cluster_id -L 8844:a100-st-p4d24xlarge-35:8888
+http://127.0.0.1:8844/
+
+## BLINK encodings
+PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/OSCAR/transfer_blink_format_t1.py --base_wikidata /fsx/kassner/wikidata/
+PYTHONPATH=.:$PYTHONPATH python blink/main_dense.py --test_mentions /fsx/kassner/OSCAR/subset/cnn_bbc_novel_blink_format.jsonl  --fast 
+
+## Mention Detection
+
+PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_eval_md trainer=slurm trainer.num_nodes=1 trainer.gpus=8
+
+## Cluster
+
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_greedy_nn.py --input ../BLINK/output/cnn_bbc_novel_blink_format_mention_embeddings.tsv --output output_clustering/
+
+
+
+/checkpoints/kassner/hydra_outputs/main/2021-11-02-091125
+bert

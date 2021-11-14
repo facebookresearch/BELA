@@ -8,13 +8,12 @@ defaults:
 
 task:
   _target_: bela.task.joint_el_task.ClusterTask
-  load_from_checkpoint: /data/home/kassner/BELA/outputs/2021-10-26/09-40-28/lightning_logs/version_0/checkpoints/checkpoint_best.ckpt
-  save_embeddings_path: /fsx/kassner/embeddings/ 
+  load_from_checkpoint: /checkpoints/kassner/hydra_outputs/main/2021-11-09-215754/0/lightning_logs/version_492060/checkpoints/checkpoint_best.ckpt
+  save_embeddings_path: mention_encodings 
 
 datamodule:
-  test_path: /fsx/kassner/wikipedia/en_matcha_test.jsonl
+  test_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
   ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
-  time_stamp: 2019_09
 
 trainer:
   gpus: 3

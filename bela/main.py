@@ -28,6 +28,7 @@ def main(cfg: MainConfig):
 
     if cfg.test_only:
         ckpt_path = cfg.task.load_from_checkpoint
+        task.freeze()
         trainer.test(
             model=task,
             ckpt_path=ckpt_path,

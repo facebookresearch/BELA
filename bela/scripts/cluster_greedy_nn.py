@@ -157,18 +157,24 @@ def main(args):
     entity_vocab = {}
     entity_ids = []
     embeddings = []
-    with open(args.input, 'r') as f:
-        reader = csv.reader(f, delimiter='\t')
-        for line in reader:
-            entity, *embedding = line
-            entity = int(entity.split("tensor(")[1][:-1])
-            embedding = [float(x) for x in embedding]
-            embeddings.append(embedding)
-            if entity not in entity_vocab:
-                entity_vocab[entity] = len(entity_vocab)
-            entity_id = entity_vocab[entity]
-            entity_ids.append(entity_id)
+    for input_path in args.input.split(","):
+        with open(input_path, 'r') as f:
+            reader = csv.reader(f, delimiter='\t')
+            for line in reader:
+                try:
+                    entity, *embedding = line
+                    # entity = int(entity.split("tensor(")[1][:-1])
+                    entity = int(float(entity))
+                    embedding = [float(x) for x in embedding]
+                except:
+                    pass
+                embeddings.append(embedding)
+                if entity not in entity_vocab:
+                    entity_vocab[entity] = len(entity_vocab)
+                entity_id = entity_vocab[entity]
+                entity_ids.append(entity_id)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = 'cpu'
     embeddings = torch.tensor(embeddings, dtype=torch.float32, device=device)
     if not args.dot_prod:
         embeddings /= torch.norm(embeddings, dim=-1, keepdim=True)
