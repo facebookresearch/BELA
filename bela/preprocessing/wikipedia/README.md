@@ -25,8 +25,10 @@
    ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_anchors.py --lang en --base_wikipedia data/wikipedia/ --base_wikidata /fsx/kassner/wikidata/ prepare```
    ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_anchors.py --lang en --base_wikipedia data/wikipedia/ --base_wikidata /fsx/kassner/wikidata/ solve```
    ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_anchors.py --lang en --base_wikipedia data/wikipedia/ --base_wikidata /fsx/kassner/wikidata/ fill```
-   6. Prepare pretraining data
-   ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_training_validation_test_data.py --lang en --base_dataset /fsx/kassner/wikipedia/ --data_type wiki --training_type pretraining```
+   6. Prepare pretraining data t1
+   ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_training_validation_test_data.py --lang en --base_dataset /fsx/kassner/wikipedia/```
+   7. Prepare pretraining data t2
+   ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/preprocess_training_validation_test_data.py --lang en --base_dataset /fsx/kassner/wikipedia/ --t2 True```
    7. Prepare novel entity descriptions
    ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/wikipedia/extract_descriptions_novel_entities.py  --base_wikipedia data/wikipedia/ --base_wikidata /fsx/kassner/wikidata/ --base_blink data/blink/```
 
