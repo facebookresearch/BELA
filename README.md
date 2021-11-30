@@ -30,22 +30,16 @@ Config is stored in `bela/conf/joint_el.yaml`. To run training (you should be on
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
 ```
 
-## Train model using SLURM
-
-```
-PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
-```
-
-## Evaluation
+# Evaluation
 Set test_only=True in `bela/conf/config.py`
 
-# Novel Entity Detection
+## Novel Entity Detection
 First, store rejection head features:
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name eval_md
 ```
 
-# Novel Entity Clustering
+## Novel Entity Clustering
 
 First, embed mentions:
 ```
@@ -61,12 +55,17 @@ or GRINCH:
 PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type novel --threshold 0.9 --max_mentions 500000 --cluster_type grinch
 ```
 
-# Novel Entity Indexing
+## Novel Entity Indexing
 
+# AWS commands
 
-## AWS commands
+## Train model using SLURM
 
-# Start interactive SLURM session
+```
+PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
+```
+
+## Start interactive SLURM session
 ```
 srun --gres=gpu:1 --partition=a100 --time=3:00:00 --pty /bin/bash -l
 ```
@@ -74,12 +73,12 @@ srun --gres=gpu:1 --partition=a100 --time=3:00:00 --pty /bin/bash -l
 Saves output to:
 `/data/home/kassner/BELA/multirun/*`
 
-# run tensorboard
+## run tensorboard
 ```
 tensorboard --logdir ./ --port 6017
 ```  
 
-# run jupyterlab
+## run jupyterlab
 ```
 jupyter-lab --ip=0.0.0.0 --port=8888
 ssh cluster_id -L 8844:a100-st-p4d24xlarge-35:8888
