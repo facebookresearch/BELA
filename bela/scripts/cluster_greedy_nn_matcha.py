@@ -182,7 +182,6 @@ def load_embeddings(embeddings_path_list, ent_catalogue, filter_type, idcs_filte
                 entity, embedding = embedding[0], embedding[1:]
                 embedding_idx +=1
                 entity = int(float(entity))
-                num_mentions +=1
                 if filter_type=="entity":
                     if ent_catalogue.idx_referse[entity] not in idcs_filter:
                         continue
@@ -211,7 +210,6 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                 entity, embedding = embedding[0], embedding[1:]
                 embedding_idx +=1
                 entity = int(float(entity))
-                num_mentions +=1
                 if filter_type=="entity":
                     if ent_catalogue.idx_referse[entity] not in idcs_filter:
                         continue
@@ -228,10 +226,11 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                         return embeddings, entity_vocab, entity_ids
     return embeddings, entity_vocab, entity_ids
 
-def select_filter_idcs(filter_type, timesplit=None, year_ref=2019, month_ref=9):
+def select_filter_idcs(filter_type, dataset_path, wikidata_base_path, wikipedia_base_path, \
+                        timesplit=None, year_ref=2019, month_ref=9):
     idcs_filter = set()
     if filter_type=="idcs" and timesplit is not None: 
-        with open("/fsx/kassner/OSCAR/subset/cnn_bbc_matcha.jsonl") as f:
+        with open(dataset_path + ".jsonl") as f:
             for i, line in enumerate(f):
                 line = json.loads(line)
                 year, month = line["time_stamp"].split("_")
@@ -244,9 +243,9 @@ def select_filter_idcs(filter_type, timesplit=None, year_ref=2019, month_ref=9):
                     if year<year_ref or (year==year_ref and month<=month_ref):
                         idcs_filter.add(i)
     if filter_type=="entities":
-        with open("/fsx/kassner/wikidata/en_title2wikidataID.pkl", "rb") as f:
+        with open(wikidata_base_path, + "en_title2wikidataID.pkl", "rb") as f:
             title2wikidataID = pickle.load(f)
-        with open("/fsx/kassner/wikipedia/t2/enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
+        with open(wikipedia_base_path + "t2/enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
             for line in f:
                 line = json.loads(line)
                 if line["wikipedia_title"] in title2wikidataID:
@@ -258,18 +257,14 @@ def main(args):
         filter_type="entities"
     if args.type=="t1" or args.type=="t2":
         filter_type="idcs"
-    idcs_filter = select_filter_idcs(filter_type, timesplit=args.type)
-
-    ent_catalogue_idx_path = "/data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt"
-    novel_entity_idx_path = "/data/home/kassner/BELA/data/blink/novel_entities_filtered.jsonl"
-
-    ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, novel_entity_idx_path, reverse=True)
+    idcs_filter = select_filter_idcs(filter_type, args.dataset_path, args.wikidata_base_path, args.wikipedia_base_path, timesplit=args.type)
+    ent_catalogue = EntityCatalogue(args.ent_catalogue_idx_path, args.novel_entity_idx_path, reverse=True)
     
     input_path = args.input + '*.t7'
     embeddings_path_list = glob.glob(input_path)
     embeddings, entity_vocab, entity_ids = load_embeddings(embeddings_path_list, ent_catalogue, filter_type, idcs_filter, args.max_mentions)
     if len(embeddings)<=args.max_mentions:
-        idcs_filter = select_filter_idcs("idcs", timesplit="t2")
+        idcs_filter = select_filter_idcs("idcs", args.args.dataset_path, args.wikidata_base_path, args.wikipedia_base_path, timesplit="t2")
         embeddings, entity_vocab, entity_ids = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, ent_catalogue, filter_type, idcs_filter, args.max_mentions)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -306,7 +301,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', type=str, required=True)
     parser.add_argument('--output', type=str, required=True)
-    
+    parser.add_argument('--dataset_path', type=str, default='/fsx/kassner/OSCAR/subset/cnn_bbc_matcha')
+    parser.add_argument('--ent_catalogue_idx_path', type=str, default='/data/home/kassner/BELA/data/blink/novel_entities_filtered.jsonl')
+    parser.add_argument('--novel_entity_idx_path', type=str, default='/data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt')
+    parser.add_argument('--wikidata_base_path', type=str, default='/fsx/kassner/wikidata/')
+    parser.add_argument('--wikipedia_base_path', type=str, default='/fsx/kassner/wikipedia/')
     parser.add_argument('--threshold', type=float, default=None)
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--strategy', type=str, default='backwards',
