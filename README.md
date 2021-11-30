@@ -22,12 +22,12 @@ The default path to the data is `/fsx/movb/data/matcha`. You need to modify conf
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el_disambiguation_only
 ```
 
-## Train model on entity linking data
+## Joint Train model on entity linking data
 
 Config is stored in `bela/conf/joint_el.yaml`. To run training (you should be on machine with GPU):
 
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el_disambiguation_only
+PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
 ```
 
 ## Train model using SLURM
@@ -41,8 +41,8 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambigu
 srun --gres=gpu:1 --partition=a100 --time=3:00:00 --pty /bin/bash -l
 ```
 
-Saves to output to:
-/data/home/kassner/BELA/multirun/*
+Saves output to:
+`/data/home/kassner/BELA/multirun/*`
 
 ## run tensorboard
 ```
@@ -55,3 +55,30 @@ jupyter-lab --ip=0.0.0.0 --port=8888
 ssh cluster_id -L 8844:a100-st-p4d24xlarge-35:8888
 http://127.0.0.1:8844/
 ```
+
+## Evaluation
+Set test_only=True in `bela/conf/config.py`
+
+## Novel Entity Detection
+First, store rejection head features:
+```
+PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name eval_md
+```
+
+## Novel Entity Clustering
+
+First, embed mentions:
+```
+PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name cluster
+```
+
+Then, cluster mentions using greedy-NN
+```
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type novel --threshold 0.9 --max_mentions 500000
+```
+or GRINCH:
+```
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type novel --threshold 0.9 --max_mentions 500000 --cluster_type grinch
+```
+
+## Novel Entity Indexing
