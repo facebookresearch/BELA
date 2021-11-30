@@ -186,7 +186,7 @@ def cluster(scores, linking_strategy):
 
     return clusters.cpu().numpy()
 
-def load_embeddings(embeddings_path_list, ent_catalogue, filter_type, idcs_filter, max_mentions=None):
+def load_embeddings(embeddings_path_list, filter_type, idcs_filter, max_mentions=None):
     embedding_idx = 0
     logger.info('Loading embeddings')
     entity_vocab = set()
@@ -194,15 +194,14 @@ def load_embeddings(embeddings_path_list, ent_catalogue, filter_type, idcs_filte
     embeddings = []
     num_mentions = 0
     for embedding_path in sorted(embeddings_path_list):
-        print(embedding_path)
         embeddings_buffer = torch.load(embedding_path, map_location='cpu')
         for embedding_batch in embeddings_buffer:
             for embedding in embedding_batch:
                 entity, embedding = embedding[0], embedding[1:]
                 embedding_idx +=1
                 entity = int(float(entity))
-                if filter_type=="entity":
-                    if ent_catalogue.idx_referse[entity] not in idcs_filter:
+                if filter_type=="entities":
+                    if entity in idcs_filter:
                         continue
                 if filter_type=="idcs":
                     if embedding_idx not in idcs_filter:
@@ -217,20 +216,19 @@ def load_embeddings(embeddings_path_list, ent_catalogue, filter_type, idcs_filte
                         return embeddings, entity_vocab, entity_ids
     return embeddings, entity_vocab, entity_ids
 
-def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, ent_catalogue, filter_type, idcs_filter, max_mentions=None):
+def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, filter_type, idcs_filter, max_mentions=None):
     embedding_idx = 0
     logger.info('Adding embeddings')
     num_mentions = len(embeddings)
     for embedding_path in sorted(embeddings_path_list):
-        print(embedding_path)
         embeddings_buffer = torch.load(embedding_path, map_location='cpu')
         for embedding_batch in embeddings_buffer:
             for embedding in embedding_batch:
                 entity, embedding = embedding[0], embedding[1:]
                 embedding_idx +=1
                 entity = int(float(entity))
-                if filter_type=="entity":
-                    if ent_catalogue.idx_referse[entity] not in idcs_filter:
+                if filter_type=="entities":
+                    if entity in idcs_filter:
                         continue
                 if filter_type=="idcs":
                     if embedding_idx not in idcs_filter:
@@ -245,7 +243,7 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                         return embeddings, entity_vocab, entity_ids
     return embeddings, entity_vocab, entity_ids
 
-def select_filter_idcs(filter_type, dataset_path, wikidata_base_path, wikipedia_base_path, \
+def select_filter_idcs(filter_type, dataset_path, ent_catalogue_idx_path, \
                         timesplit=None, year_ref=2019, month_ref=9):
     idcs_filter = set()
     if filter_type=="idcs" and timesplit is not None: 
@@ -262,13 +260,15 @@ def select_filter_idcs(filter_type, dataset_path, wikidata_base_path, wikipedia_
                     if year<year_ref or (year==year_ref and month<=month_ref):
                         idcs_filter.add(i)
     if filter_type=="entities":
-        with open(wikidata_base_path + "en_title2wikidataID.pkl", "rb") as f:
+        '''with open(wikidata_base_path + "en_title2wikidataID.pkl", "rb") as f:
             title2wikidataID = pickle.load(f)
         with open(wikipedia_base_path + "t2/enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
             for line in f:
                 line = json.loads(line)
                 if line["wikipedia_title"] in title2wikidataID:
-                    idcs_filter.add(line["wikipedia_title"])
+                    idcs_filter.add(line["wikipedia_title"])'''
+        ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, None, reverse=True)
+        idcs_filter = ent_catalogue.idx_referse.keys()
     return idcs_filter
 
 def main(args):
@@ -276,16 +276,16 @@ def main(args):
         filter_type="entities"
     if args.type=="t1" or args.type=="t2":
         filter_type="idcs"
-    idcs_filter = select_filter_idcs(filter_type, args.dataset_path, args.wikidata_base_path, args.wikipedia_base_path, timesplit=args.type)
-    ent_catalogue = EntityCatalogue(args.ent_catalogue_idx_path, args.novel_entity_idx_path, reverse=True)
-    
+    logging.info("Filter type: %s", filter_type)
+    idcs_filter = select_filter_idcs(filter_type, args.dataset_path, args.ent_catalogue_idx_path, timesplit=args.type)
+
     input_path = args.input + '*.t7'
     embeddings_path_list = glob.glob(input_path)
-    embeddings, entity_vocab, entity_ids = load_embeddings(embeddings_path_list, ent_catalogue, filter_type, idcs_filter, args.max_mentions)
+    embeddings, entity_vocab, entity_ids = load_embeddings(embeddings_path_list, filter_type, idcs_filter, args.max_mentions)
     if len(embeddings)<=args.max_mentions:
-        idcs_filter = select_filter_idcs("idcs", args.dataset_path, args.wikidata_base_path, args.wikipedia_base_path, timesplit="t2")
-        embeddings, entity_vocab, entity_ids = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, ent_catalogue, filter_type, idcs_filter, args.max_mentions)
-
+        idcs_filter = select_filter_idcs("idcs", args.dataset_path, args.ent_catalogue_idx_path, timesplit="t2")
+        embeddings, entity_vocab, entity_ids = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, filter_type, idcs_filter, args.max_mentions)
+    logging.info("Number of mentions: %s", len(embeddings))
     if args.cluster_type=="greedy":
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         device = 'cpu'
