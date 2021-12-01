@@ -139,7 +139,7 @@ def find_threshold_grinch(grinch, target, max_iters=100):
             bounds[1] = threshold
     return clusters
 
-def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
+def find_threshold_num(scores, linking_strategy, target, entity_ids, max_iters=100):
     logger.info(f'Finding threshold. Target # of clusts: {target}.')
     bounds = [0.0, 1.0]
     n_clusters = -1
@@ -151,17 +151,6 @@ def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
         linking_strategy._threshold = threshold
         clusters = cluster(scores, linking_strategy)
         n_clusters = len(np.unique(clusters))
-        '''labels_true = []
-        labels_pred = []
-        f1_best = 0
-        for ent, cluster in zip(entity_ids, clusters):
-            labels_true.append(ent)
-            labels_pred.append(cluster)
-        h = metrics.homogeneity_score(labels_true, labels_pred)
-        c  = metrics.completeness_score(labels_true, labels_pred)
-        f1 = metrics.f1_score(labels_true, labels_pred, average='macro')
-        '''
-
         logger.info(f'Threshold: {threshold}, # of clusts: {n_clusters}')
         if n_clusters < target:
             bounds[0] = threshold
@@ -169,6 +158,39 @@ def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
             bounds[1] = threshold
     return clusters
 
+def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
+    logger.info(f'Finding threshold. Target # of clusts: {target}.')
+    bounds = [0.0, 1.0]
+    n_clusters = -1
+    attempts = 0
+    max_attempts = 20
+    h_best = 0
+    c_best = 0
+    best_hc = 0
+    logger.info(f'Attempts: {max_attempts}')
+    while attempts<max_attempts:
+        threshold = (bounds[0] + bounds[1]) / 2
+        linking_strategy._threshold = threshold
+        clusters = cluster(scores, linking_strategy)
+        n_clusters = len(np.unique(clusters))
+        labels_true = entity_ids
+        labels_pred = clusters
+        h = metrics.homogeneity_score(labels_true, labels_pred)
+        c  = metrics.completeness_score(labels_true, labels_pred)
+        logger.info(f'Threshold: {threshold}, # of clusts: {n_clusters}')
+        print(c, h, c_best, h_best)
+        #if h>h_best and c>=c_best*0.95 or c>c_best and h>=h_best*0.95:
+        if (h+c)>best_hc:    
+            bounds[0] = threshold
+            h_best = h
+            c_best=c
+            best_hc = h+c
+
+        else:
+            bounds[1] = threshold
+        attempts+=1
+
+    return clusters
 
 def cluster(scores, linking_strategy):
 
@@ -216,10 +238,12 @@ def load_embeddings(embeddings_path_list, filter_type, idcs_filter, max_mentions
                         return embeddings, entity_vocab, entity_ids
     return embeddings, entity_vocab, entity_ids
 
-def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, filter_type, idcs_filter, max_mentions=None):
+def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, filter_type, idcs_filter, idcs_filter_old, max_mentions=None):
     embedding_idx = 0
-    logger.info('Adding embeddings')
     num_mentions = len(embeddings)
+    num_entites_pre = len(entity_vocab)
+    logger.info('Number of entities %s', num_entites_pre)
+    logger.info('Adding embeddings')
     for embedding_path in sorted(embeddings_path_list):
         embeddings_buffer = torch.load(embedding_path, map_location='cpu')
         for embedding_batch in embeddings_buffer:
@@ -227,11 +251,14 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                 entity, embedding = embedding[0], embedding[1:]
                 embedding_idx +=1
                 entity = int(float(entity))
+                if len(entity_vocab)>=2*num_entites_pre:
+                    if entity not in entity_vocab:
+                        continue
                 if filter_type=="entities":
-                    if entity in idcs_filter:
+                    if entity in idcs_filter and embedding_idx not in idcs_filter_old:
                         continue
                 if filter_type=="idcs":
-                    if embedding_idx not in idcs_filter:
+                    if embedding_idx not in idcs_filter and entity not in idcs_filter_old:
                         continue
                 num_mentions +=1
                 embedding = [float(x) for x in embedding]
@@ -241,6 +268,7 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                 if max_mentions is not None:
                     if num_mentions>=max_mentions:
                         return embeddings, entity_vocab, entity_ids
+    
     return embeddings, entity_vocab, entity_ids
 
 def select_filter_idcs(filter_type, dataset_path, ent_catalogue_idx_path, \
@@ -282,9 +310,11 @@ def main(args):
     input_path = args.input + '*.t7'
     embeddings_path_list = glob.glob(input_path)
     embeddings, entity_vocab, entity_ids = load_embeddings(embeddings_path_list, filter_type, idcs_filter, args.max_mentions)
-    if len(embeddings)<=args.max_mentions:
-        idcs_filter = select_filter_idcs("idcs", args.dataset_path, args.ent_catalogue_idx_path, timesplit="t2")
-        embeddings, entity_vocab, entity_ids = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, filter_type, idcs_filter, args.max_mentions)
+    logger.info('Number of mentions %d', len(embeddings))
+    if args.max_mentions is not None:
+        if len(embeddings)<=args.max_mentions:
+            idcs_filter_new = select_filter_idcs("idcs", args.dataset_path, args.ent_catalogue_idx_path, timesplit="t2")
+            embeddings, entity_vocab, entity_ids = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, filter_type, idcs_filter_new,  idcs_filter, args.max_mentions)
     logging.info("Number of mentions: %s", len(embeddings))
     if args.cluster_type=="greedy":
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -325,9 +355,15 @@ def main(args):
 
     output_name = args.input
     output_name = args.input.split('/')[-3].split('.')[0]
-    with open(args.output + output_name + "_" + args.cluster_type + "_" + args.type + ".txt", 'w') as g:
+    
+    output_name = args.output + output_name + "_" + args.cluster_type + "_" + args.type + "_" + str(args.threshold) + "_" + str(args.max_mentions)
+    torch.save(embeddings, output_name + ".t7")
+    logger.info("Save clusters to %s", output_name)
+    with open(output_name + ".txt", 'w') as g:
         for t, p in zip(entity_ids, clusters):
             g.write('%i, %i\n' % (t, p))
+
+    
 
 
 if __name__ == '__main__':
@@ -338,12 +374,11 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_path', type=str, default='/fsx/kassner/OSCAR/subset/cnn_bbc_matcha')
     parser.add_argument('--novel_entity_idx_path', type=str, default='/data/home/kassner/BELA/data/blink/novel_entities_filtered.jsonl')
     parser.add_argument('--ent_catalogue_idx_path', type=str, default='/data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt')
-    parser.add_argument('--wikidata_base_path', type=str, default='/fsx/kassner/wikidata/')
-    parser.add_argument('--wikipedia_base_path', type=str, default='/fsx/kassner/wikipedia/')
+    #parser.add_argument('--wikidata_base_path', type=str, default='/fsx/kassner/wikidata/')
+    #parser.add_argument('--wikipedia_base_path', type=str, default='/fsx/kassner/wikipedia/')
     parser.add_argument('--threshold', type=float, default=None)
     parser.add_argument('--limit', type=int, default=None)
-    parser.add_argument('--strategy', type=str, default='backwards',
-                        choices=list(LINKING_STRATEGIES.keys()))
+    parser.add_argument('--strategy', type=str, default='backwards')
     parser.add_argument('--type', type=str, default='all')
     parser.add_argument('-d', '--dot_prod', action='store_true')
     parser.add_argument('--max_mentions', type=int)
