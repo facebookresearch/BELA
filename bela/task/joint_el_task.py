@@ -169,10 +169,7 @@ class JointELTask(LightningModule):
                 n = len(novel_entities_embeddings)
                 for i in range(0, n, bs):
                     vectors = novel_entities_embeddings[i: i + bs]
-                    norms = [(doc_vector ** 2).sum() for doc_vector in vectors]
-                    aux_dims = [np.sqrt(phi - norm) for norm in norms]
-                    hnsw_vectors = [np.hstack((doc_vector, aux_dims[i])) for i, doc_vector in enumerate(vectors)]
-                    self.faiss_index.add(np.array(hnsw_vectors))
+                    self.faiss_index.add(np.array(vectors))
                     num_indexed += bs
                     logger.info("data indexed %d", num_indexed)
                 logger.info("Saved updated faiss index to %d", updated_faiss_index)
@@ -226,8 +223,6 @@ class JointELTask(LightningModule):
 
         # retrieve candidates indices
         query_vectors = flat_mentions_repr.detach().cpu().numpy()
-        aux_dim = np.zeros(len(query_vectors), dtype="float32")
-        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         _, neg_cand_indices = self.faiss_index.search(
             query_vectors, self.n_retrieve_candidates
         )
@@ -379,8 +374,6 @@ class JointELTask(LightningModule):
         flat_mentions_repr = flat_mentions_repr[flat_mentions_scores > 0]
 
         query_vectors = flat_mentions_repr.detach().cpu().numpy()
-        aux_dim = np.zeros(len(query_vectors), dtype="float32")
-        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         cand_scores, cand_indices = self.faiss_index.search(
             query_vectors, 1
         )
@@ -562,8 +555,6 @@ class JointELTask(LightningModule):
 
         # retrieve negative candidates ids and scores
         query_vectors = flat_mentions_repr.detach().cpu().numpy()
-        aux_dim = np.zeros(len(query_vectors), dtype="float32")
-        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         neg_cand_scores, neg_cand_indices = self.faiss_index.search(
             query_vectors, n_retrieve_candidates
         )
@@ -657,8 +648,6 @@ class JointELTask(LightningModule):
 
         # retrieve candidates top-1 ids and scores
         query_vectors = flat_mentions_repr.detach().cpu().numpy()
-        aux_dim = np.zeros(len(query_vectors), dtype="float32")
-        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         cand_scores, cand_indices = self.faiss_index.search(
             query_vectors, 1
         )
@@ -814,8 +803,6 @@ class JointELTask(LightningModule):
 
         # retrieve candidates top-1 ids and scores
         query_vectors = flat_mentions_repr.detach().cpu().numpy()
-        aux_dim = np.zeros(len(query_vectors), dtype="float32")
-        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
         cand_scores, cand_indices = self.faiss_index.search(
             query_vectors, 1
         )
