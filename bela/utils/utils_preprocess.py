@@ -131,6 +131,7 @@ def split_paragraph_max_seq_length(text, f_out, tokenizer, idx, seq_length=256):
     sentences = text['text'].split(".")
     num = 0
     for sentence in sentences:
+        print(sentence)
         if sentence=="":
             continue
         sentence_tokenized = tokenizer.tokenize(sentence)
@@ -140,10 +141,14 @@ def split_paragraph_max_seq_length(text, f_out, tokenizer, idx, seq_length=256):
             current_length += len(sentence_tokenized)
             if len(current_paragraph)==0:
                 sentence = sentence.strip()
+            else:
+                if sentence[0]!=" ":
+                    sentence = " " + sentence
             current_paragraph += sentence
             current_paragraph += "."
         else:
-            data = {"text": current_paragraph, "id": idx + "_" + str(num)}
+            data = {"text": current_paragraph, "id": idx + "_" + str(num), 'time_stamp': text['timestamp']}
+            print(data)
             f_out.write(json.dumps(data))
             f_out.write("\n")
             current_paragraph = ""

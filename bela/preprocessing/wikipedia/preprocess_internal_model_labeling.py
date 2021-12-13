@@ -17,7 +17,7 @@ def process_wiki_based_data(base_dataset, lang):
 
     with open(base_dataset + "/" + lang + "/" + lang + "wiki0.pkl", "rb") as f:
         data = pickle.load(f)
-    f_out_l = open(base_dataset + "/" + lang + "_internal.jsonl", "w")
+    f_out_l = open(base_dataset + "/internal.jsonl", "w")
     data_example_id = 0
     for d in tqdm.tqdm(data):
         if len(data[d]['anchors']) > 0:
@@ -46,7 +46,7 @@ def process_wiki_based_data(base_dataset, lang):
                         entities = [anchor]
     f_out_l.close()
 
-def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
+def filter2id_set(base_dataset, filter_subset="test", seq_length=256):
     tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
     all_idcs = set()
     """filenames = glob.glob(base_dataset + "/" + lang + '_matcha_' + filter_subset + '*.jsonl')
@@ -57,15 +57,15 @@ def filter2id_set(base_dataset, lang, filter_subset="joint", seq_length=256):
                 idx = line["data_example_id"]
                 all_idcs.add(idx)"""
 
-    with open(base_dataset + "/" + lang + '_matcha_test.jsonl') as f:
+    with open(base_dataset + '/test.jsonl') as f:
         for line in f:
             line = json.loads(line)
             idx = line["data_example_id"]
             all_idcs.add(idx)
     print("Number of samples: ", len(all_idcs))
 
-    f_out = open(base_dataset + "/" + lang + "_internal_" + filter_subset + "_test.jsonl", "w")
-    with open(base_dataset + "/" + lang + "_internal.jsonl") as f:
+    f_out = open(base_dataset + "_internal_" + filter_subset + ".jsonl", "w")
+    with open(base_dataset + "internal.jsonl") as f:
         for line in tqdm.tqdm(f):
             line = json.loads(line)
             idx = line["id"]
@@ -128,5 +128,5 @@ if __name__ == "__main__":
 
     args, _ = parser.parse_known_args()
     #if args.data_type == "wiki":
-    #process_wiki_based_data(args.base_dataset, args.lang)
-    filter2id_set(args.base_dataset, args.lang)
+    process_wiki_based_data(args.base_dataset, args.lang)
+    filter2id_set(args.base_dataset)

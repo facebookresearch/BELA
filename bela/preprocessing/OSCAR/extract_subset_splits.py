@@ -2,7 +2,6 @@ import argparse
 import gzip
 import json
 import glob
-from newsplease import NewsPlease
 import tqdm
 import os
 from transformers import AutoTokenizer
@@ -41,6 +40,7 @@ def prep4labeling(data_dict, base_path, name):
     for idx in data_dict:
         num_article = 0
         for article in data_dict[idx]:
+            print(article)
             if 'text' in article and len(article['text'])!=0:
                 identifier = str(idx) + "_" + str(num_article)
                 split_paragraph_max_seq_length(article, f_out, tokenizer, identifier)
@@ -72,4 +72,5 @@ if __name__ == "__main__":
     else:
         with open(dict_path + "_filled.json") as f:
             idx_dict = json.load(f)
+
     prep4labeling(idx_dict, args.base_path, args.name)

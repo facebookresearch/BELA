@@ -25,13 +25,6 @@ def filter_data(base_path, url, name):
                         current_month = article.date_publish.month
                         line["timestamp"] = str(current_year) + '_' + str(current_month)
                         idx_dict[idx].append(line)
-                        """if line["timestamp"]:
-                            if current_year > year:
-                                idx_dict[idx].append(line)
-                            elif current_year >= year and current_month >= month:
-                                idx_dict[idx].append(line)
-                            else:
-                                idx_dict[idx].append(line)"""
                     except:
                         pass
 

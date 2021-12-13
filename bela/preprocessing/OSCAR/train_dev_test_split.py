@@ -59,7 +59,7 @@ def process_OSCAR_based_data(base_path, base_datasets):
 
     f_out = open(base_path + "_".join(base_datasets.split(',')) + "_matcha.jsonl", "w")
     for base_dataset in base_datasets.split(','):
-        with open(base_path + base_dataset + "_4labeling.jsonl_processed", "rb") as f:
+        with open(base_path + base_dataset + "_4labeling.jsonl_processed_", "rb") as f:
             for line in f:
                 line = json.loads(line)
                 line["id"] = base_dataset + "_" + line["id"]
@@ -113,9 +113,9 @@ def split_data_t2(base_path, base_datasets, base_wikipedia, base_wikidata, time_
             line_ = json.loads(line)
             idx = line_["data_example_id"]
             if idx in idcs_jointtrain:
-                f_jointtrain.write(json.dumps(line))
+                f_jointtrain.write(line)
             elif idx in idcs_jointdev:
-                f_jointvalid.write(json.dumps(line))
+                f_jointvalid.write(os.linesep)
             elif idx not in ids_t1_train_dev:
                 time = line_['time_stamp']
                 if time in data_test:

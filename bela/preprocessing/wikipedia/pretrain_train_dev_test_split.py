@@ -180,6 +180,8 @@ def split_data_t1(base_dataset, lang, num_pretrain=17000000, num_preval=5000, nu
 def split_data_t2(base_dataset, lang, titles, num_pretrain=17000000, num_preval=5000, num_jointrain=20000, num_jointval=5000):
     idcs = {'train_dev': [], 'test': [], 'novel': []}
     num_instances = 0
+    if "train_dev" not in titles:
+        titles['train_dev']  = titles['pretrain'] + titles['predev'] + titles['jointtrain'] + titles['jointdev']
     titles['train_dev'] = set(titles['train_dev'])
     titles['test'] = set(titles['test'])
     with open(base_dataset + "/" + lang + "_matcha.jsonl") as f:
@@ -258,11 +260,11 @@ if __name__ == "__main__":
     args, _ = parser.parse_known_args()
 
     if args.t2:
-        with open(args.base_dataset + "t1_newsplit/titles.json") as f:
+        with open(args.base_dataset + "t1/titles.json") as f:
             titles = json.load(f)
         args.base_dataset += "t2/"
     else:
-        args.base_dataset += "t1_newsplit/"
+        args.base_dataset += "t1/"
     
     # tokenize
     if not os.path.isfile(args.base_dataset + "/" + args.lang + "_matcha.jsonl"):
@@ -273,8 +275,11 @@ if __name__ == "__main__":
     # train, dev, test split
     if args.t2:
         print("split t2")
+        input('')
         split_data_t2(args.base_dataset, args.lang, titles)
     else:
+        print("split t1")
+        input('')
         split_data_t1(args.base_dataset, args.lang)
 
 
