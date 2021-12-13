@@ -33,6 +33,32 @@ class ClassificationMetrics(NamedTuple):
     boe_fp: int
     boe_fn: int
 
+class UnknownClassificationHead(nn.Module):
+    def __init__(
+        self,
+        ctxt_output_dim=1024,
+    ):
+        super(UnknownClassificationHead, self).__init__()
+
+        self.mlp = nn.Sequential(
+            # [mention, candidate, mention - candidate, mention * candidate, md_score, dis_score]
+            nn.Linear(2 * ctxt_output_dim + 1, ctxt_output_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(ctxt_output_dim, ctxt_output_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(ctxt_output_dim, 1),
+        )
+
+    def forward(self, mentions_repr, entities_reprs, dis_scores):
+        features = [
+            mentions_repr,
+            entities_reprs,
+            dis_scores,
+        ]
+        features = torch.cat(features, 1)
+        return self.mlp(features)
 
 class ClassificationHead(nn.Module):
     def __init__(

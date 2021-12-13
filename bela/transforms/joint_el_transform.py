@@ -273,8 +273,8 @@ class JointELTransform(HFTransform):
         torch.jit.isinstance(mention_lengths, List[List[int]])
         entities = batch[self.entities_column]
         torch.jit.isinstance(entities, List[List[int]])
-
         texts_pieces = [token for tokens in texts for token in tokens]
+
         texts_pieces_token_ids: List[List[int]] = super().forward(
             texts_pieces
         )
@@ -299,6 +299,7 @@ class JointELTransform(HFTransform):
             text_entities[: len(text_mention_offsets)]
             for text_entities, text_mention_offsets in zip(entities, mention_offsets)
         ]
+        
         mentions_seq_lens: List[int] = [
             len(text_mention_offsets) for text_mention_offsets in mention_offsets
         ]

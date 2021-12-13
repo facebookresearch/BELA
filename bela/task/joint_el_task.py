@@ -25,7 +25,8 @@ from bela.conf import (
 )
 
 from bela.datamodule.entity_encoder import embed
-from bela.task.joint_el_heads import (ClassificationMetrics, MentionScoresHead, ClassificationHead, SaliencyClassificationHead, SpanEncoder)
+from bela.task.joint_el_heads import (UnknownClassificationHead, ClassificationMetrics, MentionScoresHead, ClassificationHead, SaliencyClassificationHead, SpanEncoder)
+from bela.datamodule.joint_el_datamodule import EntityCatalogue
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class JointELTask(LightningModule):
         only_train_disambiguation: bool = False,
         train_el_classifier: bool = True,
         train_saliency: bool = True,
+        train_unknown_classifier: bool = False,
         md_threshold: float = 0.2,
         # ue_threshold: float = 0.0,
         el_threshold: float = 0.0,
@@ -77,9 +79,11 @@ class JointELTask(LightningModule):
         self.md_loss = nn.BCEWithLogitsLoss()
         self.el_loss = nn.BCEWithLogitsLoss()
         self.saliency_loss = nn.BCEWithLogitsLoss()
+        self.unknown_classifier_loss = nn.BCEWithLogitsLoss()
         self.only_train_disambiguation = only_train_disambiguation
         self.train_el_classifier = train_el_classifier
         self.train_saliency = train_saliency
+        self.train_unknown_classifier = train_unknown_classifier
         self.md_threshold = md_threshold
         self.el_threshold = el_threshold
         self.saliency_threshold = saliency_threshold
@@ -108,8 +112,10 @@ class JointELTask(LightningModule):
             self.saliency_encoder = SaliencyClassificationHead()
         if self.md_threshold:
             self.novel_el_predictions = []
-            self.novel_el_buffer = 500
+            self.novel_el_buffer = 100
             self.buffer_md_idx = 0
+        if self.train_unknown_classifier:
+            self.unknown_classifier = UnknownClassificationHead()
 
         if self.load_from_checkpoint is not None:
             logger.info(f"Load encoders state from {self.load_from_checkpoint}")
@@ -132,6 +138,10 @@ class JointELTask(LightningModule):
             if len(el_encoder_state) > 0:
                 self.el_encoder.load_state_dict(el_encoder_state)
 
+            unknown_classifier_state = self._get_encoder_state(checkpoint, "unknown_classifier")
+            if len(unknown_classifier_state) > 0:
+                self.unknown_classifier.load_state_dict(unknown_classifier_state)
+
             saliency_encoder_state = self._get_encoder_state(
                 checkpoint, "saliency_encoder"
             )
@@ -152,17 +162,18 @@ class JointELTask(LightningModule):
                 embed(self.path_blink_model, novel_base_path)
             # index novel entities
             updated_faiss_index = novel_base_path + "_updated_index.faiss"
+            logger.info(updated_faiss_index)
 
             novel_entities_embeddings = torch.load(novel_embedding_path)
             logger.info(f"Loaded novel entity embeddings from {novel_embedding_path}")
             if not os.path.isfile(updated_faiss_index):
 
-                phi = 0
+                '''phi = 0
                 for i, item in enumerate(self.embeddings):
                     norms = (item ** 2).sum()
-                    phi = max(phi, norms)
-                # phi=406.7714
-                # norms=169.0674
+                    phi = max(phi, norms)'''
+                phi=406.7714
+                #norms=169.0674
                 buffer_size = 5000
                 bs = int(buffer_size)
                 num_indexed = 0
@@ -175,7 +186,7 @@ class JointELTask(LightningModule):
                     self.faiss_index.add(np.array(hnsw_vectors))
                     num_indexed += bs
                     logger.info("data indexed %d", num_indexed)
-                logger.info("Saved updated faiss index to %d", updated_faiss_index)
+                logger.info("Saved updated faiss index to %s", updated_faiss_index)
                 faiss.write_index(self.faiss_index, updated_faiss_index)
             else:
                 self.faiss_index = faiss.read_index(updated_faiss_index)
@@ -265,6 +276,33 @@ class JointELTask(LightningModule):
 
         loss = self.disambiguation_loss(scores, targets)
 
+        return loss
+
+    def _unknown_classification_training_step(
+        self, mentions_repr, mention_offsets, mention_lengths, entities_ids, targets
+    ):
+        device = mentions_repr.get_device()
+        targets = torch.tensor(targets).to(device)
+
+        # flat mentions and entities indices (mentions_num x embedding_dim)
+        flat_mentions_repr = mentions_repr[mention_lengths != 0]
+        flat_entities_ids = entities_ids[mention_lengths != 0]
+
+        query_vectors = flat_mentions_repr.detach().cpu().numpy()
+        aux_dim = np.zeros(len(query_vectors), dtype="float32")
+        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
+        cand_scores, cand_indices = self.faiss_index.search(
+            query_vectors, 1
+        )
+        cand_scores = torch.from_numpy(cand_scores)
+        cand_indices = torch.from_numpy(cand_indices)
+
+        flat_entities_repr = self.embeddings[cand_indices.squeeze(1)].to(device)
+        cand_scores = cand_scores.to(device)
+        cand_indices = cand_indices.to(device)
+        predictions = self.unknown_classifier(flat_mentions_repr, flat_entities_repr, cand_scores).squeeze(1)
+        print(predictions)
+        loss = self.unknown_classifier_loss(predictions, targets)
         return loss
 
     def _md_training_step(
@@ -489,11 +527,22 @@ class JointELTask(LightningModule):
         entities_ids = batch["entities"]  # bs x max_mentions_num
         tokens_mapping = batch["tokens_mapping"]  # bs x max_tokens_in_input x 2
         salient_entities = batch["salient_entities"]  # bs
-
+        unknown_labels = batch["unknown_labels"]
         # mention representations (bs x max_mentions_num x embedding_dim)
         text_encodings, mentions_repr = self(
             text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
         )
+        if self.train_unknown_classifier:
+            loss= self._unknown_classification_training_step(
+                mentions_repr,
+                gold_mention_offsets,
+                gold_mention_lengths,
+                entities_ids,
+                unknown_labels
+            )
+            print(loss)
+            self.log("train_loss", loss, prog_bar=True)
+            return loss
 
         dis_loss = self._disambiguation_training_step(
             mentions_repr,
@@ -537,6 +586,44 @@ class JointELTask(LightningModule):
         self.log("train_loss", loss, prog_bar=True)
 
         return loss
+
+    def _unknown_classification_eval_step(
+        self,
+        mentions_repr,
+        mention_offsets,
+        mention_lengths,
+        entities_ids,
+        targets
+    ):
+        device = mentions_repr.get_device()
+        targets = torch.tensor(targets).to(device)
+
+        # flat mentions and entities indices (mentions_num x embedding_dim)
+        flat_mentions_repr = mentions_repr[mention_lengths != 0]
+        flat_entities_ids = entities_ids[mention_lengths != 0]
+
+        query_vectors = flat_mentions_repr.detach().cpu().numpy()
+        aux_dim = np.zeros(len(query_vectors), dtype="float32")
+        query_vectors = np.hstack((query_vectors, aux_dim.reshape(-1, 1)))
+        cand_scores, cand_indices = self.faiss_index.search(
+            query_vectors, 1
+        )
+        cand_scores = torch.from_numpy(cand_scores)
+        cand_indices = torch.from_numpy(cand_indices)
+
+        flat_entities_repr = self.embeddings[cand_indices.squeeze(1)].to(device)
+        cand_scores = cand_scores.to(device)
+        cand_indices = cand_indices.to(device)
+
+        predictions = self.unknown_classifier(flat_mentions_repr, flat_entities_repr, cand_scores).squeeze(1)
+        predictions = torch.sigmoid(
+                predictions
+            )
+        return (
+            targets,
+            predictions
+            
+        )
 
     def _disambiguation_eval_step(
         self,
@@ -875,7 +962,10 @@ class JointELTask(LightningModule):
                             # md_score and flat_mentions_scores = mention detection score
                             # flat_mentions_repr
                             # flat_entities_repr
-                            novel_prediction_example.append([offset, length, float(el_scores[cand_idx]), float(cand_scores[cand_idx][0]), float(md_score), flat_mentions_repr[cand_idx], flat_entities_repr[cand_idx], int(cand_indices[
+                            novel_prediction_example.append([offset, length, float(el_scores[cand_idx]),
+                                                            float(cand_scores[cand_idx][0]), float(md_score),
+                                                            flat_mentions_repr[cand_idx], flat_entities_repr[cand_idx],
+                                                            int(cand_indices[
                             cand_idx])])
                     cand_idx += 1
             novel_predictions.append(novel_prediction_example)
@@ -892,6 +982,19 @@ class JointELTask(LightningModule):
         tokens_mapping = batch["tokens_mapping"]
         salient_entities = batch["salient_entities"]
         data_example_ids = batch["data_example_id"]
+        unknown_labels = batch["unknown_labels"]
+        if self.train_unknown_classifier:
+            text_encodings, mentions_repr = self(
+                text_inputs, text_pad_mask, mention_offsets, mention_lengths
+            )
+
+            return self._unknown_classification_eval_step(
+                mentions_repr,
+                mention_offsets,
+                mention_lengths,
+                entities_ids,
+                unknown_labels,
+            )
 
         if self.only_train_disambiguation:
             text_encodings, mentions_repr = self(
@@ -1007,15 +1110,12 @@ class JointELTask(LightningModule):
         el_predictions = []
         saliency_targets = []
         saliency_predictions = []
-
         for (
             batch_el_targets,
             batch_el_predictions,
             batch_saliency_targets,
             batch_saliency_predictions,
         ) in outputs:
-            print(batch_el_targets)
-            print(batch_el_targets)
             el_targets.extend(batch_el_targets)
             el_predictions.extend(batch_el_predictions)
             saliency_targets.extend(batch_saliency_targets)
@@ -1066,11 +1166,47 @@ class JointELTask(LightningModule):
 
         return metrics
 
+    def _compute_classification_metrics(self, outputs, log_prefix):
+        tp = 0
+        fp = 0
+        fn = 0
+        for (
+            batch_el_targets,
+            batch_el_predictions,
+        ) in outputs:
+            for target, predicton in zip(batch_el_targets, batch_el_predictions):
+                print(target, predicton)
+                if target==1.0 and predicton==target:
+                    tp +=1
+                elif target==1.0 and predicton!=target:
+                    fn +=1
+                elif target==0.0 and predicton==target:
+                    fp +=1
+
+
+        def compute_f1_p_r(tp, fp, fn):
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0
+            return f1, precision, recall
+
+        f1, precision, recall = compute_f1_p_r(tp, fp, fn)
+
+        metrics = {
+            log_prefix + "_f1": f1,
+            log_prefix + "_precision": precision,
+            log_prefix + "_recall": recall,
+        }
+
+        return metrics
+
     def _eval_epoch_end(self, outputs, log_prefix="valid"):
         if self.save_novel_md_path is not None:
             torch.save(self.novel_el_predictions, self.save_novel_md_path + "_" + f"{self.buffer_md_idx:02d}" + ".t7")
         if self.only_train_disambiguation:
             metrics = self._compute_disambiguation_metrics(outputs, log_prefix)
+        elif self.train_unknown_classifier:
+            metrics = self._compute_classification_metrics(outputs, log_prefix)
         else:
             metrics = self._compute_el_metrics(outputs, log_prefix)
         print("EVAL:")
