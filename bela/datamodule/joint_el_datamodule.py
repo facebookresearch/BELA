@@ -28,17 +28,18 @@ class EntityCatalogue:
             for idx, line in enumerate(fd):
                 ent_id = line.strip()
                 self.idx[ent_id] = idx
+                self.mapping[ent_id] = [idx]
 
         logger.info(f"Reading novel entity catalogue index {novel_entity_idx_path}")
         if novel_entity_idx_path is not None:
             with open(novel_entity_idx_path, "r") as f:
-                for line in f:
+                for line_ in f:
                     idx += 1
                     try:
-                        line = json.loads(line)
+                        line = json.loads(line_)
                         line = line["entity"]
                     except:
-                        line = line.strip()
+                        line = line_.strip()
                     if line not in self.idx:
                         self.idx[line] = idx
                         self.mapping[line] = [idx]
