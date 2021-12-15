@@ -10,6 +10,7 @@ import hydra
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import os.path
 
 import torch.distributed as dist
@@ -52,7 +53,7 @@ class JointELTask(LightningModule):
         train_saliency: bool = True,
         train_unknown_classifier: bool = False,
         md_threshold: float = 0.2,
-        # ue_threshold: float = 0.0,
+        ue_threshold: float = 0.5,
         el_threshold: float = 0.0,
         saliency_threshold: float = 0.4,
     ):
@@ -86,6 +87,7 @@ class JointELTask(LightningModule):
         self.train_unknown_classifier = train_unknown_classifier
         self.md_threshold = md_threshold
         self.el_threshold = el_threshold
+        self.ue_threshold = ue_threshold
         self.saliency_threshold = saliency_threshold
 
     @staticmethod
@@ -165,6 +167,10 @@ class JointELTask(LightningModule):
             logger.info(updated_faiss_index)
 
             novel_entities_embeddings = torch.load(novel_embedding_path)
+            norms_mean = 13.1581449508667
+            novel_entities_embeddings = F.normalize(novel_entities_embeddings)
+            novel_entities_embeddings = novel_entities_embeddings*norms_mean
+
             logger.info(f"Loaded novel entity embeddings from {novel_embedding_path}")
             if not os.path.isfile(updated_faiss_index):
 
@@ -301,8 +307,7 @@ class JointELTask(LightningModule):
         cand_scores = cand_scores.to(device)
         cand_indices = cand_indices.to(device)
         predictions = self.unknown_classifier(flat_mentions_repr, flat_entities_repr, cand_scores).squeeze(1)
-        print(predictions)
-        loss = self.unknown_classifier_loss(predictions, targets)
+        loss = self.unknown_classifier_loss(predictions, targets.double())
         return loss
 
     def _md_training_step(
@@ -533,14 +538,13 @@ class JointELTask(LightningModule):
             text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
         )
         if self.train_unknown_classifier:
-            loss= self._unknown_classification_training_step(
+            loss = self._unknown_classification_training_step(
                 mentions_repr,
                 gold_mention_offsets,
                 gold_mention_lengths,
                 entities_ids,
                 unknown_labels
             )
-            print(loss)
             self.log("train_loss", loss, prog_bar=True)
             return loss
 
@@ -619,9 +623,15 @@ class JointELTask(LightningModule):
         predictions = torch.sigmoid(
                 predictions
             )
+        predictions_binary = []
+        for p in predictions:
+            if p>self.ue_threshold:
+                predictions_binary.append(1.0)
+            else:
+                predictions_binary.append(0.0)
         return (
             targets,
-            predictions
+            predictions_binary
             
         )
 
@@ -1175,7 +1185,6 @@ class JointELTask(LightningModule):
             batch_el_predictions,
         ) in outputs:
             for target, predicton in zip(batch_el_targets, batch_el_predictions):
-                print(target, predicton)
                 if target==1.0 and predicton==target:
                     tp +=1
                 elif target==1.0 and predicton!=target:
