@@ -20,21 +20,40 @@ def get_seq_lengths(batch: List[List[int]]):
 
 
 class EntityCatalogue:
-    def __init__(self, idx_path, novel_entity_idx_path):
+    def __init__(self, idx_path, novel_entity_idx_path, reverse=False):
         logger.info(f"Reading entity catalogue index {idx_path}")
         self.idx = {}
+        self.mapping = {}
         with open(idx_path, "rt") as fd:
             for idx, line in enumerate(fd):
                 ent_id = line.strip()
                 self.idx[ent_id] = idx
+                self.mapping[ent_id] = [idx]
+
         logger.info(f"Reading novel entity catalogue index {novel_entity_idx_path}")
         if novel_entity_idx_path is not None:
             with open(novel_entity_idx_path, "r") as f:
-                for line in f:
+                for line_ in f:
                     idx += 1
-                    line = json.loads(line)
-                    self.idx[line["entity"]] = idx
+                    try:
+                        line = json.loads(line_)
+                        line = line["entity"]
+                    except:
+                        line = line_.strip()
+                    if line not in self.idx:
+                        self.idx[line] = idx
+                        self.mapping[line] = [idx]
+                    else:
+                        self.mapping[line].append(idx)
+                    
         logger.info(f"Number of entities {len(self.idx)}")
+        if reverse:
+            self.idx_referse = {}
+            for ent in self.idx:
+                self.idx_referse[self.idx[ent]] = ent
+            for ent in self.mapping:
+                for idx in self.mapping[ent]:
+                    self.idx_referse[idx] = ent
 
     def __len__(self):
         return len(self.idx)
@@ -54,7 +73,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
     We also filter out mentions, that are not present in entity catalogue
     """
 
-    def __init__(self, path, ent_catalogue, time_stamp):
+    def __init__(self, path, ent_catalogue, time_stamp, ent_subset):
         self.ent_catalogue = ent_catalogue
         self.debug_file = open("debug.jsonl", 'w')
         self.file = open(path, mode="rt")
@@ -62,13 +81,13 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         self.offsets = []
         self.count = 0
         self.time_stamp = time_stamp
+        self.ent_subset = ent_subset
 
         logger.info(f"Build mmap index for {path}")
         line = self.mm.readline()
-  
         line = json.loads(line)
         offset = 0
-
+        num = 0
         if self.time_stamp is not None:
             year_ref, month_ref = self.time_stamp.split('-')
             year_ref = int(year_ref)
@@ -84,6 +103,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
                 elif year == year_ref and month < month_ref:
                     keep = False
             if keep:
+                num +=1
                 self.offsets.append(offset)
                 self.count += 1
             offset = self.mm.tell()
@@ -97,7 +117,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         return self.count
 
     def __getitem__(self, index):
-        # print(index)
+
         offset = self.offsets[index]
         self.mm.seek(offset)
         line = self.mm.readline()
@@ -108,7 +128,12 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         for gt_entity in example["gt_entities"]:
             offset, length, entity, ent_type = gt_entity[:4]
             if entity in self.ent_catalogue:
-                gt_entities.append((offset, length, self.ent_catalogue[entity]))
+                #if "novel" not in ent_type:
+                #    continue
+                '''if self.ent_subset is not None:
+                    if entity in self.ent_subset:
+                        continue'''
+                gt_entities.append((offset, length, self.ent_catalogue[entity], ent_type))
 
         gt_entities = sorted(gt_entities)
 
@@ -146,6 +171,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         md_pred_scores = example.get("md_pred_scores")
 
         result = {
+            "data_example_id": example["data_example_id"],
             "text": example["text"],
             "gt_entities": gt_entities,
             "salient_entities": salient_entities,
@@ -173,7 +199,10 @@ class JointELDataModule(LightningDataModule):
         val_path: Optional[str] = None,
         novel_entity_idx_path: Optional[str] = None,
         time_stamp: Optional[str] = None,
+        ent_subset: Optional[str] = None,
         batch_size: int = 2,
+        analyze: bool = False,
+        classify_unknown: bool = False,
         drop_last: bool = False,  # drop last batch if len(dataset) not multiple of batch_size
         num_workers: int = 0,  # increasing this bugs out right now
         *args,
@@ -182,26 +211,31 @@ class JointELDataModule(LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
         self.drop_last = drop_last
+        self.analyze = analyze
+        self.classify_unknown = classify_unknown
 
         self.num_workers = num_workers
-        # print('num workers, ', self.num_workers)
         self.transform = transform
 
         self.ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, novel_entity_idx_path)
+        if ent_subset is not None:
+            self.ent_subset = EntityCatalogue(ent_subset, None, True)
+        else:
+            self.ent_subset = ent_subset
         self.time_stamp = time_stamp
 
         if train_path is not None:
             self.datasets = {
                 "train": ElMatchaDataset(
                     train_path,
-                    self.ent_catalogue, self.time_stamp
+                    self.ent_catalogue, self.time_stamp, self.ent_subset
                 ),
-                "valid": ElMatchaDataset(val_path, self.ent_catalogue, self.time_stamp),
-                "test": ElMatchaDataset(test_path, self.ent_catalogue, self.time_stamp),
+                "valid": ElMatchaDataset(val_path, self.ent_catalogue, self.time_stamp, self.ent_subset),
+                "test": ElMatchaDataset(test_path, self.ent_catalogue, self.time_stamp, self.ent_subset),
             }
         else:
             self.datasets = {
-                    "test": ElMatchaDataset(test_path, self.ent_catalogue, self.time_stamp),
+                    "test": ElMatchaDataset(test_path, self.ent_catalogue, self.time_stamp, self.ent_subset),
                 }
 
 
@@ -244,7 +278,6 @@ class JointELDataModule(LightningDataModule):
         """
         Input:
             batch: List[Example]
-
             Example fields:
                - "text": List[str] - post tokens
                - "gt_entities": List[Tuple[int, int, int]] - GT entities in text,
@@ -259,24 +292,42 @@ class JointELDataModule(LightningDataModule):
         texts = []
         offsets = []
         lengths = []
+        lengths_debug = []
         entities = []
         salient_entities = []
+        metadata = []
+        data_example_ids = []
+        unknown_labels = []
 
         for example in batch:
             texts.append(example["text"])
+            data_example_ids.append(example["data_example_id"])
             example_offsets = []
             example_lengths = []
             example_entities = []
-            for offset, length, entity_id in example["gt_entities"]:
+            example_metadata = []
+            example_unknown_labels = []
+            for offset, length, entity_id, info in example["gt_entities"]:
                 example_offsets.append(offset)
                 example_lengths.append(length)
                 example_entities.append(entity_id)
+                if self.analyze:
+                    example_metadata.append(info)
+                if self.classify_unknown:
+                    if entity_id not in self.ent_subset.idx_referse:
+                        example_unknown_labels.append(1.0)
+                    else:
+                        example_unknown_labels.append(0.0)
             offsets.append(example_offsets)
             lengths.append(example_lengths)
+            lengths_debug.extend(example_offsets)
             entities.append(example_entities)
+            unknown_labels.append(example_unknown_labels)
+        
+            if self.analyze:
+                metadata.append(example_metadata)
 
             salient_entities.append(example["salient_entities"])
-
         text_tensors, mentions_tensors = self.transform(
             {
                 "texts": texts,
@@ -285,7 +336,24 @@ class JointELDataModule(LightningDataModule):
                 "entities": entities,
             }
         )
-        #print(text_tensors["input_ids"].shape)
+        new_unknown_labels = []
+        if len(unknown_labels)>0:
+            for length, unknown_label in zip(mentions_tensors["mention_lengths"], unknown_labels):
+                new_unknown_labels.extend(unknown_label[0:len(length[length!=0])])
+
+        if self.analyze:
+            return {
+            "input_ids": text_tensors["input_ids"],
+            "attention_mask": text_tensors["attention_mask"],
+            "mention_offsets": mentions_tensors["mention_offsets"],
+            "mention_lengths": mentions_tensors["mention_lengths"],
+            "entities": mentions_tensors["entities"],
+            "tokens_mapping": mentions_tensors["tokens_mapping"],
+            "salient_entities": salient_entities,
+            "text": texts,
+            "metadata": metadata,
+            "data_example_id": data_example_ids
+        }
         return {
             "input_ids": text_tensors["input_ids"],
             "attention_mask": text_tensors["attention_mask"],
@@ -294,4 +362,6 @@ class JointELDataModule(LightningDataModule):
             "entities": mentions_tensors["entities"],
             "tokens_mapping": mentions_tensors["tokens_mapping"],
             "salient_entities": salient_entities,
+            "unknown_labels": new_unknown_labels,
+            "data_example_id": data_example_ids
         }
