@@ -57,7 +57,7 @@ def write_out(data, f_out):
 
 def process_OSCAR_based_data(base_path, base_datasets):
 
-    f_out = open(base_path + "_".join(base_datasets.split(',')) + "_matcha.jsonl", "w")
+    f_out = open(base_path + "_".join(base_datasets.split(',')) + ".jsonl", "w")
     for base_dataset in base_datasets.split(','):
         with open(base_path + base_dataset + "_4labeling.jsonl_processed", "rb") as f:
             for line in f:
@@ -84,7 +84,7 @@ def split_data_t2(base_path, base_datasets, base_wikipedia, base_wikidata, time_
                 novel_entities[line["wikipedia_title"]] = 0
 
     base_dataset = "_".join(base_datasets.split(','))
-    with open(base_path + base_dataset + "_matcha.jsonl") as f, \
+    with open(base_path + base_dataset + ".jsonl") as f, \
             open(base_path + 't2/' + base_dataset + "_jointtrain.jsonl", 'w') as f_jointtrain, \
             open(base_path + 't2/' + base_dataset + "_jointdev.jsonl", 'w') as f_jointvalid, \
             open(base_path + 't2/' + base_dataset + "_test.jsonl", 'w') as f_test:
@@ -113,9 +113,9 @@ def split_data_t2(base_path, base_datasets, base_wikipedia, base_wikidata, time_
             line_ = json.loads(line)
             idx = line_["data_example_id"]
             if idx in idcs_jointtrain:
-                f_jointtrain.write(json.dumps(line))
+                f_jointtrain.write(line)
             elif idx in idcs_jointdev:
-                f_jointvalid.write(json.dumps(line))
+                f_jointvalid.write(os.linesep)
             elif idx not in ids_t1_train_dev:
                 time = line_['time_stamp']
                 if time in data_test:
@@ -135,7 +135,7 @@ def split_data_t1(base_path, base_datasets, time_split, num_jointrain=20000, num
     year_ref = int(year_ref)
 
     base_dataset = "_".join(base_datasets.split(','))
-    with open(base_path + base_dataset + "_matcha.jsonl") as f, \
+    with open(base_path + base_dataset + ".jsonl") as f, \
             open(base_path + 't1/' + base_dataset + "_jointtrain.jsonl", 'w') as f_jointtrain, \
             open(base_path + 't1/' + base_dataset + "_jointdev.jsonl", 'w') as f_jointvalid, \
             open(base_path + 't1/' + base_dataset + "_test.jsonl", 'w') as f_test:
@@ -222,7 +222,8 @@ if __name__ == "__main__":
 
     args, _ = parser.parse_known_args()
     base_dataset = "_".join(args.datasets.split(','))
-    if not os.path.exists(args.base_path + base_dataset + "_matcha.jsonl"):
+    print(base_dataset)
+    if not os.path.exists(args.base_path + base_dataset + ".jsonl"):
         print("Preprocess OSCAR")
         process_OSCAR_based_data(args.base_path, args.datasets)
 
