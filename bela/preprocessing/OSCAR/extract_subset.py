@@ -23,7 +23,7 @@ def filter_data(base_path, url, name):
                         article = NewsPlease.from_url(line['uri'])
                         current_year = article.date_publish.year
                         current_month = article.date_publish.month
-                        line["timestamp"] = str(current_year) + '_' + str(current_month)
+                        line["time_stamp"] = str(current_year) + '_' + str(current_month)
                         idx_dict[idx].append(line)
                         """if line["timestamp"]:
                             if current_year > year:
@@ -35,7 +35,7 @@ def filter_data(base_path, url, name):
                     except:
                         pass
 
-    with open(base_path + "/subset/" + name + ".json", "w") as f:
+    with open(base_path + "/processed/" + name + ".json", "w") as f:
         json.dump(idx_dict, f)
 
 
