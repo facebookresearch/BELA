@@ -119,8 +119,6 @@ def extract_pages(filename):
                         doc["paragraphs"][-1] += span.get_text()
                     else:
                         doc["paragraphs"][-1] += str(span)
-                    if "The weather improved at the end of the" in doc["paragraphs"][-1]:
-                        print(line, filename)
 
     return docs
 
@@ -143,7 +141,7 @@ def split_paragraph_max_seq_length(text, f_out, tokenizer, idx, seq_length=256):
             current_paragraph += sentence
             current_paragraph += "."
         else:
-            data = {"text": current_paragraph, "id": idx + "_" + str(num)}
+            data = {"text": current_paragraph.strip(), "id": idx + "_" + str(num)}
             f_out.write(json.dumps(data))
             f_out.write("\n")
             current_paragraph = ""
@@ -153,6 +151,6 @@ def split_paragraph_max_seq_length(text, f_out, tokenizer, idx, seq_length=256):
             current_paragraph += "."
             num += 1
     if len(current_paragraph)!=0:
-        data = {"text": current_paragraph, "id": idx + "_" + str(num), 'time_stamp': text['timestamp']}
+        data = {"text": current_paragraph.strip(), "id": idx + "_" + str(num), 'time_stamp': text['timestamp']}
         f_out.write(json.dumps(data))
         f_out.write("\n")
