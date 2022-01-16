@@ -47,9 +47,19 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name cluster
 ```
 
 Then, cluster mentions using greedy-NN
+# t1 and t2, all unknown entities
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type novel --threshold 0.9 --max_mentions 500000
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type_ent unknown --threshold 0.78
 ```
+# t2 unknown entities
+```
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type_ent known --type_time t2 --type_ent novel
+```
+# t2 known entities
+```
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type_ent known --type_time t2 --max_mentions 500000
+```
+
 or GRINCH:
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type novel --threshold 0.9 --max_mentions 500000 --cluster_type grinch
