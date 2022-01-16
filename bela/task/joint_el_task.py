@@ -108,7 +108,7 @@ class JointELTask(LightningModule):
             self.saliency_encoder = SaliencyClassificationHead()
         if self.md_threshold:
             self.novel_el_predictions = []
-            self.novel_el_buffer = 500
+            self.novel_el_buffer = 10
             self.buffer_md_idx = 0
 
         if self.load_from_checkpoint is not None:
@@ -151,28 +151,29 @@ class JointELTask(LightningModule):
             if not os.path.isfile(novel_embedding_path):
                 embed(self.path_blink_model, novel_base_path)
             # index novel entities
-            updated_faiss_index = novel_base_path + "_updated_index.faiss"
+            updated_faiss_index = novel_base_path + "_updated_index_cos.faiss"
 
             novel_entities_embeddings = torch.load(novel_embedding_path)
             logger.info(f"Loaded novel entity embeddings from {novel_embedding_path}")
             if not os.path.isfile(updated_faiss_index):
 
-                phi = 0
+                '''phi = 0
                 for i, item in enumerate(self.embeddings):
                     norms = (item ** 2).sum()
-                    phi = max(phi, norms)
+                    phi = max(phi, norms)'''
                 # phi=406.7714
                 # norms=169.0674
                 buffer_size = 5000
                 bs = int(buffer_size)
                 num_indexed = 0
                 n = len(novel_entities_embeddings)
+                print(self.faiss_index.d)
                 for i in range(0, n, bs):
                     vectors = novel_entities_embeddings[i: i + bs]
                     self.faiss_index.add(np.array(vectors))
                     num_indexed += bs
                     logger.info("data indexed %d", num_indexed)
-                logger.info("Saved updated faiss index to %d", updated_faiss_index)
+                logger.info(f"Saved updated index to {updated_faiss_index}")
                 faiss.write_index(self.faiss_index, updated_faiss_index)
             else:
                 self.faiss_index = faiss.read_index(updated_faiss_index)
@@ -893,6 +894,7 @@ class JointELTask(LightningModule):
             )
         
         if self.save_novel_md_path:
+
             return self._joint_novel_step(
             text_inputs,
             text_pad_mask,
@@ -901,7 +903,6 @@ class JointELTask(LightningModule):
             entities_ids,
             tokens_mapping,
         )
-
         return self._joint_eval_step(
             text_inputs,
             text_pad_mask,
