@@ -142,6 +142,7 @@ class JointELTask(LightningModule):
 
         self.embeddings = torch.load(self.embeddings_path)
         self.faiss_index = faiss.read_index(self.faiss_index_path)
+        logger.info(f"Loaded faiss index from {self.faiss_index_path}")
 
         # embed novel entities and add to faiss index
         if self.novel_entity_idx_path is not None:
@@ -167,7 +168,6 @@ class JointELTask(LightningModule):
                 bs = int(buffer_size)
                 num_indexed = 0
                 n = len(novel_entities_embeddings)
-                print(self.faiss_index.d)
                 for i in range(0, n, bs):
                     vectors = novel_entities_embeddings[i: i + bs]
                     self.faiss_index.add(np.array(vectors))
