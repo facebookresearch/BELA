@@ -49,6 +49,7 @@ def write_out(data, f_out):
     template = {
         "data_example_id": data["id"],
         "text": paragraph_tokenized,
+        "text_raw": data["text_raw"],
         "gt_entities": gt_entities,
         "time_stamp": data["time_stamp"]}
     f_out.write(json.dumps(template))
@@ -60,10 +61,13 @@ def process_OSCAR_based_data(base_path, base_datasets):
     f_out = open(base_path + "_".join(base_datasets.split(',')) + ".jsonl", "w")
     for base_dataset in base_datasets.split(','):
         with open(base_path + base_dataset + "_4labeling.jsonl_processed", "rb") as f:
-            for line in f:
-                line = json.loads(line)
-                line["id"] = base_dataset + "_" + line["id"]
-                write_out(line, f_out)
+            with open(base_path + base_dataset + "_4labeling.jsonl", "rb") as g:
+                for line, line_raw in zip(f, g):
+                    line_raw = json.loads(line_raw)
+                    line = json.loads(line)
+                    line["id"] = base_dataset + "_" + line["id"]
+                    line["text_raw"] = line_raw["text"]
+                    write_out(line, f_out)
     f_out.close()
 
 
@@ -227,7 +231,7 @@ if __name__ == "__main__":
         print("Preprocess OSCAR")
         process_OSCAR_based_data(args.base_path, args.datasets)
 
-    if not os.path.exists(args.base_path + 't1/' + base_dataset + "_jointtrain.jsonl"):
+    '''if not os.path.exists(args.base_path + 't1/' + base_dataset + "_jointtrain.jsonl"):
         print("Preprocess t1")
         if not os.path.isdir(args.base_path + 't1/'):
             os.mkdir(args.base_path + 't1/')
@@ -240,4 +244,4 @@ if __name__ == "__main__":
         if not os.path.isdir(args.base_path + 't2/'):
             os.mkdir(args.base_path + 't2/')
         idcs_train_dev = ids_train + ids_dev
-        split_data_t2(args.base_path, args.datasets, args.base_wikipedia, args.base_wikidata, args.time_split, idcs_train_dev)
+        split_data_t2(args.base_path, args.datasets, args.base_wikipedia, args.base_wikidata, args.time_split, idcs_train_dev)'''
