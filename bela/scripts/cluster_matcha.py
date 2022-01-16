@@ -238,7 +238,7 @@ def load_embeddings_old(embeddings_path_list, filter_type, idcs_filter, max_ment
                         return embeddings, entity_vocab, entity_ids
     return embeddings, entity_vocab, entity_ids
 
-def load_embeddings(embeddings_path_list, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None):
+def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None):
     embedding_idx = 0
     logger.info('Loading embeddings')
     entity_vocab = set()
@@ -274,12 +274,13 @@ def load_embeddings(embeddings_path_list, idcs_keep=None, idcs_filter=None, enti
                 embeddings.append(embedding)
                 entity_vocab.add(entity)
                 entity_ids.append(entity)
+                loaded_idcs.append(entities_filter)
                 if max_mentions is not None:
                     if num_mentions>=max_mentions:
                         return embeddings, entity_vocab, entity_ids
-    return embeddings, entity_vocab, entity_ids
+    return embeddings, entity_vocab, entity_ids, loaded_idcs
 
-def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None):
+def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None):
     embedding_idx = 0
     num_mentions = len(embeddings)
     num_entites_pre = len(entity_vocab)
@@ -316,11 +317,12 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                 embeddings.append(embedding)
                 entity_vocab.add(entity)
                 entity_ids.append(entity)
+                loaded_idcs.append(embedding_idx)
                 if max_mentions is not None:
                     if num_mentions>=max_mentions:
                         return embeddings, entity_vocab, entity_ids
     
-    return embeddings, entity_vocab, entity_ids
+    return embeddings, entity_vocab, entity_ids, loaded_idcs
 
 def load_entity_embeddings(entity_vocab, embeddings):
     logging.info('Loading entity embeddings %d', len(embeddings))
@@ -395,6 +397,7 @@ def main(args):
     idcs_keep = None
     entities_keep = None
     entities_filter = None
+    loaded_idcs = []
 
     # collect idcs to filter/keep
     if args.type_time:
@@ -411,14 +414,14 @@ def main(args):
     input_path = args.input + '*.t7'
     embeddings_path_list = glob.glob(input_path)
     #embeddings, entity_vocab, entity_ids = load_embeddings(embeddings_path_list, filter_type, idcs_filter, args.max_mentions)
-    embeddings, entity_vocab, entity_ids =  load_embeddings(embeddings_path_list, idcs_keep=idcs_keep, idcs_filter=idcs_filter, entities_keep=entities_keep, entities_filter=entities_filter, max_mentions=args.max_mentions)
+    embeddings, entity_vocab, entity_ids, loaded_idcs =  load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=idcs_keep, idcs_filter=idcs_filter, entities_keep=entities_keep, entities_filter=entities_filter, max_mentions=args.max_mentions)
 
     logging.info('Number of mentions %d', len(embeddings))
     logging.info("Number of entities: %s", len(entity_vocab))
     if args.max_mentions is not None:
         if len(embeddings)<=args.max_mentions:
             idcs_keep = select_idcs_keep(args.dataset_path, "t2")
-            embeddings, entity_vocab, entity_ids = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, idcs_keep=idcs_keep, idcs_filter=None, entities_keep=entities_filter, entities_filter=None, max_mentions=args.max_mentions)
+            embeddings, entity_vocab, entity_ids, loaded_idcs = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, loaded_idcs, idcs_keep=idcs_keep, idcs_filter=None, entities_keep=entities_filter, entities_filter=None, max_mentions=args.max_mentions)
     
     logging.info("Number of mentions: %s", len(embeddings))
     logging.info("Number of entities: %s", len(entity_vocab))
@@ -467,8 +470,8 @@ def main(args):
 
     logger.info("Save clusters to %s", output_name)
     with open(output_name + ".txt", 'w') as g:
-        for t, p in zip(entity_ids, clusters):
-            g.write('%i, %i\n' % (t, p))
+        for t, p, i in zip(entity_ids, clusters, loaded_idcs):
+            g.write('%i, %i, %i\n' % (t, p, i))
 
 
 if __name__ == '__main__':
