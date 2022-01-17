@@ -274,7 +274,7 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
                 embeddings.append(embedding)
                 entity_vocab.add(entity)
                 entity_ids.append(entity)
-                loaded_idcs.append(entities_filter)
+                loaded_idcs.append(embedding_idx)
                 if max_mentions is not None:
                     if num_mentions>=max_mentions:
                         return embeddings, entity_vocab, entity_ids
