@@ -139,7 +139,7 @@ def find_threshold_grinch(grinch, target, max_iters=100):
             bounds[1] = threshold
     return clusters
 
-def find_threshold_num(scores, linking_strategy, target, entity_ids, max_iters=100):
+def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
     logger.info(f'Finding threshold. Target # of clusts: {target}.')
     bounds = [0.0, 1.0]
     n_clusters = -1
@@ -158,7 +158,7 @@ def find_threshold_num(scores, linking_strategy, target, entity_ids, max_iters=1
             bounds[1] = threshold
     return clusters
 
-def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
+'''def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
     logger.info(f'Finding threshold. Target # of clusts: {target}.')
     bounds = [0.0, 1.0]
     n_clusters = -1
@@ -190,7 +190,7 @@ def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
             bounds[1] = threshold
         attempts+=1
 
-    return clusters
+    return clusters'''
 
 def cluster(scores, linking_strategy):
 
@@ -215,11 +215,14 @@ def load_embeddings_old(embeddings_path_list, filter_type, idcs_filter, max_ment
     entity_ids = []
     embeddings = []
     num_mentions = 0
+
     for embedding_path in sorted(embeddings_path_list):
+
         embeddings_buffer = torch.load(embedding_path, map_location='cpu')
         for embedding_batch in embeddings_buffer:
             for embedding in embedding_batch:
                 entity, embedding = embedding[0], embedding[1:]
+
                 embedding_idx +=1
                 entity = int(float(entity))
                 if filter_type=="entities":
@@ -249,7 +252,9 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
         embeddings_buffer = torch.load(embedding_path, map_location='cpu')
         for embedding_batch in embeddings_buffer:
             for embedding in embedding_batch:
+
                 entity, embedding = embedding[0], embedding[1:]
+
                 embedding_idx +=1
                 entity = int(float(entity))
                 
@@ -379,9 +384,9 @@ def select_idcs_keep(dataset_path, timesplit=None, year_ref=2019, month_ref=9):
     return idcs_keep
 
 def select_entities(ent_catalogue_idx_path):
-    entities_selected = set()
     ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, None, reverse=True)
     entities_selected = ent_catalogue.idx_referse.keys()
+
     entities_selected = set(entities_selected)
     return entities_selected
 
@@ -425,7 +430,7 @@ def main(args):
     
     logging.info("Number of mentions: %s", len(embeddings))
     logging.info("Number of entities: %s", len(entity_vocab))
-    #embeddings = load_entity_embeddings(entity_vocab, embeddings)
+    embeddings = load_entity_embeddings(entity_vocab, embeddings)
     logging.info("Number of mentions: %s", len(embeddings))
 
     torch.save(embeddings, output_name + ".t7")
@@ -433,10 +438,10 @@ def main(args):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         device = 'cpu'
         embeddings = torch.tensor(embeddings, dtype=torch.float32, device=device)
-        print(torch.mean(torch.norm(embeddings, dim=-1, keepdim=True)))
+
         if not args.dot_prod:
             embeddings /= torch.norm(embeddings, dim=-1, keepdim=True)
-        print(torch.mean(torch.norm(embeddings, dim=-1, keepdim=True)))
+
         entity_ids = torch.tensor(entity_ids, dtype=torch.int64, device=device)
 
 
@@ -476,10 +481,10 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', type=str, required=True)
+    parser.add_argument('--input', type=str, default="/checkpoints/kassner/hydra_outputs/main/2022-01-17-142422/0/")
     parser.add_argument('--output', type=str, required=True)
     parser.add_argument('--cluster_type', type=str, default="greedy")
-    parser.add_argument('--dataset_path', type=str, default='/fsx/kassner/OSCAR/subset/cnn_bbc_matcha')
+    parser.add_argument('--dataset_path', type=str, default='/fsx/kassner/OSCAR/processed/cnn_bbc_news')
     parser.add_argument('--novel_entity_idx_path', type=str, default='/data/home/kassner/BELA/data/blink/novel_entities_filtered.jsonl')
     parser.add_argument('--ent_catalogue_idx_path', type=str, default='/data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt')
     #parser.add_argument('--wikidata_base_path', type=str, default='/fsx/kassner/wikidata/')
