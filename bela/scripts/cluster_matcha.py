@@ -208,38 +208,6 @@ def cluster(scores, linking_strategy):
 
     return clusters.cpu().numpy()
 
-def load_embeddings_old(embeddings_path_list, filter_type, idcs_filter, max_mentions=None):
-    embedding_idx = 0
-    logger.info('Loading embeddings')
-    entity_vocab = set()
-    entity_ids = []
-    embeddings = []
-    num_mentions = 0
-
-    for embedding_path in sorted(embeddings_path_list):
-
-        embeddings_buffer = torch.load(embedding_path, map_location='cpu')
-        for embedding_batch in embeddings_buffer:
-            for embedding in embedding_batch:
-                entity, embedding = embedding[0], embedding[1:]
-
-                embedding_idx +=1
-                entity = int(float(entity))
-                if filter_type=="entities":
-                    if entity in idcs_filter:
-                        continue
-                if filter_type=="idcs":
-                    if embedding_idx not in idcs_filter:
-                        continue
-                num_mentions +=1
-                embedding = [float(x) for x in embedding]
-                embeddings.append(embedding)
-                entity_vocab.add(entity)
-                entity_ids.append(entity)
-                if max_mentions is not None:
-                    if num_mentions>=max_mentions:
-                        return embeddings, entity_vocab, entity_ids
-    return embeddings, entity_vocab, entity_ids
 
 def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None):
     embedding_idx = 0
@@ -339,48 +307,23 @@ def load_entity_embeddings(entity_vocab, embeddings):
             embeddings.append(emb)
     return embeddings
 
-def select_filter_idcs_old(filter_type, dataset_path, ent_catalogue_idx_path, \
-                        timesplit=None, year_ref=2019, month_ref=9):
-    idcs_filter = set()
-    if filter_type=="idcs" and timesplit is not None: 
-        with open(dataset_path + ".jsonl") as f:
-            for i, line in enumerate(f):
-                line = json.loads(line)
-                year, month = line["time_stamp"].split("_")
-                year, month = int(year), int(month)
-                if timesplit=="t2": 
-                    if year>year_ref or (year==year_ref and month>month_ref):
-                        for _ in range(len(line["gt_entities"])):
-                            idcs_filter.add(i)
-                elif timesplit=="t1":
-                    if year<year_ref or (year==year_ref and month<=month_ref):
-                        idcs_filter.add(i)
-    if filter_type=="entities":
-        '''with open(wikidata_base_path + "en_title2wikidataID.pkl", "rb") as f:
-            title2wikidataID = pickle.load(f)
-        with open(wikipedia_base_path + "t2/enwiki-20210701-post-kilt.kilt_format.jsonl", "r") as f:
-            for line in f:
-                line = json.loads(line)
-                if line["wikipedia_title"] in title2wikidataID:
-                    idcs_filter.add(line["wikipedia_title"])'''
-        ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, None, reverse=True)
-        idcs_filter = ent_catalogue.idx_referse.keys()
-    return idcs_filter
 
 def select_idcs_keep(dataset_path, timesplit=None, year_ref=2019, month_ref=9):
     idcs_keep = set()
+    i = 0
     with open(dataset_path + ".jsonl") as f:
-        for i, line in enumerate(f):
+        for line in f:
             line = json.loads(line)
             year, month = line["time_stamp"].split("_")
             year, month = int(year), int(month)
-            if timesplit=="t2": 
-                if year>year_ref or (year==year_ref and month>month_ref):
-                    for _ in range(len(line["gt_entities"])):
+            for _ in range(len(line["gt_entities"])):
+                i += 1
+                if timesplit=="t2": 
+                    if year>year_ref or (year==year_ref and month>month_ref):
                         idcs_keep.add(i)
-            elif timesplit=="t1":
-                if year<year_ref or (year==year_ref and month<=month_ref):
-                    idcs_keep.add(i)
+                elif timesplit=="t1":
+                    if year<year_ref or (year==year_ref and month<=month_ref):
+                        idcs_keep.add(i)
     return idcs_keep
 
 def select_entities(ent_catalogue_idx_path):
@@ -395,8 +338,10 @@ def main(args):
 
     output_name = args.input
     output_name = args.input.split('/')[-3].split('.')[0]
-    
-    output_name = args.output + output_name + "_" + args.cluster_type + "_" + str(args.type_time) + "_" + str(args.type_ent) + "_" + str(args.threshold) + "_" + str(args.max_mentions)
+    with_entities = ""
+    if args.with_entities:
+        with_entities = "_with_entities"
+    output_name = args.output + output_name + "_" + args.cluster_type + "_" + str(args.type_time) + "_" + str(args.type_ent) + "_" + str(args.threshold) + "_" + str(args.max_mentions) + with_entities
     
     idcs_filter = None
     idcs_keep = None
@@ -430,8 +375,9 @@ def main(args):
     
     logging.info("Number of mentions: %s", len(embeddings))
     logging.info("Number of entities: %s", len(entity_vocab))
-    embeddings = load_entity_embeddings(entity_vocab, embeddings)
-    logging.info("Number of mentions: %s", len(embeddings))
+    if args.with_entites:
+        embeddings = load_entity_embeddings(entity_vocab, embeddings)
+        logging.info("Number of mentions: %s", len(embeddings))
 
     torch.save(embeddings, output_name + ".t7")
     if args.cluster_type=="greedy":
@@ -462,6 +408,9 @@ def main(args):
         clusters = clusters.tolist()
     
     elif args.cluster_type=="grinch":
+        if not args.dot_prod:
+            embeddings /= torch.norm(embeddings, dim=-1, keepdim=True)
+
         embeddings = np.array(embeddings, dtype=np.float32)
 
         grinch = Grinch(points=embeddings, active_leaf_limit=args.limit, pruning_strategy=args.strategy)
@@ -495,6 +444,7 @@ if __name__ == '__main__':
     parser.add_argument('--type_time', type=str)
     parser.add_argument('--type_ent', type=str)
     parser.add_argument('-d', '--dot_prod', action='store_true')
+    parser.add_argument('-e', '--with_entities', action='store_true')
     parser.add_argument('--max_mentions', type=int)
     args = parser.parse_args()
 
