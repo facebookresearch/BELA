@@ -152,7 +152,6 @@ class BiEncoderRanker(torch.nn.Module):
         return embedding_context.cpu().detach()
 
     def encode_candidate(self, cands):
-        print(cands.shape)
         token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
             cands, self.NULL_IDX
         )
@@ -232,6 +231,24 @@ def load_entity_dict(params):
         for line in f:
             sample = json.loads(line.rstrip())
             title = sample['title']
+            text = sample.get("text", "").strip()
+            entity_list.append((title, text))
+            if params["debug"] and len(entity_list) > 200:
+                break
+
+    return entity_list
+
+def load_entity_cluster_dict(params):
+
+    path = params.get("entity_dict_path", None)
+    assert path is not None, "Error! entity_dict_path is empty."
+
+    entity_list = []
+    #logger.info("Loading entity description from path: " + path)
+    with open(path, 'rt') as f:
+        for line in f:
+            sample = json.loads(line.rstrip())
+            id = sample['id']
             text = sample.get("text", "").strip()
             entity_list.append((title, text))
             if params["debug"] and len(entity_list) > 200:
@@ -386,7 +403,7 @@ def encode_candidate(
 ):
     reranker.model.eval()
     device = reranker.device
-    print(device)
+
     sampler = SequentialSampler(candidate_pool)
     data_loader = DataLoader(
         candidate_pool, sampler=sampler, batch_size=encode_batch_size
@@ -400,6 +417,7 @@ def encode_candidate(
     for step, batch in enumerate(iter_):
         cands = batch
         cands = cands.to(device)
+        print(step)
         cand_encode = reranker.encode_candidate(cands)
         if cand_encode_list is None:
             cand_encode_list = cand_encode

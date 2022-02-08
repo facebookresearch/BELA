@@ -4,6 +4,7 @@ import html
 import json
 from urllib.parse import unquote
 import xml.etree.ElementTree as ET
+from nltk.tokenize import sent_tokenize
 
 
 def search_wikidata(query, label_alias2wikidata_id):
@@ -76,7 +77,6 @@ def chunk_it(seq, num):
 
 
 def extract_pages(filename):
-    print(filename)
     docs = {}
     with open(filename) as f:
         for line in f:
@@ -122,11 +122,26 @@ def extract_pages(filename):
 
     return docs
 
+def sort_time(path):
+    time_dict = {}
+    with open(path) as f:
+        for line in f:
+            line = json.loads(line)
+            time = line["time_stamp"]
+            if time not in time_dict:
+                time_dict[time] = [line]
+            else:
+                time_dict[time].append(line)
+    with open(path.split(".")[0] + "_sorted.jsonl", "w") as f:
+        for key in sorted(time_dict):
+            for line in time_dict[key]:
+                f.write(json.dumps(time_dict[key]))
+                f.write("\n")
 
 def split_paragraph_max_seq_length(text, f_out, tokenizer, idx, seq_length=256):
     current_paragraph = ""
     current_length = 0
-    sentences = text['text'].split(".")
+    sentences = sent_tokenize(text['text'])
     num = 0
     for sentence in sentences:
         if sentence=="":
@@ -136,21 +151,19 @@ def split_paragraph_max_seq_length(text, f_out, tokenizer, idx, seq_length=256):
             continue
         if current_length + len(sentence_tokenized) <= seq_length:
             current_length += len(sentence_tokenized)
-            if len(current_paragraph)==0:
-                sentence = sentence.strip()
             current_paragraph += sentence
-            current_paragraph += "."
+            current_paragraph += " "
         else:
-            data = {"text": current_paragraph.strip(), "id": idx + "_" + str(num)}
+            data = {"text": current_paragraph.strip(), "id": idx + "_" + str(num), 'time_stamp': text['time_stamp']}
             f_out.write(json.dumps(data))
             f_out.write("\n")
             current_paragraph = ""
             current_length = 0
             current_length += len(sentence_tokenized)
-            current_paragraph += sentence.strip()
-            current_paragraph += "."
+            current_paragraph += sentence
+            current_paragraph += " "
             num += 1
     if len(current_paragraph)!=0:
-        data = {"text": current_paragraph.strip(), "id": idx + "_" + str(num), 'time_stamp': text['timestamp']}
+        data = {"text": current_paragraph.strip(), "id": idx + "_" + str(num), 'time_stamp': text['time_stamp']}
         f_out.write(json.dumps(data))
         f_out.write("\n")
