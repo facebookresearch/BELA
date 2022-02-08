@@ -150,9 +150,10 @@ class JointELTask(LightningModule):
             novel_base_path = ".".join(self.novel_entity_idx_path.split('.')[:-1])
             novel_embedding_path = novel_base_path + ".t7"
             if not os.path.isfile(novel_embedding_path):
-                embed(self.path_blink_model, novel_base_path)
+                logger.info(f"Embedding novel entities {novel_embedding_path}")
+                embed(self.path_blink_model, novel_base_path + ".jsonl")
             # index novel entities
-            updated_faiss_index = novel_base_path + "_updated_index_cos.faiss"
+            updated_faiss_index = novel_base_path + "_updated_index.faiss"
 
             novel_entities_embeddings = torch.load(novel_embedding_path)
             logger.info(f"Loaded novel entity embeddings from {novel_embedding_path}")
