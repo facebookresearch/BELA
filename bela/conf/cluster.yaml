@@ -7,16 +7,17 @@ defaults:
   - trainer: gpu_1_host
 
 task:
-  _target_: bela.task.joint_el_task.ClusterTask
-  load_from_checkpoint: /checkpoints/kassner/hydra_outputs/main/2021-11-09-215754/0/lightning_logs/version_492060/checkpoints/checkpoint_best.ckpt
+  _target_: bela.task.cluster_task.ClusterTask
+  load_from_checkpoint: /fsx/kassner/models/jointtrained_t1/0/lightning_logs/version_492060/checkpoints/checkpoint_best.ckpt
   save_embeddings_path: mention_encodings 
 
 datamodule:
-  test_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
+  test_path: /fsx/kassner/OSCAR/processed/cnn_bbc_news.jsonl
   ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
+  novel_entity_idx_path: /data/home/kassner/BELA/data/blink/novel_entities_filtered.jsonl
 
 trainer:
-  gpus: 3
+  gpus: 1
 
 checkpoint_callback:
     monitor: valid_boe_f1
