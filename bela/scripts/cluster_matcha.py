@@ -223,16 +223,9 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
 
                 entity, embedding = embedding[0], embedding[1:]
 
-                embedding_idx +=1
-                entity = int(float(entity))
                 
-                # filter on the basis of idcs
-                if idcs_keep is not None:
-                    if embedding_idx not in idcs_keep:
-                        continue
-                if idcs_filter is not None:
-                    if embedding_idx in idcs_filter:
-                        continue
+                entity = int(float(entity))
+                embedding_idx +=1
 
                 # filter on the basis of entities
                 if entities_keep is not None:
@@ -242,6 +235,16 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
                     if entity in entities_filter:
                         continue
 
+                # filter on the basis of idcs
+                if idcs_keep is not None:
+                    if embedding_idx not in idcs_keep:
+                        continue
+                if idcs_filter is not None:
+                    if embedding_idx in idcs_filter:
+                        continue
+                
+
+                    
                 num_mentions +=1
                 embedding = [float(x) for x in embedding]
                 embeddings.append(embedding)
@@ -250,14 +253,15 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
                 loaded_idcs.append(embedding_idx)
                 if max_mentions is not None:
                     if num_mentions>=max_mentions:
-                        return embeddings, entity_vocab, entity_ids
+                        return embeddings, entity_vocab, entity_ids, loaded_idcs
     return embeddings, entity_vocab, entity_ids, loaded_idcs
+
 
 def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None):
     embedding_idx = 0
     num_mentions = len(embeddings)
     num_entites_pre = len(entity_vocab)
-    logger.info('Number of entities %s', num_entites_pre)
+
     logger.info('Adding embeddings')
     for embedding_path in sorted(embeddings_path_list):
         embeddings_buffer = torch.load(embedding_path, map_location='cpu')
@@ -269,6 +273,14 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                 if len(entity_vocab)>=2*num_entites_pre:
                     if entity not in entity_vocab:
                         continue
+                # filter on the basis of entities
+                if entities_keep is not None:
+                    if entity not in entities_keep:
+                        continue
+                if entities_filter is not None:
+                    if entity in entities_filter:
+                        continue
+
                 # filter on the basis of idcs
                 if idcs_keep is not None:
                     if embedding_idx not in idcs_keep:
@@ -277,13 +289,7 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                     if embedding_idx in idcs_filter:
                         continue
 
-                # filter on the basis of entities
-                if entities_keep is not None:
-                    if entity not in entities_keep:
-                        continue
-                if entities_filter is not None:
-                    if entity in entities_filter:
-                        continue
+                
 
                 num_mentions +=1
                 embedding = [float(x) for x in embedding]
@@ -293,22 +299,24 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                 loaded_idcs.append(embedding_idx)
                 if max_mentions is not None:
                     if num_mentions>=max_mentions:
-                        return embeddings, entity_vocab, entity_ids
+                        return embeddings, entity_vocab, entity_ids, loaded_idcs
     
     return embeddings, entity_vocab, entity_ids, loaded_idcs
 
-def load_entity_embeddings(entity_vocab, embeddings):
-    logging.info('Loading entity embeddings %d', len(embeddings))
+def load_entity_embeddings(entity_vocab):
     entity_embeddings = torch.load("data/blink/all_entities_large.t7")
-    #entity_embeddings2 = torch.load("data/blink/novel_entities_filtered.t7")
-    #entity_embeddings = torch.cat((entity_embeddings, entity_embeddings2),0)
+    embeddings_entities = []
+    entity_ids = []
+    entity_embeddings2 = torch.load("data/blink/novel_entities_filtered.t7")
+    entity_embeddings = torch.cat((entity_embeddings, entity_embeddings2),0)
     for i, emb in enumerate(entity_embeddings):
         if i in entity_vocab:
-            embeddings.append(emb)
-    return embeddings
+            embeddings_entities.append(emb)
+            entity_ids.append(i)
+    return embeddings_entities, entity_ids
 
 
-def select_idcs_keep(dataset_path, timesplit=None, year_ref=2019, month_ref=9):
+def select_idcs_keep(dataset_path, timesplit=None, year_ref=2019, month_ref=8):
     idcs_keep = set()
     i = 0
     with open(dataset_path + ".jsonl") as f:
@@ -318,9 +326,10 @@ def select_idcs_keep(dataset_path, timesplit=None, year_ref=2019, month_ref=9):
             year, month = int(year), int(month)
             for _ in range(len(line["gt_entities"])):
                 i += 1
-                if timesplit=="t2": 
+                if timesplit=="t2":
                     if year>year_ref or (year==year_ref and month>month_ref):
                         idcs_keep.add(i)
+                        
                 elif timesplit=="t1":
                     if year<year_ref or (year==year_ref and month<=month_ref):
                         idcs_keep.add(i)
@@ -328,7 +337,7 @@ def select_idcs_keep(dataset_path, timesplit=None, year_ref=2019, month_ref=9):
 
 def select_entities(ent_catalogue_idx_path):
     ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, None, reverse=True)
-    entities_selected = ent_catalogue.idx_referse.keys()
+    entities_selected = ent_catalogue.idx_reverse.keys()
 
     entities_selected = set(entities_selected)
     return entities_selected
@@ -340,7 +349,7 @@ def main(args):
     output_name = args.input.split('/')[-3].split('.')[0]
     with_entities = ""
     if args.with_entities:
-        with_entities = "_with_entities"
+        with_entities = "_with_entities_all"
     output_name = args.output + output_name + "_" + args.cluster_type + "_" + str(args.type_time) + "_" + str(args.type_ent) + "_" + str(args.threshold) + "_" + str(args.max_mentions) + with_entities
     
     idcs_filter = None
@@ -352,6 +361,7 @@ def main(args):
     # collect idcs to filter/keep
     if args.type_time:
         idcs_keep = select_idcs_keep(args.dataset_path, args.type_time)
+        print(len(idcs_keep))
 
     # collect entities to filter/keep
     if args.type_ent is not None:
@@ -364,6 +374,7 @@ def main(args):
     input_path = args.input + '*.t7'
     embeddings_path_list = glob.glob(input_path)
     #embeddings, entity_vocab, entity_ids = load_embeddings(embeddings_path_list, filter_type, idcs_filter, args.max_mentions)
+
     embeddings, entity_vocab, entity_ids, loaded_idcs =  load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=idcs_keep, idcs_filter=idcs_filter, entities_keep=entities_keep, entities_filter=entities_filter, max_mentions=args.max_mentions)
 
     logging.info('Number of mentions %d', len(embeddings))
@@ -373,13 +384,20 @@ def main(args):
             idcs_keep = select_idcs_keep(args.dataset_path, "t2")
             embeddings, entity_vocab, entity_ids, loaded_idcs = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, loaded_idcs, idcs_keep=idcs_keep, idcs_filter=None, entities_keep=entities_filter, entities_filter=None, max_mentions=args.max_mentions)
     
+    torch.save(embeddings, output_name + ".t7")
     logging.info("Number of mentions: %s", len(embeddings))
     logging.info("Number of entities: %s", len(entity_vocab))
-    if args.with_entites:
-        embeddings = load_entity_embeddings(entity_vocab, embeddings)
-        logging.info("Number of mentions: %s", len(embeddings))
+    embeddings_entities, entity_ids_entities = load_entity_embeddings(entity_vocab)
 
-    torch.save(embeddings, output_name + ".t7")
+    
+    if args.with_entities:
+        embeddings.extend(embeddings_entities)
+        entity_ids.extend(entity_ids_entities)
+        loaded_idcs.extend([-1]*len(entity_ids_entities))
+        logging.info("Number of mentions: %s", len(embeddings))
+        logging.info("Number of entity_ids: %s", len(entity_ids))
+    torch.save(embeddings_entities, output_name + "_ents.t7")
+
     if args.cluster_type=="greedy":
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         device = 'cpu'
