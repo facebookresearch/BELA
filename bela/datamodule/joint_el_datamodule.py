@@ -29,9 +29,10 @@ class EntityCatalogue:
                 ent_id = line.strip()
                 self.idx[ent_id] = idx
                 self.mapping[ent_id] = [idx]
-
-        logger.info(f"Reading novel entity catalogue index {novel_entity_idx_path}")
+        logger.info(f"Number of entities {len(self.idx)}")
+        
         if novel_entity_idx_path is not None:
+            logger.info(f"Reading novel entity catalogue index {novel_entity_idx_path}")
             with open(novel_entity_idx_path, "r") as f:
                 for line_ in f:
                     idx += 1
@@ -48,12 +49,12 @@ class EntityCatalogue:
                     
         logger.info(f"Number of entities {len(self.idx)}")
         if reverse:
-            self.idx_referse = {}
+            self.idx_reverse = {}
             for ent in self.idx:
-                self.idx_referse[self.idx[ent]] = ent
+                self.idx_reverse[self.idx[ent]] = ent
             for ent in self.mapping:
                 for idx in self.mapping[ent]:
-                    self.idx_referse[idx] = ent
+                    self.idx_reverse[idx] = ent
 
     def __len__(self):
         return len(self.idx)
@@ -298,7 +299,6 @@ class JointELDataModule(LightningDataModule):
         metadata = []
         data_example_ids = []
         unknown_labels = []
-
         for example in batch:
             texts.append(example["text"])
             data_example_ids.append(example["data_example_id"])
@@ -314,7 +314,7 @@ class JointELDataModule(LightningDataModule):
                 if self.analyze:
                     example_metadata.append(info)
                 if self.classify_unknown:
-                    if entity_id not in self.ent_subset.idx_referse:
+                    if entity_id not in self.ent_subset.idx_reverse:
                         example_unknown_labels.append(1.0)
                     else:
                         example_unknown_labels.append(0.0)
@@ -336,6 +336,7 @@ class JointELDataModule(LightningDataModule):
                 "entities": entities,
             }
         )
+
         new_unknown_labels = []
         if len(unknown_labels)>0:
             for length, unknown_label in zip(mentions_tensors["mention_lengths"], unknown_labels):
