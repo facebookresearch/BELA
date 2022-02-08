@@ -7,9 +7,11 @@ import random
 import logging
 logger = logging.getLogger(__name__)
 
-def build_index(base_path, embedding_file1, output_name, selected_subset="select", embedding_file2=None, filter_fraction=None):
+def build_index(base_path, embedding_file1, output_name, embedding_file2=None, filter_fraction=None):
     emb_file = base_path + embedding_file1 + '.t7'
     ent_embeddings = torch.load(emb_file)
+    logger.info("loaded %d embeddings", len(ent_embeddings))
+
     if filter_fraction is not None:
         keep_idcs = random.sample(range(0, len(ent_embeddings)), int(len(ent_embeddings)/filter_fraction))
         keep_idcs = torch.tensor(keep_idcs)
@@ -28,13 +30,14 @@ def build_index(base_path, embedding_file1, output_name, selected_subset="select
         ent_embeddings = torch.index_select(ent_embeddings, 0, keep_idcs)
         logger.info("Number of entities", len(ent_embeddings))'''
 
-
     if embedding_file2 is not None:
         emb_file2 = base_path + embedding_file2 + '.t7'
         ent_embeddings2 = torch.load(emb_file2)
         ent_embeddings = torch.cat((ent_embeddings, ent_embeddings2))
+        logger.info("Added %d embeddings", len(ent_embeddings2))
 
-    logger.info("loaded embeddings")
+    
+    logger.info("Total %d embeddings", len(ent_embeddings))
 
     d = ent_embeddings.shape[1]
     buffer_size = 500000
@@ -63,7 +66,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--base_path', type=str, default="/data/home/kassner/BELA/data/blink/")
     parser.add_argument('--embedding_file1', type=str, default="all_entities_large")
-    parser.add_argument('--output_name', type=str, default="faiss_index_t1")
+    parser.add_argument('--output_name', type=str, default="faiss_index_t2")
     parser.add_argument('--embedding_file2', type=str, default=None)
     parser.add_argument('--filter_fraction', type=int, default=None)
     args = parser.parse_args()
