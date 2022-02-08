@@ -1003,8 +1003,6 @@ class JointELTask(LightningModule):
             batch_saliency_targets,
             batch_saliency_predictions,
         ) in outputs:
-            print(batch_el_targets)
-            print(batch_el_targets)
             el_targets.extend(batch_el_targets)
             el_predictions.extend(batch_el_predictions)
             saliency_targets.extend(batch_saliency_targets)
