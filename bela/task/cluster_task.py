@@ -93,11 +93,20 @@ class ClusterTask(LightningModule):
             text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
         )
 
-        device = mentions_repr.get_device()
+        #mentions_repr = torch.cat([torch.unsqueeze(ids, 1), mentions_repr], 1)
 
+        device = mentions_repr.get_device()
         # flat mentions and entities indices (mentions_num x embedding_dim)
         flat_mentions_repr = mentions_repr[gold_mention_lengths != 0]
         flat_entities_ids = entities_ids[gold_mention_lengths != 0]
+        if 2268206 in entities_ids:
+            print(entities_ids[10])
+            print(entities_ids[11])
+            print("flat", flat_entities_ids)
+            print(len(flat_entities_ids))
+            print(len(entities_ids))
+            input('')
+        
 
         ent_mentions_repr = torch.cat([torch.unsqueeze(flat_entities_ids, 1), flat_mentions_repr], 1)
         self.all_tensors.append(ent_mentions_repr)
