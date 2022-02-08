@@ -47,22 +47,22 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name cluster
 ```
 
 Then, cluster mentions using greedy-NN
-# t1 and t2, all unknown entities
+# t1 and t2, all unknown entities + equally many known
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type_ent unknown --threshold 0.78
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input /fsx/kassner/hydra_outputs/main/2022-01-24-084433/0/ --output output_clustering/matcha/ --type_ent unknown --threshold 0.78 --max_mentions 50000
 ```
 # t2 unknown entities
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type_ent known --type_time t2 --type_ent novel
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type_ent known --type_time t2
 ```
 # t2 known entities
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type_ent known --type_time t2 --max_mentions 500000
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type_ent known --type_time t2 --max_mentions 50000
 ```
 
 or GRINCH:
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type novel --threshold 0.9 --max_mentions 500000 --cluster_type grinch
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kassner/embeddings/clustered_jointtrained_t1/0/ --output output_clustering/matcha/ --type novel --threshold 0.9 --max_mentions 50000 --cluster_type grinch
 ```
 
 ## Novel Entity Indexing
@@ -77,7 +77,7 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambigu
 
 ## Start interactive SLURM session
 ```
-srun --gres=gpu:1 --partition=a100 --time=3:00:00 --pty /bin/bash -l
+srun --gres=gpu:1 --partition=a100 --time=78:00:00 --pty /bin/bash -l
 ```
 
 Saves output to:
