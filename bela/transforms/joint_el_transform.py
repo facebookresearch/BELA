@@ -218,7 +218,6 @@ class JointELCollate(nn.Module):
             pad_tokens_mapping(tokens_mapping),
             dtype=torch.long,
         )
-
         return text_model_inputs, mentions_model_inputs
 
 
@@ -294,7 +293,6 @@ class JointELTransform(HFTransform):
             # eos_idx=self.eos_idx,
             max_seq_len=self.max_seq_len,
         )
-
         entities = [
             text_entities[: len(text_mention_offsets)]
             for text_entities, text_mention_offsets in zip(entities, mention_offsets)
