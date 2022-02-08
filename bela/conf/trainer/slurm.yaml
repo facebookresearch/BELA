@@ -25,4 +25,4 @@ hydra:
     mem_gb: 0
     # constraint: volta32gb
   sweep:
-    dir: /checkpoints/${env:USER}/hydra_outputs/${hydra.launcher.name}/${now:%Y-%m-%d-%H%M%S}
+    dir: /fsx/${env:USER}/hydra_outputs/${hydra.launcher.name}/${now:%Y-%m-%d-%H%M%S}
