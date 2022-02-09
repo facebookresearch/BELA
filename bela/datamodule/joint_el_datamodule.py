@@ -316,9 +316,9 @@ class JointELDataModule(LightningDataModule):
                     example_metadata.append(info)
                 if self.classify_unknown:
                     if entity_id not in self.ent_subset.idx_referse:
-                        example_unknown_labels.append(1.0)
-                    else:
                         example_unknown_labels.append(0.0)
+                    else:
+                        example_unknown_labels.append(1.0)
             offsets.append(example_offsets)
             lengths.append(example_lengths)
             lengths_debug.extend(example_offsets)
