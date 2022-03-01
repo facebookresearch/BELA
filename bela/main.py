@@ -1,5 +1,6 @@
 # (c) Facebook, Inc. and its affiliates. Confidential and proprietary.
 
+import os
 import hydra
 from bela.conf.config import MainConfig
 
@@ -10,7 +11,16 @@ from pytorch_lightning.trainer import Trainer
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: MainConfig):
     print(OmegaConf.to_yaml(cfg))
-    # cfg.task.datamodule = None
+
+    os.environ["NCCL_NSOCKS_PERTHREAD"] = "4"
+    os.environ["NCCL_SOCKET_NTHREADS"] = "2"
+
+    if cfg.get("debug_mode"):
+        os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+        os.environ["NCCL_BLOCKING_WAIT"] = "1"
+
+    os.environ["PL_SKIP_CPU_COPY_ON_DDP_TEARDOWN"] = "1"
+
     task = hydra.utils.instantiate(cfg.task, _recursive_=False)
 
     assert cfg.task.model.model_path == cfg.task.transform.model_path

@@ -20,7 +20,7 @@ hydra:
     gpus_per_node: ${trainer.gpus}
     tasks_per_node: ${trainer.gpus}
     nodes: ${trainer.num_nodes}
-    timeout_min: 1440
+    timeout_min: 7200 # 5 days
     cpus_per_task: 10
     mem_gb: 0
     # constraint: volta32gb

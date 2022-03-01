@@ -72,6 +72,8 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         gt_entities = []
         for gt_entity in example["gt_entities"]:
             offset, length, entity, ent_type = gt_entity[:4]
+            # if ent_type != "wiki":
+            #     continue
             if entity in self.ent_catalogue:
                 gt_entities.append((offset, length, self.ent_catalogue[entity]))
 
