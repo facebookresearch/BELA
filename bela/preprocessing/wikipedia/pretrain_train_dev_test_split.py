@@ -266,8 +266,6 @@ if __name__ == "__main__":
     
     # tokenize
     if not os.path.isfile(args.base_dataset + "/" + args.lang + "_matcha.jsonl"):
-        print("preprocess")
-        input('')
         process_wiki_based_data(args.base_dataset, args.base_wikidata, args.lang)
     
     # train, dev, test split

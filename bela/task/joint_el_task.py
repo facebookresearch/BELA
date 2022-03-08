@@ -24,8 +24,8 @@ from bela.conf import (
     TransformConf,
 )
 
-from bela.datamodule.entity_encoder import embed
-from bela.task.joint_el_heads import (ClassificationMetrics, MentionScoresHead, ClassificationHead, SaliencyClassificationHead, SpanEncoder)
+from bela.datamodule.entity_encoder import embed, embed_cluster
+from bela.task.joint_el_heads import (UnknownClassificationHead, ClassificationMetrics, MentionScoresHead, ClassificationHead, SaliencyClassificationHead, SpanEncoder)
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +49,13 @@ class JointELTask(LightningModule):
         only_train_disambiguation: bool = False,
         train_el_classifier: bool = True,
         train_saliency: bool = True,
+        train_unknown_classifier: bool = False,
         md_threshold: float = 0.2,
         # ue_threshold: float = 0.0,
         el_threshold: float = 0.0,
         saliency_threshold: float = 0.4,
+        cluster_based: bool = False,
+        mention_based: bool = False
     ):
         super().__init__()
 
@@ -66,6 +69,12 @@ class JointELTask(LightningModule):
         self.novel_entity_idx_path = novel_entity_idx_path
         self.save_novel_md_path = save_novel_md_path
         self.path_blink_model = path_blink_model
+        self.description_based = True
+        self.mention_based = False
+        if cluster_based==True or mention_based==True:
+            self.description_based = False   
+        if mention_based==True:
+            self.mention_based = True         
 
         self.n_retrieve_candidates = n_retrieve_candidates
         self.eval_compute_recall_at = eval_compute_recall_at
@@ -80,6 +89,7 @@ class JointELTask(LightningModule):
         self.only_train_disambiguation = only_train_disambiguation
         self.train_el_classifier = train_el_classifier
         self.train_saliency = train_saliency
+        self.train_unknown_classifier = train_unknown_classifier
         self.md_threshold = md_threshold
         self.el_threshold = el_threshold
         self.saliency_threshold = saliency_threshold
@@ -98,6 +108,63 @@ class JointELTask(LightningModule):
         # resetting call_configure_sharded_model_hook attribute so that we could configure model
         self.call_configure_sharded_model_hook = False
 
+        self.embeddings = torch.load(self.embeddings_path)
+        self.faiss_index = faiss.read_index(self.faiss_index_path)
+        logger.info(f"Loaded faiss index from {self.faiss_index_path}")
+
+        # embed novel entities and add to faiss index
+        if self.novel_entity_idx_path is not None:
+            # embed novel entities
+            novel_base_path = ".".join(self.novel_entity_idx_path.split('.')[:-1])
+            if self.description_based:
+                novel_embedding_path = novel_base_path + "_descp.t7"
+                updated_faiss_index = novel_base_path + "_updated_index_descp.faiss"
+            elif self.mention_based:
+                novel_embedding_path = novel_base_path + ".t7"
+                updated_faiss_index = novel_base_path + "_updated_index_mention.faiss"
+            else:   
+                novel_embedding_path = novel_base_path + "_clust.t7"
+                updated_faiss_index = novel_base_path + "_updated_index_clust.faiss"
+            novel_base_path += ".jsonl"
+
+            if not os.path.isfile(novel_embedding_path):
+                logger.info(f"Embedding novel entities {novel_embedding_path}")
+                if self.description_based:
+                    entity_encodings = embed(self.path_blink_model, novel_base_path)
+                else:
+                    entity_encodings = embed_cluster(self.path_blink_model, novel_base_path)
+
+                logger.info("Saved novel entity embeddings to %s", novel_embedding_path)
+                torch.save(entity_encodings, novel_embedding_path)
+
+            novel_entities_embeddings = torch.load(novel_embedding_path)
+            logger.info(f"Loaded novel entity embeddings from {novel_embedding_path}")
+            if not os.path.isfile(updated_faiss_index):
+
+                '''phi = 0
+                for i, item in enumerate(self.embeddings):
+                    norms = (item ** 2).sum()
+                    phi = max(phi, norms)'''
+                # phi=406.7714
+                # norms=169.0674
+                buffer_size = 5000
+                bs = int(buffer_size)
+                num_indexed = 0
+                n = len(novel_entities_embeddings)
+                for i in range(0, n, bs):
+                    vectors = novel_entities_embeddings[i: i + bs]
+                    self.faiss_index.add(np.array(vectors))
+                    num_indexed += bs
+                    logger.info("data indexed %d", num_indexed)
+                logger.info(f"Saved updated index to {updated_faiss_index}")
+                faiss.write_index(self.faiss_index, updated_faiss_index)
+            else:
+                self.faiss_index = faiss.read_index(updated_faiss_index)
+                logger.info(f"Loaded faiss index from {updated_faiss_index}")
+            self.embeddings = torch.cat((self.embeddings, novel_entities_embeddings), 0)
+            logger.info(f"Number of entities {len(self.embeddings)}")
+
+
         self.encoder = hydra.utils.instantiate(
             self.encoder_conf,
         )
@@ -110,6 +177,8 @@ class JointELTask(LightningModule):
             self.novel_el_predictions = []
             self.novel_el_buffer = 10
             self.buffer_md_idx = 0
+        if self.train_unknown_classifier:
+            self.unknown_classifier = UnknownClassificationHead()
 
         if self.load_from_checkpoint is not None:
             logger.info(f"Load encoders state from {self.load_from_checkpoint}")
@@ -140,47 +209,7 @@ class JointELTask(LightningModule):
 
         self.optimizer = hydra.utils.instantiate(self.optim_conf, self.parameters())
 
-        self.embeddings = torch.load(self.embeddings_path)
-        self.faiss_index = faiss.read_index(self.faiss_index_path)
-        logger.info(f"Loaded faiss index from {self.faiss_index_path}")
-
-        # embed novel entities and add to faiss index
-        if self.novel_entity_idx_path is not None:
-            # embed novel entities
-            novel_base_path = ".".join(self.novel_entity_idx_path.split('.')[:-1])
-            novel_embedding_path = novel_base_path + ".t7"
-            if not os.path.isfile(novel_embedding_path):
-                logger.info(f"Embedding novel entities {novel_embedding_path}")
-                embed(self.path_blink_model, novel_base_path + ".jsonl")
-            # index novel entities
-            updated_faiss_index = novel_base_path + "_updated_index.faiss"
-
-            novel_entities_embeddings = torch.load(novel_embedding_path)
-            logger.info(f"Loaded novel entity embeddings from {novel_embedding_path}")
-            if not os.path.isfile(updated_faiss_index):
-
-                '''phi = 0
-                for i, item in enumerate(self.embeddings):
-                    norms = (item ** 2).sum()
-                    phi = max(phi, norms)'''
-                # phi=406.7714
-                # norms=169.0674
-                buffer_size = 5000
-                bs = int(buffer_size)
-                num_indexed = 0
-                n = len(novel_entities_embeddings)
-                for i in range(0, n, bs):
-                    vectors = novel_entities_embeddings[i: i + bs]
-                    self.faiss_index.add(np.array(vectors))
-                    num_indexed += bs
-                    logger.info("data indexed %d", num_indexed)
-                logger.info(f"Saved updated index to {updated_faiss_index}")
-                faiss.write_index(self.faiss_index, updated_faiss_index)
-            else:
-                self.faiss_index = faiss.read_index(updated_faiss_index)
-                logger.info(f"Loaded faiss index from {updated_faiss_index}")
-            self.embeddings = torch.cat((self.embeddings, novel_entities_embeddings), 0)
-            logger.info(f"Number of entities {len(self.embeddings)}")
+        
 
     def sim_score(self, mentions_repr, entities_repr):
         # bs x emb_dim , bs x emb_dim
@@ -490,6 +519,17 @@ class JointELTask(LightningModule):
             text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
         )
 
+        if self.train_unknown_classifier:
+            loss = self._unknown_classification_training_step(
+                mentions_repr,
+                gold_mention_offsets,
+                gold_mention_lengths,
+                entities_ids,
+                unknown_labels
+            )
+            self.log("train_loss", loss, prog_bar=True)
+            return loss
+            
         dis_loss = self._disambiguation_training_step(
             mentions_repr,
             gold_mention_offsets,

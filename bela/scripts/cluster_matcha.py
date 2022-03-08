@@ -209,7 +209,7 @@ def cluster(scores, linking_strategy):
     return clusters.cpu().numpy()
 
 
-def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None):
+def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None, max_entities=None):
     embedding_idx = 0
     logger.info('Loading embeddings')
     entity_vocab = set()
@@ -218,6 +218,8 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
     num_mentions = 0
     for embedding_path in sorted(embeddings_path_list):
         embeddings_buffer = torch.load(embedding_path, map_location='cpu')
+        print(embedding_path)
+        print(num_mentions, len(entity_vocab))
         for embedding_batch in embeddings_buffer:
             for embedding in embedding_batch:
 
@@ -242,9 +244,11 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
                 if idcs_filter is not None:
                     if embedding_idx in idcs_filter:
                         continue
-                
-
-                    
+                if max_entities is not None:
+                    if len(entity_vocab)>=max_entities:
+                        if entity not in entity_vocab:
+                            continue
+    
                 num_mentions +=1
                 embedding = [float(x) for x in embedding]
                 embeddings.append(embedding)
@@ -307,8 +311,8 @@ def load_entity_embeddings(entity_vocab):
     entity_embeddings = torch.load("data/blink/all_entities_large.t7")
     embeddings_entities = []
     entity_ids = []
-    entity_embeddings2 = torch.load("data/blink/novel_entities_filtered.t7")
-    entity_embeddings = torch.cat((entity_embeddings, entity_embeddings2),0)
+    '''entity_embeddings2 = torch.load("data/blink/novel_entities_filtered.t7")
+    entity_embeddings = torch.cat((entity_embeddings, entity_embeddings2),0)'''
     for i, emb in enumerate(entity_embeddings):
         if i in entity_vocab:
             embeddings_entities.append(emb)
@@ -335,6 +339,17 @@ def select_idcs_keep(dataset_path, timesplit=None, year_ref=2019, month_ref=8):
                         idcs_keep.add(i)
     return idcs_keep
 
+def record_ids(dataset_path):
+    idx2id = {}
+    i = 0
+    with open(dataset_path + ".jsonl") as f:
+        for line in f:
+            line = json.loads(line)
+            for _ in range(len(line["gt_entities"])):
+                i += 1
+                idx2id[i] = line['data_example_id']
+    return idx2id
+
 def select_entities(ent_catalogue_idx_path):
     ent_catalogue = EntityCatalogue(ent_catalogue_idx_path, None, reverse=True)
     entities_selected = ent_catalogue.idx_reverse.keys()
@@ -349,8 +364,8 @@ def main(args):
     output_name = args.input.split('/')[-3].split('.')[0]
     with_entities = ""
     if args.with_entities:
-        with_entities = "_with_entities_all"
-    output_name = args.output + output_name + "_" + args.cluster_type + "_" + str(args.type_time) + "_" + str(args.type_ent) + "_" + str(args.threshold) + "_" + str(args.max_mentions) + with_entities
+        with_entities = "_with_entities"
+    output_name = args.output + output_name + "_" + args.cluster_type + "_" + str(args.type_time) + "_" + str(args.type_ent) + "_" + str(args.threshold) + "_" + str(args.max_mentions) + "_" + str(args.max_entities) + with_entities
     
     idcs_filter = None
     idcs_keep = None
@@ -358,6 +373,8 @@ def main(args):
     entities_filter = None
     loaded_idcs = []
 
+    #idx2ids = record_ids(args.dataset_path)
+    #print(len(idx2ids))
     # collect idcs to filter/keep
     if args.type_time:
         idcs_keep = select_idcs_keep(args.dataset_path, args.type_time)
@@ -375,7 +392,7 @@ def main(args):
     embeddings_path_list = glob.glob(input_path)
     #embeddings, entity_vocab, entity_ids = load_embeddings(embeddings_path_list, filter_type, idcs_filter, args.max_mentions)
 
-    embeddings, entity_vocab, entity_ids, loaded_idcs =  load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=idcs_keep, idcs_filter=idcs_filter, entities_keep=entities_keep, entities_filter=entities_filter, max_mentions=args.max_mentions)
+    embeddings, entity_vocab, entity_ids, loaded_idcs =  load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=idcs_keep, idcs_filter=idcs_filter, entities_keep=entities_keep, entities_filter=entities_filter, max_mentions=args.max_mentions, max_entities=args.max_entities)
 
     logging.info('Number of mentions %d', len(embeddings))
     logging.info("Number of entities: %s", len(entity_vocab))
@@ -464,6 +481,7 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--dot_prod', action='store_true')
     parser.add_argument('-e', '--with_entities', action='store_true')
     parser.add_argument('--max_mentions', type=int)
+    parser.add_argument('--max_entities', type=int)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

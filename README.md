@@ -79,7 +79,10 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambigu
 ```
 srun --gres=gpu:1 --partition=a100 --time=78:00:00 --pty /bin/bash -l
 ```
-
+in case one wants to exclude a specific node
+```
+--exclude=XXX
+```
 Saves output to:
 `/data/home/kassner/BELA/multirun/*`
 
