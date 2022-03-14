@@ -78,7 +78,7 @@ if __name__ == "__main__":
     if args.step == "compress":
         wikidata = 0
         with bz2.open(
-            os.path.join(args.base_wikidata, "wikidata-all.json.bz2"), "rt"
+            os.path.join(args.base_wikidata, "latest-all.json.bz2"), "rt"
         ) as fi, jsonlines.open(
             os.path.join(args.base_wikidata, "wikidata-all-compressed.jsonl"), "w"
         ) as fo:

@@ -10,7 +10,7 @@ import os
 import pickle
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from bela.utils.utitls_preprocess import extract_pages
+from bela.utils.utils_preprocess import extract_pages
 from tqdm.auto import tqdm
 
 if __name__ == "__main__":
@@ -62,7 +62,6 @@ if __name__ == "__main__":
             os.path.join(args.base_wikipedia, args.lang, sub_folder)
         )
     ]
-
     """if args.rank < min(len(filenames), 32):
         filenames = chunk_it(filenames, min(len(filenames), 32))[args.rank]
     else:

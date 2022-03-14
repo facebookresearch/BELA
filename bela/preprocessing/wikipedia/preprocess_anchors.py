@@ -11,8 +11,7 @@ import pickle
 import re
 
 from tqdm.auto import tqdm, trange
-from bela.utils.utitls_preprocess import get_wikidata_ids
-
+from bela.utils.utils_preprocess import get_wikidata_ids
 
 def clean_anchor_lang(anchor, lang):
     if re.match(r"^https%3A//(.*)\.wikipedia\.org/wiki/", anchor):
