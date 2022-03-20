@@ -25,7 +25,7 @@ from bela.conf import (
 )
 
 from bela.datamodule.entity_encoder import embed, embed_cluster
-from bela.task.joint_el_heads import (UnknownClassificationHead, ClassificationMetrics, MentionScoresHead, ClassificationHead, SaliencyClassificationHead, SpanEncoder)
+from bela.task.joint_el_heads import (ClassificationMetrics, MentionScoresHead, ClassificationHead, SaliencyClassificationHead, SpanEncoder)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,6 @@ class JointELTask(LightningModule):
         only_train_disambiguation: bool = False,
         train_el_classifier: bool = True,
         train_saliency: bool = True,
-        train_unknown_classifier: bool = False,
         md_threshold: float = 0.2,
         # ue_threshold: float = 0.0,
         el_threshold: float = 0.0,
@@ -89,7 +88,6 @@ class JointELTask(LightningModule):
         self.only_train_disambiguation = only_train_disambiguation
         self.train_el_classifier = train_el_classifier
         self.train_saliency = train_saliency
-        self.train_unknown_classifier = train_unknown_classifier
         self.md_threshold = md_threshold
         self.el_threshold = el_threshold
         self.saliency_threshold = saliency_threshold
@@ -177,8 +175,6 @@ class JointELTask(LightningModule):
             self.novel_el_predictions = []
             self.novel_el_buffer = 10
             self.buffer_md_idx = 0
-        if self.train_unknown_classifier:
-            self.unknown_classifier = UnknownClassificationHead()
 
         if self.load_from_checkpoint is not None:
             logger.info(f"Load encoders state from {self.load_from_checkpoint}")
@@ -519,17 +515,6 @@ class JointELTask(LightningModule):
             text_inputs, text_pad_mask, gold_mention_offsets, gold_mention_lengths
         )
 
-        if self.train_unknown_classifier:
-            loss = self._unknown_classification_training_step(
-                mentions_repr,
-                gold_mention_offsets,
-                gold_mention_lengths,
-                entities_ids,
-                unknown_labels
-            )
-            self.log("train_loss", loss, prog_bar=True)
-            return loss
-            
         dis_loss = self._disambiguation_training_step(
             mentions_repr,
             gold_mention_offsets,

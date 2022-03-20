@@ -64,7 +64,7 @@ def build_index(base_path, embedding_file1, output_name, embedding_file2=None, f
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--base_path', type=str, default="/data/home/kassner/BELA/data/blink/")
+    parser.add_argument('--base_path', type=str, default="/data/home/kassner/BELA/data/entities/")
     parser.add_argument('--embedding_file1', type=str, default="all_entities_large")
     parser.add_argument('--output_name', type=str, default="faiss_index_t2")
     parser.add_argument('--embedding_file2', type=str, default=None)

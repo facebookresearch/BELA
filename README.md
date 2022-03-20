@@ -49,7 +49,7 @@ PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name cluster
 Then, cluster mentions using greedy-NN
 # t1 and t2, all unknown entities + equally many known
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input /fsx/kassner/hydra_outputs/main/2022-01-24-084433/0/ --output output_clustering/matcha/ --type_ent unknown --threshold 0.78 --max_mentions 50000
+PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input /fsx/kassner/hydra_outputs/main/2022-01-24-084433/0/ --output output_clustering/ --type_ent unknown --threshold 0.78 --max_mentions 50000
 ```
 # t2 unknown entities
 ```
@@ -72,7 +72,7 @@ PYTHONPATH=.:$PYTHONPATH python bela/scripts/cluster_matcha.py --input  /fsx/kas
 ## Train model using SLURM
 
 ```
-PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
+PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only_t2 trainer=slurm trainer.num_nodes=1 trainer.gpus=8
 ```
 
 ## Start interactive SLURM session
@@ -97,3 +97,11 @@ jupyter-lab --ip=0.0.0.0 --port=8888
 ssh cluster_id -L 8844:a100-st-p4d24xlarge-35:8888
 http://127.0.0.1:8844/
 ```
+
+Alyssa Farah
+Roland Becker
+Raytheon Technologies
+Roofstock
+Euromonitor International
+John Davis (television personality)
+Steven Koutsis

@@ -8,11 +8,13 @@ import logging
 import pickle
 import numpy as np
 import torch
+import time
 import json
 import glob
 from bela.datamodule.joint_el_datamodule import EntityCatalogue
 from bela.utils.cluster import Grinch
 from sklearn import metrics
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +118,18 @@ LINKING_STRATEGIES = {
 
 def score(embeddings):
     logger.info('Scoring')
+    scores = torch.FloatTensor(embeddings.shape[0], embeddings.shape[0])
+    batch_size = 50000
     with torch.no_grad():
-        scores = torch.mm(embeddings, embeddings.transpose(0, 1))
+        for i in range(int(len(embeddings)/batch_size)):
+            emb1 = embeddings[i*batch_size:(i+1)*batch_size]
+            for j in range(int(len(embeddings)/batch_size)):
+                emb2 = embeddings[j*batch_size:(j+1)*batch_size]
+                emb1 = emb1.cuda()
+                emb2 = emb2.cuda()
+                scores_batch = torch.mm(emb1, emb2.T).cpu()
+                scores[i*batch_size:(i+1)*batch_size, j*batch_size:(j+1)*batch_size] = scores_batch
+        #scores = torch.mm(embeddings, embeddings.transpose(0, 1))
         return scores
     
 def find_threshold_grinch(grinch, target, max_iters=100):
@@ -193,17 +205,18 @@ def find_threshold(scores, linking_strategy, target, entity_ids, max_iters=100):
     return clusters'''
 
 def cluster(scores, linking_strategy):
+    logger.info('Clustering')
 
     # Back fill adjacency.
     adjacency_matrix = torch.zeros_like(scores, dtype=torch.bool)
     n = scores.shape[0]
-    for i, row in enumerate(scores):
+    for i, row in tqdm(enumerate(scores)):
         with torch.no_grad():
             adjacency_matrix[i] = linking_strategy(row)
 
     # Transpose adjacency to propagate cluster ids forward.
     clusters = torch.arange(n, device=scores.device)
-    for i, row in enumerate(adjacency_matrix.transpose(0, 1)):
+    for i, row in tqdm(enumerate(adjacency_matrix.transpose(0, 1))):
         clusters[row] = clusters[i].clone()
 
     return clusters.cpu().numpy()
@@ -218,14 +231,10 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
     num_mentions = 0
     for embedding_path in sorted(embeddings_path_list):
         embeddings_buffer = torch.load(embedding_path, map_location='cpu')
-        print(embedding_path)
-        print(num_mentions, len(entity_vocab))
         for embedding_batch in embeddings_buffer:
             for embedding in embedding_batch:
 
                 entity, embedding = embedding[0], embedding[1:]
-
-                
                 entity = int(float(entity))
                 embedding_idx +=1
 
@@ -261,7 +270,7 @@ def load_embeddings(embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filt
     return embeddings, entity_vocab, entity_ids, loaded_idcs
 
 
-def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None):
+def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, loaded_idcs, idcs_keep=None, idcs_filter=None, entities_keep=None, entities_filter=None, max_mentions=None, max_entities=None):
     embedding_idx = 0
     num_mentions = len(embeddings)
     num_entites_pre = len(entity_vocab)
@@ -274,7 +283,7 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                 entity, embedding = embedding[0], embedding[1:]
                 embedding_idx +=1
                 entity = int(float(entity))
-                if len(entity_vocab)>=2*num_entites_pre:
+                if len(entity_vocab)>=2*num_entites_pre and max_entities is None:
                     if entity not in entity_vocab:
                         continue
                 # filter on the basis of entities
@@ -304,11 +313,15 @@ def append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list
                 if max_mentions is not None:
                     if num_mentions>=max_mentions:
                         return embeddings, entity_vocab, entity_ids, loaded_idcs
+                if max_entities is not None:
+                    if len(entity_vocab)>=max_entities:
+                        return embeddings, entity_vocab, entity_ids, loaded_idcs
+
     
     return embeddings, entity_vocab, entity_ids, loaded_idcs
 
 def load_entity_embeddings(entity_vocab):
-    entity_embeddings = torch.load("data/blink/all_entities_large.t7")
+    entity_embeddings = torch.load("data/entities/all_entities_large.t7")
     embeddings_entities = []
     entity_ids = []
     '''entity_embeddings2 = torch.load("data/blink/novel_entities_filtered.t7")
@@ -365,7 +378,7 @@ def main(args):
     with_entities = ""
     if args.with_entities:
         with_entities = "_with_entities"
-    output_name = args.output + output_name + "_" + args.cluster_type + "_" + str(args.type_time) + "_" + str(args.type_ent) + "_" + str(args.threshold) + "_" + str(args.max_mentions) + "_" + str(args.max_entities) + with_entities
+    output_name = args.output + output_name + "_" + args.cluster_type + "_" + str(args.type_time) + "_" + str(args.type_ent) + "_" + str(args.threshold) + "_" + str(args.max_mentions) + "_" + str(args.max_entities) + with_entities + "_" + str(args.ratio_novel) + "_" + str(args.limit)
     
     idcs_filter = None
     idcs_keep = None
@@ -400,7 +413,10 @@ def main(args):
         if len(embeddings)<=args.max_mentions:
             idcs_keep = select_idcs_keep(args.dataset_path, "t2")
             embeddings, entity_vocab, entity_ids, loaded_idcs = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, loaded_idcs, idcs_keep=idcs_keep, idcs_filter=None, entities_keep=entities_filter, entities_filter=None, max_mentions=args.max_mentions)
-    
+    elif args.ratio_novel is not None:
+        idcs_keep = select_idcs_keep(args.dataset_path, "t2")
+        max_entities = len(entity_vocab)/args.ratio_novel
+        embeddings, entity_vocab, entity_ids, loaded_idcs = append_embeddings(entity_vocab, entity_ids, embeddings, embeddings_path_list, loaded_idcs, idcs_keep=idcs_keep, idcs_filter=None, entities_keep=entities_filter, entities_filter=None, max_entities=max_entities)
     torch.save(embeddings, output_name + ".t7")
     logging.info("Number of mentions: %s", len(embeddings))
     logging.info("Number of entities: %s", len(entity_vocab))
@@ -417,7 +433,7 @@ def main(args):
 
     if args.cluster_type=="greedy":
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        device = 'cpu'
+        print(device)
         embeddings = torch.tensor(embeddings, dtype=torch.float32, device=device)
 
         if not args.dot_prod:
@@ -469,8 +485,8 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=str, required=True)
     parser.add_argument('--cluster_type', type=str, default="greedy")
     parser.add_argument('--dataset_path', type=str, default='/fsx/kassner/OSCAR/processed/cnn_bbc_news')
-    parser.add_argument('--novel_entity_idx_path', type=str, default='/data/home/kassner/BELA/data/blink/novel_entities_filtered.jsonl')
-    parser.add_argument('--ent_catalogue_idx_path', type=str, default='/data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt')
+    parser.add_argument('--novel_entity_idx_path', type=str, default='data/entities/novel_entities_filtered.jsonl')
+    parser.add_argument('--ent_catalogue_idx_path', type=str, default='data/entities/en_bert_ent_idx.txt')
     #parser.add_argument('--wikidata_base_path', type=str, default='/fsx/kassner/wikidata/')
     #parser.add_argument('--wikipedia_base_path', type=str, default='/fsx/kassner/wikipedia/')
     parser.add_argument('--threshold', type=float, default=None)
@@ -482,6 +498,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--with_entities', action='store_true')
     parser.add_argument('--max_mentions', type=int)
     parser.add_argument('--max_entities', type=int)
+    parser.add_argument('--ratio_novel', type=float)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

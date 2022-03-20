@@ -9,19 +9,20 @@ defaults:
 task:
   _target_: bela.task.joint_el_task.JointELTask
   only_train_disambiguation: true
-  embeddings_path: /data/home/kassner/BELA/data/blink/all_entities_large.t7
-  faiss_index_path: /data/home/kassner/BELA/data/blink/faiss_hnsw_index.pkl
-  novel_entity_idx_path: /data/home/kassner/BELA/data/blink/novel_entities.jsonl
-  path_blink_model: /data/home/kassner/BELA/data/blink/biencoder_wiki_large.bin
+  embeddings_path: /data/home/kassner/BELA/data/entities/all_entities_large.t7
+  faiss_index_path: /data/home/kassner/BELA/data/entities/faiss_index_t1.faiss
+  novel_entity_idx_path: /data/home/kassner/BELA/data/entities/novel_entities_filtered.jsonl
+  path_blink_model: /data/home/kassner/BELA/models/biencoder_wiki_large.bin
   optim:
     lr: 1e-05
 
 datamodule:
-  train_path: /data/home/kassner/BELA/data/wikipedia/en_matcha_pretrain.jsonl
-  val_path: /data/home/kassner/BELA/data/wikipedia/en_matcha_predev.jsonl
-  test_path: /data/home/kassner/BELA/data/wikipedia/en_matcha_test.jsonl
-  ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
-  batch_size: 40
+  train_path: /data/home/kassner/wikipedia/t1_old/en_matcha_pretrain.jsonl
+  val_path: /data/home/kassner/wikipedia/t1_old/en_matcha_predev.jsonl
+  test_path: /data/home/kassner/wikipedia/t1_old/en_matcha_test.jsonl
+  ent_catalogue_idx_path: /data/home/kassner/BELA/data/entities/en_bert_ent_idx.txt
+  novel_entity_idx_path: /data/home/kassner/BELA/data/entities/novel_entities_filtered.jsonl
+  batch_size: 2
 
 trainer:
   max_epochs: 2

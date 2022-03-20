@@ -11,8 +11,18 @@ dw https://www.dw.com/en/
 reuters https://www.reuters.com/article/
 
 1. Download OSCAR data from:
+
 Please login with your huggingface credentials as OSCAR 21.09 is behind a [request access feature](https://huggingface.co/docs/transformers/model_sharing#preparation) on HuggingFace side:
 ```huggingface-cli login```
+
+Then download the data. The following steps assume you have git and git-lfs installed, and are on a UNIX system:
+```
+cd data
+GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/datasets/oscar-corpus/OSCAR-2109
+cd OSCAR-2109
+bash download.sh
+```
+
 
 Tho download the script and set --cache_dir to the location where the data should be stored. At this point, the full dataset is XX large and filtered to XX in later processing steps:
    ```PYTHONPATH=.:$PYTHONPATH python bela/preprocessing/OSCAR/download.py --cache_dir data/```

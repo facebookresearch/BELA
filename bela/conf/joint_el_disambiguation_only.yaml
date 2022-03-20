@@ -9,16 +9,16 @@ defaults:
 task:
   _target_: bela.task.joint_el_task.JointELTask
   only_train_disambiguation: true
-  embeddings_path: /data/home/kassner/BELA/data/blink/all_entities_large.t7
-  faiss_index_path: /data/home/kassner/BELA/data/blink/faiss_hnsw_index.pkl
+  embeddings_path: /data/home/kassner/BELA/data/entities/all_entities_large.t7
+  faiss_index_path: /data/home/kassner/BELA/data/blink/faiss_index_t1.faiss
   optim:
     lr: 1e-05
 
 datamodule:
-  train_path: /fsx/kassner/wikipedia/t1/en_matcha_pretrain.jsonl
-  val_path: /fsx/kassner/wikipedia/t1/en_matcha_predev.jsonl
-  test_path: /fsx/kassner/wikipedia/t1/en_matcha_test.jsonl
-  ent_catalogue_idx_path: /data/home/kassner/BELA/data/blink/en_bert_ent_idx.txt
+  train_path: /data/home/kassner/wikipedia/t1_old/en_matcha_pretrain.jsonl
+  val_path: /data/home/kassner/wikipedia/t1_old/en_matcha_predev.jsonl
+  test_path: /data/home/kassner/wikipedia/t1_old/en_matcha_test.jsonl
+  ent_catalogue_idx_path: /data/home/kassner/BELA/data/entities/en_bert_ent_idx.txt
   batch_size: 32
 
 trainer:
