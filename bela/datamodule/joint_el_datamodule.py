@@ -232,7 +232,7 @@ class JointELDataModule(LightningDataModule):
 
             salient_entities.append(example["salient_entities"])
 
-        text_tensors, mentions_tensors = self.transform(
+        model_inputs = self.transform(
             {
                 "texts": texts,
                 "mention_offsets": offsets,
@@ -241,12 +241,19 @@ class JointELDataModule(LightningDataModule):
             }
         )
 
-        return {
-            "input_ids": text_tensors["input_ids"],
-            "attention_mask": text_tensors["attention_mask"],
-            "mention_offsets": mentions_tensors["mention_offsets"],
-            "mention_lengths": mentions_tensors["mention_lengths"],
-            "entities": mentions_tensors["entities"],
-            "tokens_mapping": mentions_tensors["tokens_mapping"],
+        collate_output = {
+            "input_ids": model_inputs["input_ids"],
+            "attention_mask": model_inputs["attention_mask"],
+            "mention_offsets": model_inputs["mention_offsets"],
+            "mention_lengths": model_inputs["mention_lengths"],
+            "entities": model_inputs["entities"],
+            "tokens_mapping": model_inputs["tokens_mapping"],
             "salient_entities": salient_entities,
         }
+
+        if "sp_tokens_boundaries" in model_inputs:
+            collate_output["sp_tokens_boundaries"] = model_inputs[
+                "sp_tokens_boundaries"
+            ]
+
+        return collate_output

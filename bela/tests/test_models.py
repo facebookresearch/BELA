@@ -9,7 +9,7 @@ class TestHFEncoder(unittest.TestCase):
         transform = JointELTransform()
         model = HFEncoder(model_path="xlm-roberta-base")
 
-        text_model_inputs, mentions_model_inputs = transform(
+        model_inputs = transform(
             {
                 "texts": [
                     [
@@ -44,8 +44,8 @@ class TestHFEncoder(unittest.TestCase):
         )
 
         output = model(
-            input_ids=text_model_inputs["input_ids"],
-            attention_mask=text_model_inputs["attention_mask"],
+            input_ids=model_inputs["input_ids"],
+            attention_mask=model_inputs["attention_mask"],
         )
 
 
