@@ -21,11 +21,11 @@ def main(cfg: MainConfig):
 
     os.environ["PL_SKIP_CPU_COPY_ON_DDP_TEARDOWN"] = "1"
 
-    task = hydra.utils.instantiate(cfg.task, _recursive_=False)
-
     assert cfg.task.model.model_path == cfg.task.transform.model_path
     transform = hydra.utils.instantiate(cfg.task.transform)
     datamodule = hydra.utils.instantiate(cfg.datamodule, transform=transform)
+    task = hydra.utils.instantiate(cfg.task, datamodule=datamodule, _recursive_=False)
+
     checkpoint_callback = hydra.utils.instantiate(cfg.checkpoint_callback)
     trainer = Trainer(**cfg.trainer, callbacks=[checkpoint_callback])
 

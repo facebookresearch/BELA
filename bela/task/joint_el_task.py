@@ -3,7 +3,7 @@
 
 import logging
 from collections import OrderedDict
-from typing import NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, NamedTuple, Optional, Tuple, Union
 
 import faiss
 import faiss.contrib.torch_utils
@@ -459,7 +459,7 @@ class JointELTask(LightningModule):
         datamodule: DataModuleConf,
         optim: OptimConf,
         embeddings_path: str,
-        faiss_index_path: str,
+        faiss_index_path: Optional[str] = None,
         n_retrieve_candidates: int = 10,
         eval_compure_recall_at: Tuple[int] = (1, 10, 100),
         warmup_steps: int = 0,
@@ -510,7 +510,7 @@ class JointELTask(LightningModule):
         return encoder_state
 
     def setup_gpu_index(self):
-        gpu_id = int(os.environ["LOCAL_RANK"])
+        gpu_id = int(os.environ.get("LOCAL_RANK", "0"))
 
         flat_config = faiss.GpuIndexFlatConfig()
         flat_config.device = gpu_id
@@ -534,7 +534,7 @@ class JointELTask(LightningModule):
         self.project_encoder_op = nn.Identity()
         if self.encoder.embedding_dim != self.embedding_dim:
             self.project_encoder_op = nn.Sequential(
-                nn.Linear(self.encoder_conf.embedding_dim, self.embedding_dim),
+                nn.Linear(self.encoder.embedding_dim, self.embedding_dim),
                 nn.LayerNorm(self.embedding_dim),
             )
 
@@ -594,9 +594,10 @@ class JointELTask(LightningModule):
         if self.use_gpu_index:
             logger.info(f"Setup GPU index")
             self.setup_gpu_index()
-            self.embeddings = None
+            # self.embeddings = None
         else:
             logger.info(f"Setup CPU index")
+            assert self.faiss_index_path is not None
             self.faiss_index = faiss.read_index(self.faiss_index_path)
 
 
@@ -633,6 +634,9 @@ class JointELTask(LightningModule):
         # flat mentions and entities indices (mentions_num x embedding_dim)
         flat_mentions_repr = mentions_repr[mention_lengths != 0]
         flat_entities_ids = entities_ids[mention_lengths != 0]
+
+        if flat_mentions_repr.shape[0] == 0:
+            return None
 
         # obtain positive entities representations
         if self.use_gpu_index:
@@ -766,7 +770,6 @@ class JointELTask(LightningModule):
         gold_mention_lengths,
         entities_ids,
         tokens_mapping,
-        salient_entities,
     ):
         """
             Train "rejection" head.
@@ -780,7 +783,6 @@ class JointELTask(LightningModule):
             tokens_mapping: sentencepiece to text token mapping
         Returns:
             el_loss: sum of entity linking loss over all predicted mentions
-            saliency_loss: saliency loss if self.train_saliency is True else None
         """
         device = text_encodings.get_device()
 
@@ -833,21 +835,18 @@ class JointELTask(LightningModule):
         # iterate over predicted and gold mentions to create targets for
         # predicted mentions
         targets = []
-        saliency_targets = []
         for (
             e_mention_offsets,
             e_mention_lengths,
             e_gold_mention_offsets,
             e_gold_mention_lengths,
             e_entities,
-            e_salient_entities,
         ) in zip(
             mention_offsets.detach().cpu().tolist(),
             mention_lengths.detach().cpu().tolist(),
             gold_mention_offsets.cpu().tolist(),
             gold_mention_lengths.cpu().tolist(),
             entities_ids.cpu().tolist(),
-            salient_entities,
         ):
             e_gold_targets = {
                 (offset, length): ent
@@ -860,20 +859,6 @@ class JointELTask(LightningModule):
                 for offset, length in zip(e_mention_offsets, e_mention_lengths)
             ]
             targets.append(e_targets)
-
-            if self.train_saliency:
-                e_gold_saliency_targets = {
-                    (offset, length): ent
-                    for offset, length, ent in zip(
-                        e_gold_mention_offsets, e_gold_mention_lengths, e_entities
-                    )
-                    if ent in e_salient_entities
-                }
-                e_saliency_targets = [
-                    e_gold_saliency_targets.get((offset, length), -1)
-                    for offset, length in zip(e_mention_offsets, e_mention_lengths)
-                ]
-                saliency_targets.append(e_saliency_targets)
 
         targets = torch.tensor(targets, device=device)
         flat_targets = targets[mention_lengths != 0][flat_mentions_scores > 0]
@@ -900,37 +885,7 @@ class JointELTask(LightningModule):
 
         el_loss = self.el_loss(predictions, binary_targets)
 
-        saliency_loss = None
-        if self.train_saliency:
-            saliency_targets = torch.tensor(saliency_targets, device=device)
-            flat_saliency_targets = saliency_targets[mention_lengths != 0][
-                flat_mentions_scores > 0
-            ]
-
-            cls_tokens_repr = text_encodings[:, 0, :]
-            # repeat cls token for each mention
-            flat_cls_tokens_repr = torch.repeat_interleave(
-                cls_tokens_repr, (mention_lengths != 0).sum(axis=1), dim=0
-            )
-            # filter mentions with scores <= 0
-            flat_cls_tokens_repr = flat_cls_tokens_repr[flat_mentions_scores > 0]
-
-            saliency_predictions = self.saliency_encoder(
-                flat_cls_tokens_repr,
-                flat_mentions_repr,
-                flat_entities_repr,
-                md_scores,
-                cand_scores,
-            ).squeeze(1)
-
-            binary_saliency_targets = (
-                flat_saliency_targets == cand_indices.squeeze(1)
-            ).double()
-            saliency_loss = self.saliency_loss(
-                saliency_predictions, binary_saliency_targets
-            )
-
-        return el_loss, saliency_loss
+        return el_loss
 
     def training_step(self, batch, batch_idx):
         """
@@ -943,7 +898,6 @@ class JointELTask(LightningModule):
         gold_mention_lengths = batch["mention_lengths"]  # bs x max_mentions_num
         entities_ids = batch["entities"]  # bs x max_mentions_num
         tokens_mapping = batch["tokens_mapping"]  # bs x max_tokens_in_input x 2
-        salient_entities = batch["salient_entities"]  # bs
 
         # mention representations (bs x max_mentions_num x embedding_dim)
         text_encodings, mentions_repr = self(
@@ -956,7 +910,8 @@ class JointELTask(LightningModule):
             gold_mention_lengths,
             entities_ids,
         )
-        self.log("dis_loss", dis_loss, prog_bar=True)
+        if dis_loss is not None:
+            self.log("dis_loss", dis_loss, prog_bar=True)
         loss = dis_loss
 
         if not self.only_train_disambiguation:
@@ -969,10 +924,13 @@ class JointELTask(LightningModule):
                 tokens_mapping,
             )
             self.log("md_loss", md_loss, prog_bar=True)
-            loss += md_loss
+            if loss is not None:
+                loss += md_loss
+            else:
+                loss = md_loss
 
             if self.train_el_classifier:
-                el_loss, saliency_loss = self._el_training_step(
+                el_loss = self._el_training_step(
                     text_encodings,
                     mention_logits,
                     mention_bounds,
@@ -980,14 +938,9 @@ class JointELTask(LightningModule):
                     gold_mention_lengths,
                     entities_ids,
                     tokens_mapping,
-                    salient_entities,
                 )
                 self.log("el_loss", el_loss, prog_bar=True)
                 loss += el_loss
-
-                if self.train_saliency:
-                    self.log("sal_loss", saliency_loss, prog_bar=True)
-                    loss += saliency_loss
 
         self.log("train_loss", loss, prog_bar=True)
 
@@ -1075,7 +1028,6 @@ class JointELTask(LightningModule):
         gold_mention_lengths,
         entities_ids,
         tokens_mapping,
-        salient_entities,
     ):
         device = text_inputs.device
 
@@ -1146,20 +1098,6 @@ class JointELTask(LightningModule):
                 )
             ).squeeze(1)
 
-            if self.train_saliency:
-                cls_tokens_repr = text_encodings[:, 0, :]
-                flat_cls_tokens_repr = torch.repeat_interleave(
-                    cls_tokens_repr, (mention_lengths != 0).sum(axis=1), dim=0
-                )
-
-                saliency_scores = self.saliency_encoder(
-                    flat_cls_tokens_repr,
-                    flat_mentions_repr,
-                    flat_entities_repr,
-                    flat_mentions_scores,
-                    cand_scores,
-                ).squeeze(1)
-
         gold_mention_offsets = gold_mention_offsets.cpu().tolist()
         gold_mention_lengths = gold_mention_lengths.cpu().tolist()
         entities_ids = entities_ids.cpu().tolist()
@@ -1178,31 +1116,16 @@ class JointELTask(LightningModule):
                 }
             )
 
-        saliency_targets = []
-        if self.train_saliency:
-            for example_targets, example_salient_entities in zip(
-                el_targets, salient_entities
-            ):
-                saliency_targets.append(
-                    {
-                        pos: ent_id
-                        for pos, ent_id in example_targets.items()
-                        if ent_id in example_salient_entities
-                    }
-                )
-
         mention_offsets = mention_offsets.detach().cpu().tolist()
         mention_lengths = mention_lengths.detach().cpu().tolist()
         mentions_scores = mentions_scores.detach().cpu().tolist()
 
         el_predictions = []
-        saliency_predictions = []
         cand_idx = 0
         for offsets, lengths, md_scores in zip(
             mention_offsets, mention_lengths, mentions_scores
         ):
             example_predictions = {}
-            example_saliency_predictions = {}
             for offset, length, md_score in zip(offsets, lengths, md_scores):
                 if length != 0:
                     if md_score >= self.md_threshold:
@@ -1213,27 +1136,19 @@ class JointELTask(LightningModule):
                             example_predictions[(offset, length)] = cand_indices[
                                 cand_idx
                             ][0]
-                        if (
-                            self.train_saliency
-                            and saliency_scores[cand_idx] >= self.saliency_threshold
-                        ):
-                            example_saliency_predictions[
-                                (offset, length)
-                            ] = cand_indices[cand_idx][0]
                     cand_idx += 1
             el_predictions.append(example_predictions)
-            saliency_predictions.append(example_saliency_predictions)
 
-        return el_targets, el_predictions, saliency_targets, saliency_predictions
+        return el_targets, el_predictions
 
     def _eval_step(self, batch, batch_idx):
+        
         text_inputs = batch["input_ids"]  # bs x mention_len
         text_pad_mask = batch["attention_mask"]
         mention_offsets = batch["mention_offsets"]  # bs x max_mentions_num
         mention_lengths = batch["mention_lengths"]  # bs x max_mentions_num
         entities_ids = batch["entities"]  # bs x max_mentions_num
         tokens_mapping = batch["tokens_mapping"]
-        salient_entities = batch["salient_entities"]
 
         if self.only_train_disambiguation:
             text_encodings, mentions_repr = self(
@@ -1254,7 +1169,6 @@ class JointELTask(LightningModule):
             mention_lengths,
             entities_ids,
             tokens_mapping,
-            salient_entities,
         )
 
     def _compute_disambiguation_metrics(self, outputs, log_prefix):
@@ -1335,18 +1249,12 @@ class JointELTask(LightningModule):
     def _compute_el_metrics(self, outputs, log_prefix):
         el_targets = []
         el_predictions = []
-        saliency_targets = []
-        saliency_predictions = []
         for (
             batch_el_targets,
             batch_el_predictions,
-            batch_saliency_targets,
-            batch_saliency_predictions,
         ) in outputs:
             el_targets.extend(batch_el_targets)
             el_predictions.extend(batch_el_predictions)
-            saliency_targets.extend(batch_saliency_targets)
-            saliency_predictions.extend(batch_saliency_predictions)
 
         el_metrics = self.calculate_classification_metrics(el_targets, el_predictions)
 
@@ -1366,30 +1274,6 @@ class JointELTask(LightningModule):
             log_prefix + "_boe_fp": el_metrics.boe_fp,
             log_prefix + "_boe_fn": el_metrics.boe_fn,
         }
-
-        if self.train_saliency:
-            saliency_metrics = self.calculate_classification_metrics(
-                saliency_targets, saliency_predictions
-            )
-
-            metrics.update(
-                {
-                    log_prefix + "_e2e_f1": saliency_metrics.f1,
-                    log_prefix + "_e2e_precision": saliency_metrics.precision,
-                    log_prefix + "_e2e_recall": saliency_metrics.recall,
-                    log_prefix + "_e2e_support": saliency_metrics.support,
-                    log_prefix + "_e2e_tp": saliency_metrics.tp,
-                    log_prefix + "_e2e_fp": saliency_metrics.fp,
-                    log_prefix + "_e2e_fn": saliency_metrics.fn,
-                    log_prefix + "_e2e_boe_f1": saliency_metrics.boe_f1,
-                    log_prefix + "_e2e_boe_precision": saliency_metrics.boe_precision,
-                    log_prefix + "_e2e_boe_recall": saliency_metrics.boe_recall,
-                    log_prefix + "_e2e_boe_support": saliency_metrics.boe_support,
-                    log_prefix + "_e2e_boe_tp": saliency_metrics.boe_tp,
-                    log_prefix + "_e2e_boe_fp": saliency_metrics.boe_fp,
-                    log_prefix + "_e2e_boe_fn": saliency_metrics.boe_fn,
-                }
-            )
 
         return metrics
 
@@ -1414,3 +1298,13 @@ class JointELTask(LightningModule):
 
     def test_epoch_end(self, test_outputs):
         self._eval_epoch_end(test_outputs, "test")
+
+    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        """
+        This hook will be called before loading state_dict from a checkpoint.
+        setup("fit") will build the model before loading state_dict
+
+        Args:
+            checkpoint: A dictionary with variables from the checkpoint.
+        """
+        self.setup("fit")

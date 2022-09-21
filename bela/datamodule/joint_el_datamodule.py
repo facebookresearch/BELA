@@ -3,7 +3,7 @@
 import json
 import logging
 import mmap
-from typing import List
+from typing import List, Optional
 
 import torch
 from pytorch_lightning import LightningDataModule
@@ -44,10 +44,21 @@ class ElMatchaDataset(torch.utils.data.Dataset):
     We laso filter out mentions, that are not present in entity catalogue
     """
 
-    def __init__(self, path, ent_catalogue):
+    def __init__(
+        self,
+        path,
+        ent_catalogue,
+        use_raw_text,
+        use_augmentation=False,
+        augmentation_frequency=0.1,
+    ):
         self.ent_catalogue = ent_catalogue
+        self.use_raw_text = use_raw_text
+        self.use_augmentation = use_augmentation
+        self.augmentation_frequency = augmentation_frequency
 
-        self.file = open(path, mode="rt")
+        logger.info(f"Downloading file {path}")
+        self.file = open(path, mode="r")
         self.mm = mmap.mmap(self.file.fileno(), 0, prot=mmap.PROT_READ)
         self.offsets = []
         self.count = 0
@@ -64,30 +75,52 @@ class ElMatchaDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.count
 
+    def _add_char_offsets(self, tokens, gt_entities):
+        offsets = []
+        token_lengths = []
+        current_pos = 0
+        for token in tokens:
+            offsets.append(current_pos)
+            token_lengths.append(len(token))
+            current_pos += len(token) + 1
+
+        updated_gt_entities = []
+        for gt_entity in gt_entities:
+            offset, length, entity, ent_type = gt_entity[:4]
+            char_offset = offsets[offset]
+            char_length = (
+                sum(token_lengths[offset + idx] for idx in range(length)) + length - 1
+            )
+            updated_gt_entities.append(
+                (offset, length, entity, ent_type, char_offset, char_length)
+            )
+
+        return updated_gt_entities
+
     def __getitem__(self, index):
         offset = self.offsets[index]
         self.mm.seek(offset)
         line = self.mm.readline()
         example = json.loads(line)
         gt_entities = []
+
+        if self.use_raw_text and "original_text" not in example:
+            example["gt_entities"] = self._add_char_offsets(
+                example["text"], example["gt_entities"]
+            )
+            example["original_text"] = " ".join(example["text"])
+
         for gt_entity in example["gt_entities"]:
-            offset, length, entity, ent_type = gt_entity[:4]
-            # if ent_type != "wiki":
-            #     continue
+            if self.use_raw_text:
+                _, _, entity, ent_type, offset, length = gt_entity[:6]
+            else:
+                offset, length, entity, ent_type = gt_entity[:4]
+            if ent_type != "wiki":
+                continue
             if entity in self.ent_catalogue:
                 gt_entities.append((offset, length, self.ent_catalogue[entity]))
 
         gt_entities = sorted(gt_entities)
-
-        # saliency data
-        salient_entities = {}
-        if "all_entities" in example and "gt_scores" in example:
-            assert len(example["all_entities"]) == len(example["gt_scores"])
-            salient_entities = {
-                self.ent_catalogue[entity]
-                for entity, score in zip(example["all_entities"], example["gt_scores"])
-                if entity in self.ent_catalogue and score == 1
-            }
 
         # blink predicts
         blink_predicts = None
@@ -113,9 +146,8 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         md_pred_scores = example.get("md_pred_scores")
 
         result = {
-            "text": example["text"],
+            "text": example["original_text"] if self.use_raw_text else example["text"],
             "gt_entities": gt_entities,
-            "salient_entities": salient_entities,
             "blink_predicts": blink_predicts,
             "blink_scores": blink_scores,
             "md_pred_offsets": md_pred_offsets,
@@ -140,13 +172,21 @@ class JointELDataModule(LightningDataModule):
         test_path: str,
         ent_catalogue_idx_path: str,
         batch_size: int = 2,
+        val_batch_size: Optional[int] = None,
+        test_batch_size: Optional[int] = None,
         drop_last: bool = False,  # drop last batch if len(dataset) not multiple of batch_size
         num_workers: int = 0,  # increasing this bugs out right now
+        use_raw_text: bool = True,
+        use_augmentation: bool = False,
+        augmentation_frequency: float = 0.1,
+        shuffle: bool = True,
         *args,
         **kwargs,
     ):
         super().__init__()
         self.batch_size = batch_size
+        self.val_batch_size = val_batch_size or batch_size
+        self.test_batch_size = test_batch_size or batch_size
         self.drop_last = drop_last
 
         self.num_workers = num_workers
@@ -154,13 +194,26 @@ class JointELDataModule(LightningDataModule):
 
         self.ent_catalogue = EntityCatalogue(ent_catalogue_idx_path)
 
+        self.shuffle = shuffle
+
         self.datasets = {
             "train": ElMatchaDataset(
                 train_path,
                 self.ent_catalogue,
+                use_raw_text=use_raw_text,
+                use_augmentation=use_augmentation,
+                augmentation_frequency=augmentation_frequency,
             ),
-            "valid": ElMatchaDataset(val_path, self.ent_catalogue),
-            "test": ElMatchaDataset(test_path, self.ent_catalogue),
+            "valid": ElMatchaDataset(
+                val_path,
+                self.ent_catalogue,
+                use_raw_text=use_raw_text,
+            ),
+            "test": ElMatchaDataset(
+                test_path,
+                self.ent_catalogue,
+                use_raw_text=use_raw_text,
+            ),
         }
 
     def train_dataloader(self):
@@ -169,13 +222,14 @@ class JointELDataModule(LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_train,
+            shuffle=self.shuffle,
         )
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
             self.datasets["valid"],
             shuffle=False,
-            batch_size=self.batch_size,
+            batch_size=self.val_batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_eval,
         )
@@ -184,7 +238,7 @@ class JointELDataModule(LightningDataModule):
         return torch.utils.data.DataLoader(
             self.datasets["test"],
             shuffle=False,
-            batch_size=self.batch_size,
+            batch_size=self.test_batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_eval,
         )
@@ -209,13 +263,11 @@ class JointELDataModule(LightningDataModule):
                - "md_pred_offsets": List[int] - mention offsets predicted by MD
                - "md_pred_lengths": List[int] - mention lengths
                - "md_pred_scores": List[float] - MD scores
-               - "salient_entities": Set[int] - salient GT entities ids
         """
         texts = []
         offsets = []
         lengths = []
         entities = []
-        salient_entities = []
 
         for example in batch:
             texts.append(example["text"])
@@ -229,8 +281,6 @@ class JointELDataModule(LightningDataModule):
             offsets.append(example_offsets)
             lengths.append(example_lengths)
             entities.append(example_entities)
-
-            salient_entities.append(example["salient_entities"])
 
         model_inputs = self.transform(
             {
@@ -248,7 +298,6 @@ class JointELDataModule(LightningDataModule):
             "mention_lengths": model_inputs["mention_lengths"],
             "entities": model_inputs["entities"],
             "tokens_mapping": model_inputs["tokens_mapping"],
-            "salient_entities": salient_entities,
         }
 
         if "sp_tokens_boundaries" in model_inputs:
