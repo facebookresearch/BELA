@@ -6,3 +6,4 @@ save_last: true
 verbose: true
 filename: checkpoint_best
 save_top_k: 3
+save_weights_only: True

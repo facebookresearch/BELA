@@ -1,4 +1,4 @@
 # @package _group_
 _target_: bela.datamodule.joint_el_datamodule.JointELDataModule
 batch_size: 64
-drop_last: False
+drop_last: True

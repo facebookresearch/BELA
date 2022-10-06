@@ -470,7 +470,6 @@ class JointELTask(LightningModule):
         md_threshold: float = 0.2,
         el_threshold: float = 0.4,
         saliency_threshold: float = 0.4,
-        embedding_dim: int = 768,
         use_gpu_index: bool = False,
     ):
         super().__init__()
@@ -498,7 +497,6 @@ class JointELTask(LightningModule):
         self.md_threshold = md_threshold
         self.el_threshold = el_threshold
         self.saliency_threshold = saliency_threshold
-        self.embedding_dim = embedding_dim
         self.use_gpu_index = use_gpu_index
 
     @staticmethod
@@ -526,6 +524,10 @@ class JointELTask(LightningModule):
             return
         # resetting call_configure_sharded_model_hook attribute so that we could configure model
         self.call_configure_sharded_model_hook = False
+        
+        self.embeddings = torch.load(self.embeddings_path)
+        self.embedding_dim = len(self.embeddings[0])
+        self.embeddings.requires_grad = False
 
         self.encoder = hydra.utils.instantiate(
             self.encoder_conf,
@@ -587,9 +589,6 @@ class JointELTask(LightningModule):
                 self.saliency_encoder.load_state_dict(saliency_encoder_state)
 
         self.optimizer = hydra.utils.instantiate(self.optim_conf, self.parameters())
-
-        self.embeddings = torch.load(self.embeddings_path)
-        self.embeddings.requires_grad = False
 
         if self.use_gpu_index:
             logger.info(f"Setup GPU index")

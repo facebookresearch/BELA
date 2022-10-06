@@ -223,6 +223,7 @@ class JointELDataModule(LightningDataModule):
             num_workers=self.num_workers,
             collate_fn=self.collate_train,
             shuffle=self.shuffle,
+            drop_last=self.drop_last,
         )
 
     def val_dataloader(self):
@@ -232,6 +233,7 @@ class JointELDataModule(LightningDataModule):
             batch_size=self.val_batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_eval,
+            drop_last=self.drop_last,
         )
 
     def test_dataloader(self):
@@ -241,6 +243,7 @@ class JointELDataModule(LightningDataModule):
             batch_size=self.test_batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_eval,
+            drop_last=self.drop_last,
         )
 
     def collate_eval(self, batch):

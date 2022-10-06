@@ -23,6 +23,7 @@ hydra:
     timeout_min: 7200 # 5 days
     cpus_per_task: 10
     mem_gb: 0
+    partition: hipri
     # constraint: volta32gb
   sweep:
     dir: /checkpoints/${env:USER}/hydra_outputs/${hydra.launcher.name}/${now:%Y-%m-%d-%H%M%S}

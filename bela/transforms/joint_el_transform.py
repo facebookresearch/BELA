@@ -461,8 +461,13 @@ class JointELTransform(HFTransform):
         tokens_mapping_column: str = "tokens_mapping",
     ):
         super().__init__(model_path=model_path)
-        self.bos_idx = self.tokenizer.bos_token_id
-        self.eos_idx = self.tokenizer.eos_token_id
+
+        if 'xlm' in model_path:
+            self.bos_idx = self.tokenizer.bos_token_id
+            self.eos_idx = self.tokenizer.eos_token_id
+        elif 'bert' in model_path:
+            self.bos_idx = self.tokenizer.cls_token_id
+            self.eos_idx = self.tokenizer.sep_token_id
         self.max_seq_len = max_seq_len
 
         self.texts_column = texts_column
