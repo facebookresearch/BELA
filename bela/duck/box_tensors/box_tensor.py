@@ -251,8 +251,8 @@ class BoxTensor(object):
                     )  # -1 because of extra 2 at dim -2
             else:
                 for d in dim_to_unsqueeze:
-                    self.left.unsqueeze_(d)  # type:ignore
-                    self.right.unsqueeze_(d)  # type: ignore
+                    self.left.unsqueeze_(d)  
+                    self.right.unsqueeze_(d)
             assert self.box_shape == tuple(potential_final_shape)
 
 

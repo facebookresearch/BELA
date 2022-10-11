@@ -70,7 +70,7 @@ def gumbel_intersection(
 
     Performs the intersection operation as described in 
     `Improving Local Identifiability in Probabilistic Box Embeddings
-    <https://arxiv.org/abs/2010.04831>`_ .
+    <https://arxiv.org/abs/2010.04831>`.
 
     Args:
         box1: BoxTensor representing the left operand of the intersection
