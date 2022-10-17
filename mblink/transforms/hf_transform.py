@@ -19,6 +19,7 @@ class HFTransform(nn.Module):
         self.max_seq_len = max_seq_len
         self.add_special_tokens = add_special_tokens
         self.return_offsets_mapping = return_offsets_mapping
+        self.pad_token_id = self.tokenizer.pad_token_id
 
     def forward(self, texts):
         return self.tokenizer(

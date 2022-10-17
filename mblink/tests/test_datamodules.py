@@ -2,6 +2,7 @@ import unittest
 import os
 import tempfile
 import random
+import torch
 
 import h5py
 import numpy as np
@@ -21,6 +22,8 @@ from mblink.utils.utils import assert_equal_tensor_dict
 
 class TestBiEncoderELDataModule(unittest.TestCase):
     def setUp(self):
+        random.seed(0)
+        torch.manual_seed(0)
         self.base_dir = os.path.join(os.path.dirname(__file__), "data")
         self.data_path = os.path.join(self.base_dir, "el_matcha.jsonl")
         self.ent_catalogue_path = os.path.join(self.base_dir, "el_catalogue.h5")
@@ -297,16 +300,13 @@ class TestBiEncoderELDataModule(unittest.TestCase):
         ]
 
         for result, expected in zip(batches, expected_batches):
-            print("expected")
-            print(expected)
-            print("result")
-            print(result)
             assert_equal_tensor_dict(self, result, expected)
 
 
 class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
     def setUp(self):
         random.seed(0)
+        torch.manual_seed(0)
         self.base_dir = os.path.join(os.path.dirname(__file__), "data")
         self.data_path = os.path.join(self.base_dir, "el_matcha.jsonl")
         self.ent_catalogue_path = os.path.join(self.base_dir, "el_xlmr_catalogue.h5")
@@ -355,13 +355,13 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             ],
                             [
                                 0,
-                                83,
-                                142,
-                                14941,
                                 23182,
                                 101740,
                                 11938,
                                 35509,
+                                23,
+                                88437,
+                                3915,
                                 250000,
                                 9020,
                                 249999,
@@ -369,7 +369,7 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             ],
                         ]
                     ),
-                    "pad_mask": torch.tensor(
+                    "attention_mask": torch.tensor(
                         [
                             [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                             [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -449,7 +449,7 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             ],
                         ]
                     ),
-                    "pad_mask": torch.tensor(
+                    "attention_mask": torch.tensor(
                         [
                             [
                                 1,
@@ -546,7 +546,7 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             ]
                         ]
                     ),
-                    "pad_mask": torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]),
+                    "attention_mask": torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]),
                 },
                 "entities": {
                     "input_ids": torch.tensor(
@@ -587,7 +587,7 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             ]
                         ]
                     ),
-                    "pad_mask": torch.tensor(
+                    "attention_mask": torch.tensor(
                         [
                             [
                                 1,
@@ -633,10 +633,6 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
         ]
 
         for result, expected in zip(batches, expected_batches):
-            print("expected")
-            print(expected)
-            print("result")
-            print(result)
             assert_equal_tensor_dict(self, result, expected)
 
     def test_el_bi_encoder_data_module_with_hard_negatives_with_xlmr_transform(self):
@@ -676,13 +672,13 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             ],
                             [
                                 0,
-                                83,
-                                142,
-                                14941,
                                 23182,
                                 101740,
                                 11938,
                                 35509,
+                                23,
+                                88437,
+                                3915,
                                 250000,
                                 9020,
                                 249999,
@@ -690,7 +686,7 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             ],
                         ]
                     ),
-                    "pad_mask": torch.tensor(
+                    "attention_mask": torch.tensor(
                         [
                             [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                             [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -775,7 +771,7 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             [0, 2] + [1] * 30,
                         ]
                     ),
-                    "pad_mask": torch.tensor(
+                    "attention_mask": torch.tensor(
                         [
                             [1] * 32,
                             [1] * 32,
@@ -811,7 +807,7 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             ]
                         ]
                     ),
-                    "pad_mask": torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]),
+                    "attention_mask": torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]),
                 },
                 "entities": {
                     "input_ids": torch.tensor(
@@ -890,7 +886,7 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
                             [0, 2] + [1] * 30,
                         ]
                     ),
-                    "pad_mask": torch.tensor(
+                    "attention_mask": torch.tensor(
                         [
                             [1] * 32,
                             [1] * 32,
@@ -908,15 +904,13 @@ class TestBiEncoderELDataModuleWithXlmrTransform(unittest.TestCase):
         ]
 
         for result, expected in zip(batches, expected_batches):
-            print("expected")
-            print(expected)
-            print("result")
-            print(result)
             assert_equal_tensor_dict(self, result, expected)
 
 
 class TestMultilangELDataModule(unittest.TestCase):
     def setUp(self):
+        random.seed(0)
+        torch.manual_seed(0)
         self.base_dir = os.path.join(os.path.dirname(__file__), "data")
         self.data_path = os.path.join(self.base_dir, "el_blink.jsonl")
         self.ent_catalogue_idx_path = os.path.join(
