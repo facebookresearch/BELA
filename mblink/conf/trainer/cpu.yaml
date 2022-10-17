@@ -1,0 +1,10 @@
+# @package _group_
+max_epochs: 1
+num_sanity_val_steps: 0
+# Setting to 10 to log more frequently for debugging purpose. For real runs with
+# large datasets, please increase it accordingly
+log_every_n_steps: 10
+# workaround for: DataLoader is exhausted when resumed from checkpoint
+# https://fb.workplace.com/groups/pytorchLightning/permalink/1404847483185119/
+# TODO: @stevenliu revert it to default after the issue resolved
+reload_dataloaders_every_epoch: true

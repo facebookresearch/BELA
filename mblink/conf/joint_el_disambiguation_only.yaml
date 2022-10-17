@@ -1,0 +1,31 @@
+defaults:
+  - config
+  - datamodule: joint_el_datamodule
+  - task/transform: joint_el_xlmr_transform
+  - task/model: xlmr
+  - task/optim: adamw
+  - trainer: gpu_1_host
+
+task:
+  _target_: bela.task.joint_el_task.JointELTask
+  only_train_disambiguation: true
+  embeddings_path: /data/home/kassner/BELA/data/matcha/en/en_embeddings.pt
+  faiss_index_path: /data/home/kassner/BELA/data/matcha/en/en_index.faiss
+  optim:
+    lr: 1e-05
+
+datamodule:
+  train_path: /data/home/kassner/BELA/data/matcha/en/wiki_train.txt
+  val_path: /data/home/kassner/BELA/data/matcha/en/wiki_eval.txt
+  test_path: /data/home/kassner/BELA/data/matcha/en/wiki_test.txt 
+  ent_catalogue_idx_path: /data/home/kassner/BELA/data/matcha/en/en_xlm_ent_idx.txt
+  batch_size: 64
+
+trainer:
+  max_epochs: 2
+  val_check_interval: 500
+
+
+checkpoint_callback:
+    monitor: valid_recall_at_1
+    # every_n_train_steps: 301

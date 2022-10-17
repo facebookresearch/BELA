@@ -1,0 +1,2 @@
+{"text": ["Chelsea", "Football", "Club", "is", "an", "English", "professional", "football", "club", "based", "in", "Fulham", "London"], "gt_entities": [[0, 3, "Chelsea F.C."], [12, 1, "London"]], "gt_hard_negatives": [["London", "Chelsea F.C."],["London"]]}
+{"text": ["In", "London", "the", "capital", "of", "England", "and", "the", "United", "Kingdom"], "gt_entities": [[1, 1, "London"]], "gt_hard_negatives": [["Chelsea F.C.", "London"]]}
