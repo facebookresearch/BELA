@@ -12,7 +12,8 @@ trainer:
   gradient_clip_val: 2.0
   accumulate_grad_batches: 1
   plugins: ddp_sharded
-  accelerator: ddp
+  strategy: ddp
+  accelerator: gpu
   # precision: 16
 
 hydra:
