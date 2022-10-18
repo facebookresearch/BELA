@@ -9,7 +9,7 @@ from omegaconf import MISSING
 
 defaults = [
     "_self_",
-    {"task": "joint_el_task"},
+    {"task": "blink_task"},
     # Model
     # {"task/model": "xlmr"},
     # Transform
