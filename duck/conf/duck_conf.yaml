@@ -1,0 +1,12 @@
+data:
+  data_dir: /fsx/matzeni/data/GENRE
+  train_path: ${data.data_dir}/aida-train-kilt.jsonl
+  val_path: ${data.data_dir}/aida-dev-kilt.jsonl
+  test_path: ${data.data_dir}/aida-test-kilt.jsonl
+  ent_catalogue_idx_path: /fsx/movb/data/blink/en/bert_large_ent_idx.txt
+  ent_catalogue_path: /fsx/movb/data/blink/en/bert_large_ent_64.h5
+
+
+hydra:
+  run:
+    dir: .

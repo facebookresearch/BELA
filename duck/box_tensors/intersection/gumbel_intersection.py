@@ -2,8 +2,8 @@ from typing import Tuple, Optional
 
 import torch
 
-from bela.duck.box_tensors.box_tensor import TBoxTensor
-from bela.duck.box_tensors.intersection.abstract_intersection import AbstractIntersection
+from duck.box_tensors.box_tensor import TBoxTensor
+from duck.box_tensors.intersection.abstract_intersection import AbstractIntersection
 
 
 def _compute_logaddexp_with_clipping_and_separate_forward(
@@ -39,7 +39,7 @@ def _compute_logaddexp_with_clipping(
     left = intersection_temperature * lse[..., 0, :]
     right = -intersection_temperature * lse[..., 1, :]
 
-    left_value = torch.max(left, torch.max(t1.left, t2.left))  # type: ignore
+    left_value = torch.max(left, torch.max(t1.left, t2.left))
     right_value = torch.min(right, torch.min(t1.right, t2.right))
 
     return left_value, right_value
@@ -81,7 +81,7 @@ def gumbel_intersection(
             `None` to not use any approximation.
 
     Returns:
-         The BoxTensor obtained by Gumbel interaction of box1 and box2.
+        The BoxTensor obtained by Gumbel interaction of box1 and box2.
     """
     t1 = box1
     t2 = box2
@@ -127,7 +127,7 @@ class GumbelIntersection(AbstractIntersection):
             for forward and backward passes  ('clipping_forward') or
             `None` to not use any approximation.
         """
-        super().__init__()  # type: ignore
+        super().__init__() 
         self.intersection_temperature = intersection_temperature
         self.approximation_mode = approximation_mode
 

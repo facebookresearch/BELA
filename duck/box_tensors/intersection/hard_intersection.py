@@ -1,7 +1,7 @@
 import torch
 
-from bela.duck.box_tensors.intersection.abstract_intersection import AbstractIntersection
-from bela.duck.box_tensors.box_tensor import TBoxTensor
+from duck.box_tensors.intersection.abstract_intersection import AbstractIntersection
+from duck.box_tensors.box_tensor import TBoxTensor
 
 
 def hard_intersection(t1: TBoxTensor, t2: TBoxTensor) -> TBoxTensor:

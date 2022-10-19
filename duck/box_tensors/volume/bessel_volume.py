@@ -2,10 +2,10 @@ import numpy as np
 import torch
 from torch.nn.functional import softplus
 
-from bela.duck.common import constant
-from bela.duck.common.utils import tiny_value_of_dtype
-from bela.duck.box_tensors.volume.abstract_volume import AbstractVolume
-from bela.duck.box_tensors import BoxTensor
+from duck.common import constant
+from duck.common.utils import tiny_value_of_dtype
+from duck.box_tensors.volume.abstract_volume import AbstractVolume
+from duck.box_tensors import BoxTensor
 
 eps = tiny_value_of_dtype(torch.float)
 euler_gamma = constant.EULER_GAMMA

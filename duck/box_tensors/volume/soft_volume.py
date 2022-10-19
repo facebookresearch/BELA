@@ -1,8 +1,8 @@
 import torch
 
-from bela.duck.box_tensors.volume.abstract_volume import AbstractVolume
-from bela.duck.box_tensors.box_tensor import BoxTensor
-from bela.duck.common.utils import tiny_value_of_dtype
+from duck.box_tensors.volume.abstract_volume import AbstractVolume
+from duck.box_tensors.box_tensor import BoxTensor
+from duck.common.utils import tiny_value_of_dtype
 from torch.nn.functional import softplus
 import numpy as np
 

@@ -84,6 +84,7 @@ def build_entity_to_properties_mapping(entities, wikipedia_to_wikidata):
                     property_ids_to_labels[pid] = property_labels[i]
     return entity_to_properties, property_ids_to_labels
 
+
 def main():
     wikipedia_to_wikidata_path = Path("/fsx/matzeni/data/en_title2wikidataID.pkl")
     print("Reading Wikipedia to Wikidata mapping...")
@@ -101,6 +102,7 @@ def main():
 
     with open("/fsx/matzeni/data/property_ids_to_labels.pkl", "wb") as f:
         pkl.dump(property_ids_to_labels, f)
+
 
 if __name__ == "__main__":
     main()

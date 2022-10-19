@@ -1,9 +1,9 @@
 import torch
-from bela.duck.box_tensors.volume.abstract_volume import AbstractVolume
-from bela.duck.box_tensors.volume.hard_volume import hard_volume
-from bela.duck.box_tensors.volume.bessel_volume import bessel_volume_approx
-from bela.duck.box_tensors.volume.soft_volume import soft_volume
-from bela.duck.box_tensors.box_tensor import BoxTensor
+from duck.box_tensors.volume.abstract_volume import AbstractVolume
+from duck.box_tensors.volume.hard_volume import hard_volume
+from duck.box_tensors.volume.bessel_volume import bessel_volume_approx
+from duck.box_tensors.volume.soft_volume import soft_volume
+from duck.box_tensors.box_tensor import BoxTensor
 
 
 class Volume(AbstractVolume):

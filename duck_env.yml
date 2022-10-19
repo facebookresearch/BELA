@@ -1,4 +1,4 @@
-name: BELA
+name: duck
 channels:
   - conda-forge
   - pytorch

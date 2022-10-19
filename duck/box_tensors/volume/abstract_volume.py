@@ -1,5 +1,5 @@
 import torch
-from bela.duck.box_tensors.box_tensor import BoxTensor
+from duck.box_tensors.box_tensor import BoxTensor
 
 
 class AbstractVolume(torch.nn.Module):

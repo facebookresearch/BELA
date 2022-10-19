@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch import Tensor
 
-from bela.duck.box_tensors import BoxTensor
+from duck.box_tensors import BoxTensor
 
 
 class EntityEncoder(nn.Module):

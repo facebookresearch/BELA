@@ -1,9 +1,9 @@
 from typing import Optional
 
-from bela.duck.box_tensors.intersection.abstract_intersection import AbstractIntersection
-from bela.duck.box_tensors.intersection.gumbel_intersection import gumbel_intersection
-from bela.duck.box_tensors.intersection.hard_intersection import hard_intersection
-from bela.duck.box_tensors import BoxTensor
+from duck.box_tensors.intersection.abstract_intersection import AbstractIntersection
+from duck.box_tensors.intersection.gumbel_intersection import gumbel_intersection
+from duck.box_tensors.intersection.hard_intersection import hard_intersection
+from duck.box_tensors import BoxTensor
 
 
 class Intersection(AbstractIntersection):

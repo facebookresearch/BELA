@@ -1,6 +1,6 @@
 import torch
 
-from bela.duck.box_tensors import BoxTensor
+from duck.box_tensors import BoxTensor
 
 
 class AbstractIntersection(torch.nn.Module):

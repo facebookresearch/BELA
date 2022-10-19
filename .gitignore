@@ -3,4 +3,7 @@
 *outputs/*
 *multirun*
 *vscode*
-jupyter.sh
+wandb
+.hydra
+*.log
+.ipynb_checkpoints
