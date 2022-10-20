@@ -1,0 +1,29 @@
+defaults:
+  - config
+  - datamodule: blink_datamodule
+  - task/transform: blink_xlmr_transform
+  - task/model: xlmr
+  - task/optim: adamw
+  - trainer: gpu_1_host
+
+task:
+  optim:
+    lr: 1e-05
+
+datamodule:
+  train_path: /fsx/movb/data/blink/en/train.txt
+  val_path: /fsx/movb/data/blink/en/eval.txt
+  test_path: /fsx/movb/data/blink/en/test.txt
+  ent_catalogue_path: /fsx/movb/data/blink/en/xlm_ent.h5       
+  ent_catalogue_idx_path: /fsx/movb/data/blink/en/xlm_ent_idx.txt          
+  dataset_type: matcha
+  ent_catalogue_type: simple
+  batch_size: 320
+
+trainer:
+  max_epochs: 10
+  val_check_interval: 5000
+
+checkpoint_callback:
+    monitor: valid_loss
+    every_n_train_steps: 5001

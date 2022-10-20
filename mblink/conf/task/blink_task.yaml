@@ -1,0 +1,3 @@
+# @package _group_
+_target_: mblink.task.blink_task.ElBiEncoderTask
+datamodule: null

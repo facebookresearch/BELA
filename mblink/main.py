@@ -2,7 +2,7 @@
 
 import os
 import hydra
-from bela.conf.config import MainConfig
+from mblink.conf.config import MainConfig
 
 from omegaconf import OmegaConf
 from pytorch_lightning.trainer import Trainer

@@ -1,5 +1,6 @@
 import unittest
 import os
+import torch
 
 import torch
 from bela.transforms.joint_el_transform import JointELTransform
@@ -25,19 +26,21 @@ def assert_equal_tensor_dict(test_case, result, expected):
 
 class TestJointELDataModule(unittest.TestCase):
     def setUp(self):
+        torch.manual_seed(0)
         self.base_dir = os.path.join(os.path.dirname(__file__), "data")
         self.data_path = os.path.join(self.base_dir, "el_matcha_joint.jsonl")
         self.ent_catalogue_idx_path = os.path.join(self.base_dir, "el_catalogue.idx")
 
         self.transform = JointELTransform()
 
-    def test_joint_el_datamodule_with_saliency_scores(self):
+    def test_joint_el_datamodule(self):
         dm = JointELDataModule(
             transform=self.transform,
             train_path=self.data_path,
             val_path=self.data_path,
             test_path=self.data_path,
             ent_catalogue_idx_path=self.ent_catalogue_idx_path,
+            use_raw_text=False,
             batch_size=2,
         )
 
@@ -129,7 +132,6 @@ class TestJointELDataModule(unittest.TestCase):
                         ],
                     ]
                 ),
-                "salient_entities": [{1}, {0}],
             }
         ]
 

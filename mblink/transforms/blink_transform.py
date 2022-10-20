@@ -262,6 +262,7 @@ class BlinkTransform(HFTransform):
             lc_token_ids = self.tokenizer.encode(sentence_lc)
             mention_token_ids = self.tokenizer.encode(sentence_mention)
             rc_token_ids = self.tokenizer.encode(sentence_rc)
+
             sentence_token_ids = prepare_mention(
                 lc_token_ids,
                 mention_token_ids,
@@ -272,6 +273,7 @@ class BlinkTransform(HFTransform):
                 self.tokenizer.cls_token_id,
                 self.tokenizer.sep_token_id,
             )
+
             token_ids.append(sentence_token_ids)
         return token_ids
 
@@ -289,12 +291,12 @@ class BlinkTransform(HFTransform):
             result_token_ids.append(token_ids)
         return result_token_ids
 
-    def _to_tensor(self, token_ids, token_ids_pad_idx=1, attention_mask_pad_idx=0):
+    def _to_tensor(self, token_ids, attention_mask_pad_idx=0):
         seq_lens = [len(seq) for seq in token_ids]
         input_ids = pad_2d(
             token_ids,
             seq_lens,
-            pad_idx = token_ids_pad_idx,
+            pad_idx = self.pad_token_id,
         )
         attention_mask = [[1]*seq_len for seq_len in seq_lens]
         attention_mask = pad_2d(
