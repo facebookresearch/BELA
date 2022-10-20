@@ -1,8 +1,10 @@
-#fairscale
+fairscale
 faiss-cpu
 hydra-core
-hydra-submitit-launcher==1.0.1
+hydra-submitit-launcher
 pyyaml
 pytorch-lightning
 transformers
 tqdm
+sentencepiece
+h5py
