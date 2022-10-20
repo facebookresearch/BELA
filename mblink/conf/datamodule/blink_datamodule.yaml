@@ -1,0 +1,11 @@
+# @package _group_
+_target_: mblink.datamodule.blink_datamodule.ElBiEncoderDataModule
+train_path: ""
+val_path: ""
+test_path: ""
+ent_catalogue_path: ""
+ent_catalogue_idx_path: ""
+dataset_type: "matcha"
+ent_catalogue_type: "simple"
+batch_size: 64
+drop_last: False

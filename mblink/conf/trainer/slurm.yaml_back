@@ -1,6 +1,6 @@
 # @package _global_
-defaults:
-  - override /hydra/launcher: submitit_slurm
+#defaults:
+#  - override /hydra/launcher: submitit_slurm
 
 trainer:
   gpus: 8
@@ -18,13 +18,23 @@ trainer:
 
 hydra:
   launcher:
+    _target_: hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher
+    submitit_folder: ${hydra.sweep.dir}/.submitit/%j
+    name: ${hydra.job.name}
     gpus_per_node: ${trainer.gpus}
     tasks_per_node: ${trainer.gpus}
     nodes: ${trainer.num_nodes}
-    timeout_min: 7200 # 5 days
+    timeout_min: 1440
     cpus_per_task: 10
-    mem_gb: 0
-    partition: hipri
-    # constraint: volta32gb
+    mem_gb: null
+    #    constraint: volta32gb
+    partition: a100
+    comment: null
+    constraint: null
+    exclude: null
+    signal_delay_s: 120
+    max_num_timeout: 0
+    additional_parameters: {}
+    array_parallelism: 256
   sweep:
     dir: /checkpoints/${env:USER}/hydra_outputs/${hydra.launcher.name}/${now:%Y-%m-%d-%H%M%S}

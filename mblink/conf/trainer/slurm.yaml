@@ -4,17 +4,15 @@ defaults:
 
 trainer:
   gpus: 8
-  num_nodes: 1
-  max_epochs: 25
-  max_steps: null
+  num_nodes: 4
+  max_epochs: 10
   num_sanity_val_steps: 0
   log_every_n_steps: 10
   gradient_clip_val: 2.0
   accumulate_grad_batches: 1
-  plugins: ddp_sharded
-  strategy: ddp
-  accelerator: gpu
-  # precision: 16
+  strategy: ddp_sharded
+  val_check_interval: 5000
+  precision: 16
 
 hydra:
   launcher:
@@ -25,6 +23,6 @@ hydra:
     cpus_per_task: 10
     mem_gb: 0
     partition: hipri
-    # constraint: volta32gb
+    account: all
   sweep:
-    dir: /checkpoints/${env:USER}/hydra_outputs/${hydra.launcher.name}/${now:%Y-%m-%d-%H%M%S}
+    dir: /checkpoints/${oc.env:USER}/blink/${now:%Y-%m-%d-%H%M%S}
