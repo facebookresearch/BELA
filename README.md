@@ -61,4 +61,5 @@ Available configs:
 ### Train model using SLUMR
 
 ```
-PYTHONPATH=.:$PYTHONPATH python mblink/main.py -m --
+PYTHONPATH=.:$PYTHONPATH python mblink/main.py -m --config-name blink_xlmr trainer=slurm
+```
