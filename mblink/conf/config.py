@@ -10,16 +10,6 @@ from omegaconf import MISSING
 defaults = [
     "_self_",
     {"task": "blink_task"},
-    # Model
-    # {"task/model": "xlmr"},
-    # Transform
-    # {"task/transform": "joint_el_xlmr_transform"},
-    # Optim
-    # {"task/optim": "adamw"},
-    # Data
-    # {"datamodule": "joint_el_datamodule"},
-    # Trainer
-    # {"trainer": "gpu_1_host"},
     {"checkpoint_callback": "default"},
 ]
 

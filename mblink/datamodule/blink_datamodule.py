@@ -62,13 +62,14 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         self.mm.seek(offset)
         line = self.mm.readline()
         data = json.loads(line)
-        offset, length, gt_entity = data["gt_entities"][gt_ent_idx][:3]
+        _, _, gt_entity, _, offset, length = data["gt_entities"][gt_ent_idx]
         entity_index, entity_tokens = self.ent_catalogue[gt_entity]
+        text = data['original_text']
 
         result = {
-            "context_left": " ".join(data["text"][:offset]),
-            "mention": " ".join(data["text"][offset : offset + length]),
-            "context_right": " ".join(data["text"][offset + length :]),
+            "context_left": " ".join(text[:offset]),
+            "mention": " ".join(text[offset : offset + length]),
+            "context_right": " ".join(text[offset + length :]),
             "entity_id": gt_entity,
             "entity_index": entity_index,
             "entity_tokens": entity_tokens,

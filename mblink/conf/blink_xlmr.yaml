@@ -18,10 +18,12 @@ datamodule:
   ent_catalogue_idx_path: /fsx/movb/data/blink/en/xlm_ent_idx.txt          
   dataset_type: matcha
   ent_catalogue_type: simple
-  batch_size: 32
+  batch_size: 320
 
 trainer:
-  max_epochs: 30
+  max_epochs: 10
+  val_check_interval: 5000
 
 checkpoint_callback:
-    monitor: None
+    monitor: valid_loss
+    every_n_train_steps: 5001

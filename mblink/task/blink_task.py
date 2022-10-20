@@ -5,6 +5,11 @@ import logging
 from collections import OrderedDict
 from typing import Optional
 
+from pytorch_lightning.strategies import DDPShardedStrategy, DDPStrategy
+from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import (
+    fp16_compress_hook,
+)
+
 import hydra
 import torch
 import torch.nn as nn
@@ -109,6 +114,7 @@ class ElBiEncoderTask(LightningModule):
         margin_loss_weight: float = 1.0,
         margin_loss_mean: bool = True,
         load_from_checkpoint: Optional[str] = None,
+        fp16_grads: bool = False,
     ):
         super().__init__()
 
@@ -120,6 +126,7 @@ class ElBiEncoderTask(LightningModule):
         self.warmup_steps = warmup_steps
         self.filter_entities = filter_entities
         self.load_from_checkpoint = load_from_checkpoint
+        self.fp16_grads = fp16_grads
 
         if loss == "cross_entropy":
             self.loss = nn.CrossEntropyLoss()
@@ -175,6 +182,10 @@ class ElBiEncoderTask(LightningModule):
             self.optim_conf, self.parameters(), _recursive_=False
         )
 
+    def on_pretrain_routine_start(self):
+        if self.fp16_grads:
+            self.trainer.strategy._model.register_comm_hook(None, fp16_compress_hook)
+
     def sim_score(self, mentions_repr, entities_repr):
         scores = torch.matmul(mentions_repr, torch.transpose(entities_repr, 0, 1))
         return scores
@@ -185,8 +196,8 @@ class ElBiEncoderTask(LightningModule):
         entities_ids,
     ):
         # encode query and contexts
-        mentions_repr = self.mention_encoder(mentions_ids)  # bs x d
-        entities_repr = self.entity_encoder(entities_ids)  # bs x d
+        mentions_repr, _ = self.mention_encoder(mentions_ids)  # bs x d
+        entities_repr, _ = self.entity_encoder(entities_ids)  # bs x d
         return mentions_repr, entities_repr
 
     def configure_optimizers(self):
@@ -203,8 +214,8 @@ class ElBiEncoderTask(LightningModule):
         targets = batch["targets"]  # bs
         mask = batch["entity_tensor_mask"]  # bs
 
-        mentions_repr, entities_repr = self(mentions, entities)
-        if self.trainer._accelerator_connector.use_ddp:
+        mentions_repr, entities_repr = self(mentions['input_ids'], entities['input_ids'])
+        if isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
             mentions_to_send = mentions_repr.detach()
             entities_to_send = entities_repr.detach()
 
@@ -298,7 +309,8 @@ class ElBiEncoderTask(LightningModule):
         targets = batch["targets"]  # bs
         mask = batch["entity_tensor_mask"]  # bs
 
-        mentions_repr, entities_repr = self(mentions, entities)
+        mentions_repr, entities_repr = self(mentions['input_ids'], entities['input_ids'])
+
         entities_repr = entities_repr[mask.bool()]
         scores = self.sim_score(mentions_repr, entities_repr)  # bs x ctx_cnt
         loss = self.loss(scores, targets)
