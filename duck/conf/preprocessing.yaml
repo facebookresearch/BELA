@@ -1,8 +1,0 @@
-input_path: /fsx/matzeni/data/kilt_knowledgesource.jsonl
-output_h5_path: /checkpoints/matzeni/data/bert_ent_256.h5
-output_idx_path: /checkpoints/matzeni/data/bert_ent_256_idx.txt
-max_seq_length: 256
-batch_size: 256
-tokenizer: bert-large-uncased
-label_key: wikipedia_title
-text_key: text

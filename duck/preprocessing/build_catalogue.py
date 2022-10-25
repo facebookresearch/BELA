@@ -1,9 +1,6 @@
-from xml.sax import parseString
-import torch
 import h5py
 import json
 from pathlib import Path
-import pickle
 from tqdm import tqdm
 import logging
 from transformers import AutoTokenizer
@@ -40,10 +37,11 @@ class CatalogueBuilder:
     def _read_input(self):
         logger.info("Reading input data")
         with open(self.input_path, 'r') as f:
-            if self.input_path.suffix == ".json":
-                return json.load(f)
-            # assuming json lines format
             data = [json.loads(line.strip()) for line in tqdm(f.readlines())]
+            if len(data) == 1:
+                # json format
+                return data[0]
+            # jsonl format
             return {
                 record[self.label_key]: record
                 for record in data
@@ -73,7 +71,9 @@ class CatalogueBuilder:
             )
             input_ids = tokens.input_ids.astype(np.int32)
             result.append(input_ids)
-        return np.concatenate(result, axis=0)
+        result = np.concatenate(result, axis=0)
+        size_prefix = self.max_length * np.ones((result.shape[0], 1), dtype=np.int32)
+        return np.concatenate([size_prefix, result], axis=1)
     
     def _save(self):
         logger.info("Saving")
@@ -86,7 +86,7 @@ class CatalogueBuilder:
         self._save()
 
 
-@hydra.main(config_path="../conf", config_name="preprocessing")
+@hydra.main(config_path="../conf/preprocessing", config_name="catalogue")
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     config_dict = OmegaConf.to_container(config)

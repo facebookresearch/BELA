@@ -54,7 +54,7 @@ def read_property_index(path):
 
 
 def main():
-    property_index_path = '/fsx/matzeni/data/duck/property_to_label.jsonl'
+    property_index_path = '/fsx/matzeni/data/property_to_label.jsonl'
     property_index = read_property_index(property_index_path)
     result = {}
     print("Querying Wikidata...")

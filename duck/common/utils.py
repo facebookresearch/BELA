@@ -2,10 +2,14 @@ import logging
 from pathlib import Path
 import random
 from tkinter import E
+from typing import Dict, List, Set
 import torch
 import numpy as np
 from omegaconf import OmegaConf
 import sys
+import pickle
+import json
+
 
 def tiny_value_of_dtype(dtype: torch.dtype) -> float:
     """
@@ -76,3 +80,36 @@ def get_logger(output_dir=None):
     logger = logging.getLogger('DUCK')
     logger.setLevel(10)
     return logger
+
+
+def load_pkl(path):
+    with open(path, 'rb') as f:
+        return pickle.load(f)
+
+
+def load_json(path):
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+def load_jsonl(path):
+    with open(path, 'r') as f:
+        return [json.loads(l.strip()) for l in f.readlines()]
+
+
+def most_frequent_relations(
+    ent_to_rel: Dict[str, List[str]],
+    k: int
+) -> List[str]:
+    all_properties = {p for pids in ent_to_rel.values() for p in pids}
+    rel_to_ent = {p: set() for p in all_properties}
+    for e, rels in ent_to_rel.items():
+        for p in rels:
+            rel_to_ent[p].add(e)
+    rel_to_num_ents = {
+        p: len(ents)
+        for p, ents in sorted(
+            rel_to_ent.items(), key=lambda x: len(x[1]), reverse=True
+        )
+    }
+    return list(rel_to_num_ents.keys())[:k]
