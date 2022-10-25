@@ -15,31 +15,6 @@ from typing import Any, Dict, List, Tuple
 logger = logging.getLogger()
 
 
-class EdDuckDataset(torch.utils.data.Dataset):
-    def __init__(
-        self, path, ent_catalogue, rel_catalogue, ent_to_rel
-    ) -> None:
-        super().__init__()
-        self.data = EdGenreDataset(path, ent_catalogue)
-        self.rel_catalogue = rel_catalogue
-        self.ent_to_rel = ent_to_rel
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, index):
-        item = self.data[index]
-        entity_id = item["entity_id"]
-        rels = self.ent_to_rel[entity_id]
-        idx_tok_pairs = [self.rel_catalogue[r] for r in rels]
-        additional_attributes = {
-            "relation_indexes": [p[0] for p in idx_tok_pairs],
-            "relation_tokens": [p[1] for p in idx_tok_pairs]
-        }
-        item.update(additional_attributes)
-        return item
-
-
 class RelationCatalogue:
     def __init__(self, tokens_path, idx_path):
         self.data_file = h5py.File(tokens_path, "r")
@@ -63,6 +38,78 @@ class RelationCatalogue:
 
     def __contains__(self, relation):
         return relation in self.idx
+
+
+class EdDuckDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        path: str,
+        ent_catalogue: EntityCatalogue,
+        rel_catalogue: RelationCatalogue,
+        ent_to_rel: Dict[str, List[str]]
+    ) -> None:
+        super().__init__()
+        self.data = EdGenreDataset(path, ent_catalogue)
+        self.rel_catalogue = rel_catalogue
+        self.ent_to_rel = ent_to_rel
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        item = self.data[index]
+        entity_id = item["entity_id"]
+        rels = self.ent_to_rel[entity_id]
+        idx_tok_pairs = [self.rel_catalogue[r] for r in rels]
+        additional_attributes = {
+            "relation_indexes": [p[0] for p in idx_tok_pairs],
+            "relation_tokens": [p[1] for p in idx_tok_pairs]
+        }
+        item.update(additional_attributes)
+        return item
+
+
+class EntEmbDuckDataset(torch.utils.data.Dataset):
+    def __init__(self,
+        duck_neighbors_path: str,
+        ent_catalogue: EntityCatalogue,
+        ent_to_rel: Dict[str, List[str]],
+        relation_threshold = 0
+    ):
+        super().__init__()
+        self.duck_neighbors = load_json(duck_neighbors_path)
+        self.entities = [
+            e for e in ent_catalogue.idx
+            if len(ent_to_rel[e]) >= relation_threshold
+        ]
+        self.ent_to_rel = ent_to_rel
+
+    def _get_entity_dict(self, entity_id):
+        entity_index, entity_tokens = self.ent_catalogue[entity_id]
+        rels = self.ent_to_rel[entity_id]
+        idx_tok_pairs = [self.rel_catalogue[r] for r in rels]
+
+        return {
+            "entity_id": entity_id,
+            "entity_index": entity_index,
+            "entity_tokens": entity_tokens,
+            "relation_indexes": [p[0] for p in idx_tok_pairs],
+            "relation_tokens": [p[1] for p in idx_tok_pairs],
+        }
+
+    def get_by_entity(self, entity_id):
+        result = self._get_entity_dict(entity_id)
+        neighbors = self.duck_neighbors[entity_id]
+        neighbors = [self._get_entity_dict(n) for n in neighbors]
+        result["neighbors"] = neighbors
+        return result
+
+    def __len__(self):
+        return len(self.duck_neighbors)
+    
+    def __get_item__(self, index):
+        entity_id = self.entities[index]
+        return self.get_by_entity(entity_id)
 
 
 class EdGenreDataset(torch.utils.data.Dataset):

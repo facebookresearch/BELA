@@ -27,21 +27,21 @@ def print_example(duck_index):
     print()
 
 
-def build_negatives(config):
+def build_neighbors(config):
     duck_index = DuckIndex.build_or_load(config)
     print_example(duck_index)
-    logger.info("Building negatives")
+    logger.info("Building neighbors")
     entities = duck_index.entities
-    negatives = duck_index.search(entities, k=config.num_negatives)
-    logger.info("Dumping negatives")
-    with open(config.negatives_path, "w") as f:
-        json.dump(negatives, f)
+    neighbors = duck_index.search(entities, k=config.num_neighbors)
+    logger.info("Dumping neighbors")
+    with open(config.neighbors_path, "w") as f:
+        json.dump(neighbors, f)
 
 
 @hydra.main(config_path="../conf/preprocessing", config_name="duck_index")
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
-    build_negatives(config)
+    build_neighbors(config)
 
 if __name__ == "__main__":
     main()
