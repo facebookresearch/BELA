@@ -10,7 +10,7 @@ from duck.common.utils import load_json
 from mblink.utils.utils import EntityCatalogue, order_entities
 from mblink.transforms.blink_transform import BlinkTransform
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger()
 
@@ -46,12 +46,21 @@ class EdDuckDataset(torch.utils.data.Dataset):
         path: str,
         ent_catalogue: EntityCatalogue,
         rel_catalogue: RelationCatalogue,
-        ent_to_rel: Dict[str, List[str]]
+        ent_to_rel: Dict[str, List[str]],
+        neighbors_path: Optional[str] = None
     ) -> None:
         super().__init__()
         self.data = EdGenreDataset(path, ent_catalogue)
         self.rel_catalogue = rel_catalogue
         self.ent_to_rel = ent_to_rel
+        self.neighbors_dataset = None
+        if neighbors_path is not None:
+            self.neighbors_dataset = EntEmbDuckDataset(
+                neighbors_path,
+                ent_catalogue,
+                ent_to_rel,
+                relation_threshold=0
+            )
 
     def __len__(self):
         return len(self.data)
@@ -65,6 +74,9 @@ class EdDuckDataset(torch.utils.data.Dataset):
             "relation_indexes": [p[0] for p in idx_tok_pairs],
             "relation_tokens": [p[1] for p in idx_tok_pairs]
         }
+        if self.neighbors_dataset is not None:
+            additional_attributes["neighbors"] = \
+                self.neighbors_dataset.get_by_entity(entity_id)["neighbors"]
         item.update(additional_attributes)
         return item
 

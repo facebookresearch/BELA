@@ -8,9 +8,10 @@ import faiss
 
 from mblink.utils.utils import EntityCatalogue
 from duck.datamodule import RelationCatalogue
-from duck.common.utils import load_json, load_jsonl, most_frequent_relations
+from duck.common.utils import load_json, load_jsonl
 import hydra
 from omegaconf import OmegaConf, DictConfig
+import math
 
 
 logger = logging.getLogger()
@@ -23,6 +24,7 @@ class DuckIndex:
         ent_to_rel: Dict[str, List[str]],
         stop_rels: Optional[Set[str]] = None,
         gpu: bool = False,
+        num_shards = 1,
         batch_size: int = 1000,
         hnsw_args: Optional[Dict] = None
     ) -> None:
@@ -39,13 +41,17 @@ class DuckIndex:
         self.eye = np.eye(self.dim).astype(np.uint8)
         if gpu:
             logger.info("Instantiating flat index on GPU")
-            self.index = faiss.IndexBinaryFlat(self.dim)
+            self.indices = []
             self.res = faiss.StandardGpuResources()
-            self.index = faiss.GpuIndexBinaryFlat(self.res, self.index)
+            for _ in range(num_shards):
+                index = faiss.IndexBinaryFlat(self.dim)
+                index = faiss.GpuIndexBinaryFlat(self.res, index)
+                self.indices.append(index)
             return
         logger.info("Instantiating HNSW index on CPU")
-        self.index = self.reinit_hnsw(hnsw_args)
-        assert self.index.is_trained
+        self.indices = [self.reinit_hnsw(hnsw_args)]
+        for index in self.indices:
+            assert index.is_trained
 
     def reinit_hnsw(self, hnsw_args):
         branching_factor = 32
@@ -80,55 +86,110 @@ class DuckIndex:
         max_size = len(self.entities)
         if limit is not None and limit < max_size:
             max_size = limit
+        num_shards = len(self.indices)
+        max_shard_size = int(math.ceil(max_size / num_shards))
+        j = 0
         for i in tqdm(range(0, max_size, self.batch_size)):
             batch = self.entities[i : (i + self.batch_size)]
             data = self._build_repr(batch)
-            self.index.add(data)
+            self.indices[j].add(data)
+            if self.indices[j].ntotal >= max_shard_size:
+                j += 1
     
     def search(
         self,
         query: Union[str, List[str]],
-        k: int
+        k: int,
+        ignore_query=True
     ) -> Dict[str, List[str]]:
         if isinstance(query, str):
             query = [query]
         
         result = {}
+        distances = []
+        ids = []
 
         for i in tqdm(range(0, len(query), self.batch_size)):
             batch = query[i : (i + self.batch_size)]
             batch_repr = self._build_repr(batch)
-            _, ids = self.index.search(batch_repr, k=k + 1)
+            offset = 0
+            for index in self.indices:
+                shard_dist, shard_ids = index.search(batch_repr, k=k + 1)
+                shard_ids += offset
+                distances.append(shard_dist)
+                ids.append(shard_ids)
+                offset += index.ntotal
         
-            for i, ent in enumerate(batch):
-                result[ent] = []
-                for ent_id in ids[i]:
-                    neighbor = self.entities[ent_id]
-                    if neighbor != ent:
-                        result[ent].append(neighbor)
-                result[ent] = result[ent][:k]
+        distances = np.concatenate(distances, axis=-1)
+        ids = np.concatenate(ids, axis=-1)
+        argsort = np.argsort(distances, axis=-1)
+
+        for i, ent in enumerate(batch):
+            result[ent] = []
+            sorted_ids = ids[i][argsort[i]]
+            sorted_distances = distances[i][argsort[i]]
+            for j, ent_id in enumerate(sorted_ids):
+                neighbor = self.entities[ent_id]
+                if sorted_distances[j] > 0:
+                    result[ent].append(neighbor)
+                if len(result[ent]) == k:
+                    break
         return result
             
+    def _dump_shard(
+        self,
+        shard_index: int, 
+        output_path: str
+    ):
+        index = self.indices[shard_index]
+        if self.gpu:
+            index = faiss.IndexBinaryFlat(self.dim)
+            self.indices[shard_index].copyTo(index)
+        faiss.write_index_binary(index, output_path)
+    
     def dump(
         self,
         output_path: str
-    ):
-        index = self.index
-        if self.gpu:
-            index = faiss.IndexBinaryFlat(self.dim)
-            self.index.copyTo(index)
-        faiss.write_index_binary(index, output_path)
+    ):  
+        num_shards = len(self.indices)
+        if len(self.indices) > 1:
+            output_path = Path(output_path)
+            output_path.mkdir(parents=True, exist_ok=True)
+            for i in range(num_shards):
+                filename = f"shard{i:02d}.faiss"
+                self._dump_shard(i, str(output_path / filename))
+            return
+        self._dump_shard(0, output_path)
 
-    def load(
+    def _load_shard(
         self, 
-        input_path
+        shard_index: int,
+        input_path: str
     ):
         index = faiss.read_index_binary(input_path)
         if not self.gpu:
-            self.index = index
+            self.indices[shard_index] = index
             return
-        self.index.copyFrom(index)
-        
+        self.indices[shard_index].copyFrom(index)
+    
+    def load(
+        self,
+        input_path
+    ):
+        num_shards = len(self.indices)
+        if num_shards == 1:
+            self.load_shard(0, input_path)
+            return
+        input_path = Path(input_path)
+        assert input_path.is_dir(), \
+            "The index has multiple shard but only one file has been provided"
+        shard_files = list(input_path.glob("shard*.faiss"))
+        shard_files = sorted(shard_files)
+        assert len(shard_files) == num_shards, \
+            f"Expected {num_shards} shards, got {len(shard_files)}"
+        for i, file in enumerate(shard_files):
+            self._load_shard(i, str(file))
+
     @staticmethod
     def empty_index(config):
         ent_catalogue = EntityCatalogue(
@@ -160,6 +221,7 @@ class DuckIndex:
             ent_to_rel,
             stop_rels=stop_rels,
             gpu=config.gpu,
+            num_shards=config.num_shards,
             batch_size=config.batch_size,
             hnsw_args=OmegaConf.to_container(config.hnsw)
         )
