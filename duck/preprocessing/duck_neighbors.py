@@ -9,39 +9,52 @@ import json
 logger = logging.getLogger()
 
 
-def print_example(duck_index):
+def print_example(duck_index, distinct=True):
     print()
-    print("=" * 8 + " Example " + "=" * 8)
+    title = "Neighbors"
+    if distinct:
+        title = "Distinct Neighbors"
+    print("=" * 8 + f" {title} " + "=" * 8)
     example = duck_index.search([
         "Italy",
         "Donald Trump",
         "Cristiano Ronaldo",
         "Justin Bieber",
         "London",
-        "Lion"
-    ], k=4)
+        "Rome",
+        "Lion",
+        "Jaguar",
+        "Jaguar Cars",
+        "Maserati",
+        "Alan Turing",
+        "Gianluigi Buffon",
+        "Ada Lovelace",
+        "Fields Medal"
+    ], k=4, distinct=distinct)
     for ent, neighbors in example.items():
         neighbors_str = ", ".join(neighbors)
         print(ent + ": " + neighbors_str)
-    print("=" * 25)
+    print("=" * 27)
     print()
 
 
 def build_neighbors(config):
     duck_index = DuckIndex.build_or_load(config)
-    print_example(duck_index)
+    print_example(duck_index, distinct=False)
+    print_example(duck_index, distinct=True)
     logger.info("Building neighbors")
     entities = duck_index.entities
-    neighbors = duck_index.search(entities, k=config.num_neighbors)
+    neighbors = duck_index.search(entities, k=config.num_neighbors, distinct=config.distinct)
     logger.info("Dumping neighbors")
     with open(config.neighbors_path, "w") as f:
         json.dump(neighbors, f)
 
 
-@hydra.main(config_path="../conf/preprocessing", config_name="duck_index")
+@hydra.main(config_path="../conf/preprocessing", config_name="duck_neighbors")
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     build_neighbors(config)
+
 
 if __name__ == "__main__":
     main()

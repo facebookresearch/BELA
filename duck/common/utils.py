@@ -113,3 +113,13 @@ def most_frequent_relations(
         )
     }
     return list(rel_to_num_ents.keys())[:k]
+
+
+def device(device_id=None, gpu=None):
+    if device_id is not None:
+        return torch.device(str(device_id))
+    if gpu is None and torch.cuda.is_available():
+        return torch.device("cuda")
+    if gpu:
+        return torch.device("cuda")
+    return torch.device('cpu')

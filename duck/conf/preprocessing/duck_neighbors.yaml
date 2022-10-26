@@ -6,10 +6,11 @@ ent_to_rel_path: /fsx/matzeni/data/duck/ent_to_rel.json
 index_path: /fsx/matzeni/data/duck/duck_index_flat
 gpu: True
 num_shards: 6
+distinct: True
 batch_size: 10000
 stop_rels_path: /fsx/matzeni/data/duck/stop_relations.jsonl
 neighbors_path: /fsx/matzeni/data/duck/duck_neighbors.json
-num_neighbors: 40
+num_neighbors: 50
 
 hnsw:
   branching_factor: 32
