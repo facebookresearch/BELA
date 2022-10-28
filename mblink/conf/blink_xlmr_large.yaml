@@ -1,8 +1,8 @@
 defaults:
   - config
   - datamodule: blink_datamodule
-  - task/transform: blink_xlmr_transform
-  - task/model: xlmr
+  - task/transform: blink_xlmr_large_transform
+  - task/model: xlmr_large
   - task/optim: adamw
   - trainer: gpu_1_host
 
@@ -19,7 +19,7 @@ datamodule:
   ent_catalogue_idx_path: /fsx/movb/data/blink/en/xlm_ent_idx.txt          
   dataset_type: matcha
   ent_catalogue_type: simple
-  batch_size: 320
+  batch_size: 100
 
 trainer:
   max_epochs: 10

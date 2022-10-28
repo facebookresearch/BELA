@@ -1,8 +1,10 @@
 #fairscale
 faiss-gpu==1.7.2
 hydra-core
-hydra-submitit-launcher==1.0.1
+hydra-submitit-launcher
 pyyaml
 pytorch-lightning==1.5.0
 transformers
 tqdm
+sentencepiece
+h5py
