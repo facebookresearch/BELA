@@ -50,7 +50,7 @@ def build_neighbors(config):
         json.dump(neighbors, f)
 
 
-@hydra.main(config_path="../conf/preprocessing", config_name="duck_neighbors")
+@hydra.main(config_path="../conf/preprocessing", config_name="duck_neighbors", version_base=None)
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     build_neighbors(config)

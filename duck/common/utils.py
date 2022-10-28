@@ -9,6 +9,7 @@ from omegaconf import OmegaConf
 import sys
 import pickle
 import json
+import copy
 
 
 def tiny_value_of_dtype(dtype: torch.dtype) -> float:
@@ -123,3 +124,69 @@ def device(device_id=None, gpu=None):
     if gpu:
         return torch.device("cuda")
     return torch.device('cpu')
+
+
+def max_depth_of_nested_list(lst):
+    if not isinstance(lst, list) or len(lst) == 0:
+        return 0
+    return 1 + max(max_depth_of_nested_list(item) for item in lst)
+
+def empty_list_of_depth(n):
+    result = []
+    for i in range(n - 1):
+        result = [result]
+    return result
+
+def equalize_depth(nested_list, depth=None):
+    if depth is None:
+        depth = max_depth_of_nested_list(nested_list)
+    if depth == 0 or not isinstance(nested_list, list):
+        return
+    if len(nested_list) == 0 and depth > 1:
+        item = empty_list_of_depth(depth - 1)
+        nested_list.append(item)
+    for item in nested_list:
+        equalize_depth(item, depth - 1) 
+
+def _list_to_tensor(values, pad_value, dtype=None):
+    if isinstance(values, torch.Tensor):
+        return values
+    if len(values) == 0:
+        return torch.tensor([], dtype=dtype)
+    if isinstance(values[0], torch.Tensor):
+        return pad_tensors(values, pad_value=pad_value)
+    if not isinstance(values[0], list):
+        return torch.tensor(values, dtype=dtype)
+    return list_to_tensor([
+        list_to_tensor(v, pad_value=pad_value) for v in values
+    ], pad_value=pad_value)
+
+
+def list_to_tensor(values, pad_value, dtype=None):
+    values = copy.deepcopy(values)
+    equalize_depth(values)
+    return _list_to_tensor(values, pad_value=pad_value, dtype=dtype)
+
+
+def pad_tensors(tensors, pad_value):
+    rep = tensors[0]
+    padded_dim = []
+    for dim in range(rep.dim()):
+        max_dim = max([tensor.size(dim) for tensor in tensors])
+        padded_dim.append(max_dim)
+    padded_dim = [len(tensors)] + padded_dim
+    padded_tensor = torch.full(padded_dim, pad_value)
+    padded_tensor = padded_tensor.type_as(rep)
+    for i, tensor in enumerate(tensors):
+        size = list(tensor.size())
+        if len(size) == 1:
+            padded_tensor[i, :size[0]] = tensor
+        elif len(size) == 2:
+            padded_tensor[i, :size[0], :size[1]] = tensor
+        elif len(size) == 3:
+            padded_tensor[i, :size[0], :size[1], :size[2]] = tensor
+        elif len(size) == 4:
+            padded_tensor[i, :size[0], :size[1], :size[2], :size[3]] = tensor
+        else:
+            raise ValueError('Padding is supported for up to 4D tensors')
+    return padded_tensor

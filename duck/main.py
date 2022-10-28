@@ -1,21 +1,20 @@
 import hydra
 from omegaconf import OmegaConf, DictConfig
-from duck.common.utils import load_json
-from duck.datamodule import EdGenreDataset
-from duck.datamodule.datamodule import DuckTransform, EdDuckDataModule, EdDuckDataset, RelationCatalogue
-from mblink.transforms.blink_transform import BlinkTransform
-from mblink.utils.utils import EntityCatalogue
+from duck.datamodule.datamodule import DuckTransform, EdDuckDataModule
 
-import pickle
-from transformers import AutoTokenizer
 import logging
 
 logger = logging.getLogger()
 
-@hydra.main(config_path="conf", config_name="duck_conf")
+@hydra.main(config_path="conf", config_name="duck_conf", version_base=None)
 def main(config: DictConfig):
+    print(OmegaConf.to_yaml(config))
+
     transform = DuckTransform(
-        config.language_model
+        config.language_model,
+        max_mention_len=config.max_mention_len,
+        max_entity_len=config.max_entity_len,
+        max_relation_len=config.max_relation_len
     )
 
     data = EdDuckDataModule(
@@ -28,7 +27,8 @@ def main(config: DictConfig):
         config.data.rel_catalogue_path,
         config.data.rel_catalogue_idx_path,
         config.data.ent_to_rel_path,
-        config.batch_size
+        neighbors_path=config.data.neighbors_path,
+        batch_size=config.batch_size
     )
 
     dataloader = data.train_dataloader()

@@ -5,7 +5,7 @@ import mmap
 import torch
 import h5py
 from pytorch_lightning import LightningDataModule
-from duck.common.utils import load_json
+from duck.common.utils import list_to_tensor, load_json
 
 from mblink.utils.utils import EntityCatalogue, order_entities
 from mblink.transforms.blink_transform import BlinkTransform
@@ -47,17 +47,18 @@ class EdDuckDataset(torch.utils.data.Dataset):
         ent_catalogue: EntityCatalogue,
         rel_catalogue: RelationCatalogue,
         ent_to_rel: Dict[str, List[str]],
-        neighbors_path: Optional[str] = None
+        neighbors: Optional[Dict[str, List[str]]] = None
     ) -> None:
         super().__init__()
         self.data = EdGenreDataset(path, ent_catalogue)
         self.rel_catalogue = rel_catalogue
         self.ent_to_rel = ent_to_rel
         self.neighbors_dataset = None
-        if neighbors_path is not None:
+        if neighbors is not None:
             self.neighbors_dataset = EntEmbDuckDataset(
-                neighbors_path,
+                neighbors,
                 ent_catalogue,
+                rel_catalogue,
                 ent_to_rel,
                 relation_threshold=0
             )
@@ -72,7 +73,8 @@ class EdDuckDataset(torch.utils.data.Dataset):
         idx_tok_pairs = [self.rel_catalogue[r] for r in rels]
         additional_attributes = {
             "relation_indexes": [p[0] for p in idx_tok_pairs],
-            "relation_tokens": [p[1] for p in idx_tok_pairs]
+            "relation_tokens": [p[1] for p in idx_tok_pairs],
+            "neighbors": None
         }
         if self.neighbors_dataset is not None:
             additional_attributes["neighbors"] = \
@@ -83,13 +85,16 @@ class EdDuckDataset(torch.utils.data.Dataset):
 
 class EntEmbDuckDataset(torch.utils.data.Dataset):
     def __init__(self,
-        duck_neighbors_path: str,
+        duck_neighbors: Dict[str, List[str]],
         ent_catalogue: EntityCatalogue,
+        rel_catalogue: RelationCatalogue,
         ent_to_rel: Dict[str, List[str]],
         relation_threshold = 0
     ):
         super().__init__()
-        self.duck_neighbors = load_json(duck_neighbors_path)
+        self.duck_neighbors = duck_neighbors
+        self.ent_catalogue = ent_catalogue
+        self.rel_catalogue = rel_catalogue
         self.entities = [
             e for e in ent_catalogue.idx
             if len(ent_to_rel[e]) >= relation_threshold
@@ -130,7 +135,6 @@ class EdGenreDataset(torch.utils.data.Dataset):
     (https://github.com/facebookresearch/GENRE/blob/main/scripts_genre/download_all_datasets.sh)
     Each example in this dataset contains one mention.
     """
-
     def __init__(
         self, path, ent_catalogue
     ):
@@ -181,9 +185,10 @@ class DuckTransform(BlinkTransform):
         model_path: str = "bert-large-uncased",
         mention_start_token: int = 1,
         mention_end_token: int = 2,
-        max_mention_len: int = 32,
-        max_entity_len: int = 64,
-        add_eos_bos_to_entity: bool = False,
+        max_mention_len: int = 128,
+        max_entity_len: int = 128,
+        max_relation_len: int = 64,
+        add_eos_bos: bool = False,
     ):
         super().__init__(
             model_path=model_path,
@@ -191,14 +196,39 @@ class DuckTransform(BlinkTransform):
             mention_end_token=mention_end_token,
             max_mention_len=max_mention_len,
             max_entity_len=max_entity_len,
-            add_eos_bos_to_entity=add_eos_bos_to_entity
+            add_eos_bos_to_entity=add_eos_bos
         )
+        self.max_relation_len = max_relation_len
+        self.add_eos_bos = add_eos_bos
 
     def _transform_relations(
         self,
-        relation_token_ids: List[List[List[int]]]
+        relation_token_ids: List[List[List[int]]],
+    ) -> List[List[List[int]]]:
+        result = []
+        for i, relation in enumerate(relation_token_ids):
+            result.append([])
+            for token_ids in relation:
+                if self.add_eos_bos:
+                    token_ids = [self.bos_idx] + token_ids + [self.eos_idx]
+                if len(token_ids) > self.max_relation_len:
+                    token_ids = token_ids[:self.max_relation_len]
+                    token_ids[-1] = self.eos_idx
+                result[i].append(token_ids)
+        return result
+
+    def _to_tensor(
+        self,
+        token_ids,
+        attention_mask_pad_idx=0
     ):
-        return [self._transform_entity(rels) for rels in relation_token_ids]
+        input_ids = list_to_tensor(token_ids, pad_value=self.pad_token_id)
+        attention_mask = (input_ids != self.pad_token_id).int()
+        attention_mask[attention_mask == 0] = attention_mask_pad_idx
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask
+        }
 
     def forward(
         self, batch: Dict[str, Any]
@@ -211,9 +241,7 @@ class DuckTransform(BlinkTransform):
         torch.jit.isinstance(relation_token_ids, List[List[List[int]]])
 
         relation_token_ids = self._transform_relations(relation_token_ids)
-        relations_tensor = self._to_tensor(
-            relation_token_ids
-        )
+        relations_tensor = self._to_tensor(relation_token_ids)
         
         return (
             mention_tensor,
@@ -237,9 +265,9 @@ class EdDuckDataModule(LightningDataModule):
         rel_catalogue_path: str,
         rel_catalogue_idx_path: str,
         ent_to_rel_path: str,
+        neighbors_path: Optional[str] = None,
         batch_size: int = 2,
         negatives: bool = False,
-        negatives_strategy: str = "higher",
         max_negative_entities_in_batch: int = 0
     ):
         super().__init__()
@@ -254,28 +282,36 @@ class EdDuckDataModule(LightningDataModule):
         self.rel_catalogue = RelationCatalogue(
             rel_catalogue_path, rel_catalogue_idx_path
         )
+        logger.info(f"Reading mapping from entities to relations: {ent_to_rel_path}")
         self.ent_to_rel = load_json(ent_to_rel_path)
 
         self.num_workers = 0
+        self.duck_neighbors = None
+        if neighbors_path is not None:
+            logger.info(f"Reading neighbors: {neighbors_path}")
+            self.duck_neighbors = load_json(neighbors_path)
 
         self.datasets = {
             "train": EdDuckDataset(
                 train_path,
                 self.ent_catalogue,
                 self.rel_catalogue,
-                self.ent_to_rel
+                self.ent_to_rel,
+                neighbors=self.duck_neighbors
             ),
             "valid": EdDuckDataset(
                 val_path,
                 self.ent_catalogue,
                 self.rel_catalogue,
-                self.ent_to_rel
+                self.ent_to_rel,
+                neighbors=self.duck_neighbors
             ),
             "test": EdDuckDataset(
                 test_path,
                 self.ent_catalogue,
                 self.rel_catalogue,
-                self.ent_to_rel
+                self.ent_to_rel,
+                neighbors=self.duck_neighbors
             ),
         }
 
@@ -317,7 +353,7 @@ class EdDuckDataModule(LightningDataModule):
         """
         left_context, mention, right_context, _, \
             entity_ids, entity_token_ids, \
-            relation_ids, relation_token_ids = zip(
+            relation_ids, relation_token_ids, neighbors = zip(
             *[item.values() for item in batch]
         )
         neg_entities_ids = None
@@ -339,7 +375,7 @@ class EdDuckDataModule(LightningDataModule):
         ] * pad_length
         entity_ids += [0] * pad_length
 
-        mention_tensors, entity_tensors = self.transform(
+        mention_tensors, entity_tensors, relation_tensors = self.transform(
             {
                 "left_context": left_context,
                 "mention": mention,
@@ -356,7 +392,9 @@ class EdDuckDataModule(LightningDataModule):
         return {
             "mentions": mention_tensors,
             "entities": entity_tensors,
+            "relations": relation_tensors,
             "entity_ids": entity_ids,
+            "relation_ids": relation_ids,
             "targets": targets,
             "entity_tensor_mask": entity_tensor_mask,
         }

@@ -8,7 +8,12 @@ data:
   rel_catalogue_idx_path: /fsx/matzeni/data/duck/bert_rel_256_idx.txt
   rel_catalogue_path: /fsx/matzeni/data/duck/bert_rel_256.h5
   ent_to_rel_path: /fsx/matzeni/data/duck/ent_to_rel.json
+  neighbors_path: /fsx/matzeni/data/duck/duck_neighbors.json
 
+
+max_mention_len: 128
+max_entity_len: 128
+max_relation_len: 64
 batch_size: 2
 language_model: bert-large-uncased
 

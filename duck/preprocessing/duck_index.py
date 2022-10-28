@@ -268,7 +268,7 @@ class DuckIndex:
         return duck_index
 
 
-@hydra.main(config_path="../conf/preprocessing", config_name="duck_neighbors")
+@hydra.main(config_path="../conf/preprocessing", config_name="duck_neighbors", version_base=None)
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     DuckIndex.build_index(config)
