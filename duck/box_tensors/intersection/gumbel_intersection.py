@@ -81,7 +81,7 @@ def gumbel_intersection(
             `None` to not use any approximation.
 
     Returns:
-        The BoxTensor obtained by Gumbel interaction of box1 and box2.
+        The BoxTensor obtained by Gumbel intersection of box1 and box2.
     """
     t1 = box1
     t2 = box2

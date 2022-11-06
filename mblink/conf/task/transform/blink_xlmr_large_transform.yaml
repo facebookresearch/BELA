@@ -1,5 +1,0 @@
-# @package _group_
-_target_: mblink.transforms.blink_transform.BlinkTransform
-model_path: xlm-roberta-large
-max_mention_len: 64
-max_entity_len: 64

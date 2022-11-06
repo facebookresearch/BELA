@@ -100,9 +100,7 @@ class CombinedLoss(nn.Module):
 class ElBiEncoderTask(LightningModule):
     def __init__(
         self,
-        transform: TransformConf,
         model: ModelConf,
-        datamodule: DataModuleConf,
         optim: OptimConf,
         in_batch_eval: bool = True,  # use only in batch contexts for validation
         warmup_steps: int = 0,

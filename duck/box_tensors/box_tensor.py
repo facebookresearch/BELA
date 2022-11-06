@@ -9,6 +9,8 @@ from typing import (
 import logging
 import torch
 from torch import Tensor
+from einops import rearrange, repeat
+
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,10 @@ class BoxTensor(object):
         """
 
         return (self.left + self.right) / 2
+    
+    @property
+    def device(self):
+        return self.left.device
 
     @classmethod
     def check_corner_validity(cls: Type[TBoxTensor], left: Tensor, right: Tensor) -> None:
@@ -135,6 +141,16 @@ class BoxTensor(object):
             assert self._left.shape == self._right.shape
 
             return self._left.shape
+
+    def rearrange(self, expression: str, **kwargs) -> TBoxTensor:
+        left = rearrange(self.left, expression, **kwargs)
+        right = rearrange(self.right, expression, **kwargs)
+        return BoxTensor((left, right))
+    
+    def repeat(self, expression: str, **kwargs) -> TBoxTensor:
+        left = repeat(self.left, expression, **kwargs)
+        right = repeat(self.right, expression, **kwargs)
+        return BoxTensor((left, right))
 
     @classmethod
     def from_corners(
@@ -181,6 +197,11 @@ class BoxTensor(object):
         z2 = self.right[indx]
 
         return self.from_corners(z1, z2)
+    
+    def cat(self, other: TBoxTensor, dim=0):
+        left = torch.cat([self.left, other.left], dim=dim)
+        right = torch.cat([self.right, other.right], dim=dim)
+        return BoxTensor((left, right))
 
     def broadcast(self, target_shape: Tuple) -> None:
         """

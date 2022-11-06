@@ -35,7 +35,7 @@ def bessel_volume_approx(
     """
 
     if not (0.0 < scale <= 1.0):
-        raise ValueError(f"scale should be in (0,1] but is {scale}")
+        raise ValueError(f"Scale should be in (0,1] but is {scale}")
 
     if volume_temperature == 0:
         raise ValueError("volume_temperature must be non-zero")

@@ -1,7 +1,7 @@
 defaults:
   - config
   - datamodule: blink_datamodule
-  - task/transform: blink_xlmr_transform
+  - datamodule/transform: blink_xlmr_transform
   - task/model: xlmr
   - task/optim: adamw
   - trainer: gpu_1_host

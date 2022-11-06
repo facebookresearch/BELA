@@ -1,4 +1,5 @@
 import logging
+from optparse import OptionParser
 from pathlib import Path
 import random
 from tkinter import E
@@ -38,7 +39,7 @@ def tiny_value_of_dtype(dtype: torch.dtype) -> float:
         raise TypeError("Does not support dtype " + str(dtype))
 
 
-def make_reproducible(seed, ngpus=1):
+def make_reproducible(seed=42, ngpus=1):
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -116,6 +117,19 @@ def most_frequent_relations(
     return list(rel_to_num_ents.keys())[:k]
 
 
+def activation_function(name: str):
+    name = name.lower().strip()
+    activations = {
+        "relu": torch.relu,
+        "sigmoid": torch.sigmoid,
+        "softmax": torch.softmax
+    }
+    if name in activations:
+        return activations[name]
+    options =  ", ".join(activations.keys())
+    raise ValueError(f"Unsupported activation {name}. The available options are: {options}")
+
+
 def device(device_id=None, gpu=None):
     if device_id is not None:
         return torch.device(str(device_id))
@@ -126,16 +140,36 @@ def device(device_id=None, gpu=None):
     return torch.device('cpu')
 
 
+def generate_mask_list(values):
+    if len(values) == 0:
+        return []
+    if isinstance(values[0], torch.Tensor):
+        return [torch.ones_like(v).bool() for v in values]
+    if not isinstance(values[0], list):
+        return [True] * len(values)
+    return [generate_mask_list(v) for v in values]
+
+
 def max_depth_of_nested_list(lst):
-    if not isinstance(lst, list) or len(lst) == 0:
+    if not isinstance(lst, list):
         return 0
-    return 1 + max(max_depth_of_nested_list(item) for item in lst)
+    if len(lst) == 0:
+        return 1
+    depths = [
+        max_depth_of_nested_list(item)
+        for item in lst
+        if isinstance(item, list)
+    ]
+    max_depth = max(depths) if len(depths) > 0 else 0
+    return 1 + max_depth
+
 
 def empty_list_of_depth(n):
     result = []
     for i in range(n - 1):
         result = [result]
     return result
+
 
 def equalize_depth(nested_list, depth=None):
     if depth is None:
@@ -146,7 +180,9 @@ def equalize_depth(nested_list, depth=None):
         item = empty_list_of_depth(depth - 1)
         nested_list.append(item)
     for item in nested_list:
-        equalize_depth(item, depth - 1) 
+        if isinstance(item, list):
+            equalize_depth(item, depth - 1) 
+
 
 def _list_to_tensor(values, pad_value, dtype=None):
     if isinstance(values, torch.Tensor):
@@ -157,15 +193,18 @@ def _list_to_tensor(values, pad_value, dtype=None):
         return pad_tensors(values, pad_value=pad_value)
     if not isinstance(values[0], list):
         return torch.tensor(values, dtype=dtype)
-    return list_to_tensor([
-        list_to_tensor(v, pad_value=pad_value) for v in values
+    return _list_to_tensor([
+        _list_to_tensor(v, pad_value=pad_value) for v in values
     ], pad_value=pad_value)
 
 
 def list_to_tensor(values, pad_value, dtype=None):
-    values = copy.deepcopy(values)
+    values = list(copy.deepcopy(values))
     equalize_depth(values)
-    return _list_to_tensor(values, pad_value=pad_value, dtype=dtype)
+    mask = generate_mask_list(values)
+    tensor = _list_to_tensor(values, pad_value=pad_value, dtype=dtype)
+    mask = _list_to_tensor(mask, pad_value=False)
+    return tensor, mask
 
 
 def pad_tensors(tensors, pad_value):

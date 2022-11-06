@@ -23,9 +23,8 @@ def main(cfg: MainConfig):
 
     task = hydra.utils.instantiate(cfg.task, _recursive_=False)
 
-    assert cfg.task.model.model_path == cfg.task.transform.model_path
-    transform = hydra.utils.instantiate(cfg.task.transform)
-    datamodule = hydra.utils.instantiate(cfg.datamodule, transform=transform)
+    assert cfg.task.model.model_path == cfg.datamodule.transform.model_path
+    datamodule = hydra.utils.instantiate(cfg.datamodule)
     checkpoint_callback = hydra.utils.instantiate(cfg.checkpoint_callback)
     trainer = Trainer(**cfg.trainer, callbacks=[checkpoint_callback])
 

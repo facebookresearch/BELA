@@ -2,7 +2,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
 from typing import Optional
-
+import torch.nn as nn
 from transformers import AutoModel
 
 
