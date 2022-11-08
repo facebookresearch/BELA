@@ -45,7 +45,7 @@ duck:
     attn_heads: 8
     activation: softmax
     margin: 0.5
-  duck_loss: jaccard_kldiv
+  duck_loss: jaccard_mse
   in_batch_neighbors: 5
 
 trainer:
