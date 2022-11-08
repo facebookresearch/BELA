@@ -38,14 +38,14 @@ duck:
   boxes:
     intersection_temperature: 0.0001
     volume_temperature: 0.1
-    mse_log: True
+    rel_threshold: 1
   box_encoder:
     num_layers: 3
     dropout: 0.1
     attn_heads: 8
     activation: softmax
     margin: 0.5
-  duck_loss: jaccard
+  duck_loss: jaccard_kldiv
   in_batch_neighbors: 5
 
 trainer:
