@@ -21,11 +21,11 @@ def configure_wandb_logger(config, model):
         save_dir=config.log_dir,
         config=dict(config)
     )
-    wandb.watch(model, log="all", log_freq=1)
+    wandb.watch(model, log="all", log_freq=1000)
     return logger
     
 
-@hydra.main(config_path="conf", config_name="duck_conf", version_base=None)
+@hydra.main(config_path="conf", config_name="duck", version_base=None)
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     make_reproducible(ngpus=config.trainer.devices)
@@ -39,13 +39,11 @@ def main(config: DictConfig):
 
     os.environ["PL_SKIP_CPU_COPY_ON_DDP_TEARDOWN"] = "1"
 
-    assert config.duck.base_model.model_path == config.data.transform.model_path
-
     Path(config.log_dir).mkdir(exist_ok=True, parents=True)
     Path(config.ckpt_dir).mkdir(exist_ok=True, parents=True)
 
-    task = Duck(config) 
     datamodule = hydra.utils.instantiate(config.data)
+    task = hydra.utils.instantiate(config.task, config, data=datamodule) 
     logger = configure_wandb_logger(config, task)
     checkpoint_callback = hydra.utils.instantiate(config.checkpoint_callback)
     checkpoint_callback.CHECKPOINT_NAME_LAST = config.checkpoint_callback.filename + "_last"

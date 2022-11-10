@@ -9,7 +9,7 @@ defaults:
   - _self_
 
 data:
-  _target_: duck.datamodule.datamodule.EdDuckDataModule
+  _target_: duck.datamodule.EdDuckDataModule
   train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_path: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
   test_path: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
@@ -25,11 +25,14 @@ data:
   num_neighbors_per_entity: 1
   shuffle: True
   transform:
-    _target_: duck.datamodule.datamodule.DuckTransform
+    _target_: duck.datamodule.DuckTransform
     model_path: ${language_model}
     max_mention_len: 128
     max_entity_len: 128
     max_relation_len: 32
+
+task:
+  _target_: duck.task.Duck
 
 duck:
   base_model:

@@ -245,9 +245,6 @@ class BoxTensor(object):
                     dim + len(potential_final_shape) < 0
                 ):  # self has more dims left
                     potential_final_shape.insert(dim + 1, 1)
-                    # +1 because
-                    # insert indexing in list
-                    # works differently than unsqueeze
                     dim_to_unsqueeze.append(dim)
 
                     continue

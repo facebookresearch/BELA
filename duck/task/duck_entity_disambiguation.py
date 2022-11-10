@@ -207,7 +207,7 @@ class DuckDoubleMSELoss(DuckLoss):
             mse = torch.square(torch.log(gt_probs + self.eps) - log_probs)
         else:
             mse = torch.square(gt_probs - torch.exp(log_probs).clamp(0, 1))
-        mse = self.mask_loss(mse, entity_relations, neighbor_relations)
+        # mse = self.mask_loss(mse, entity_relations, neighbor_relations)
         return mse.mean()
 
     def target(self, entity_relations, neighbor_relations):
@@ -226,8 +226,9 @@ class DuckDoubleMSELoss(DuckLoss):
 
 
 class Duck(pl.LightningModule):
-    def __init__(self, config):
+    def __init__(self, config, **kwargs):
         super(Duck, self).__init__()
+        logger.info("Instantiating Duck for entity disambiguation")
         self.config = config
         self.save_hyperparameters(config)
         self.biencoder_task = None
@@ -239,7 +240,7 @@ class Duck(pl.LightningModule):
         self.intersection = None
         if config.duck.duck_loss == "jaccard_mse":
             self.duck_loss = DuckJaccardMSELoss(**self.config.duck.boxes)
-        elif config.duck.duck_loss == "conditional_mse":
+        elif config.duck.duck_loss == "double":
             self.duck_loss = DuckDoubleMSELoss(**self.config.duck.boxes)
         elif config.duck.duck_loss == "jaccard_kldiv":
             self.duck_loss = DuckJaccardKLDivLoss(**self.config.duck.boxes)
@@ -301,6 +302,10 @@ class Duck(pl.LightningModule):
             assert relations["data"].size(-1) <= self.config.data.transform.max_relation_len
             assert neighbor_relations["data"].size(-1) <=  self.config.data.transform.max_relation_len
 
+        num_rels = torch.any(batch["relations"]["attention_mask"].bool(), dim=-1).sum(dim=-1).tolist()
+        assert num_rels == [rels.size(0) for rels in batch["relation_ids"]]
+        assert num_rels == [len(rels) for rels in batch["relation_labels"]]
+
         mention_repr, _ = self.mention_encoder(
             mentions["data"], attention_mask=mentions["attention_mask"]
         )
@@ -335,6 +340,7 @@ class Duck(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         if batch is None:
             return None
+            
         representations = self(batch)
         mentions = representations["mentions"]
         entities = representations["entities"]

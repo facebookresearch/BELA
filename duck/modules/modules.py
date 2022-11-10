@@ -1,13 +1,85 @@
-from typing import Optional
+from typing import Optional, Any
 import torch
-from torch import nn
-from torch import Tensor
+from torch import nn, Tensor
+from duck.box_tensors.box_tensor import BoxTensor
+
+from duck.box_tensors.initializers.abstract_initializer import BoxInitializer
+from duck.box_tensors.initializers.uniform import UniformBoxInitializer
+from einops import rearrange
 
 from duck.box_tensors import BoxTensor
 from bela.models.hf_encoder import HFEncoder
 from einops import rearrange
 
-from duck.common.utils import activation_function, tiny_value_of_dtype
+from duck.common.utils import activation_function
+
+
+class BoxEmbedding(torch.nn.Embedding):
+    """Embedding layer returning boxes instead of vectors"""
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        box_initializer: BoxInitializer = None,
+        universe_idx: Optional[int] = None,
+        universe_min: float = 0.0,
+        universe_max: float = 1.0,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            num_embeddings,
+            embedding_dim * 2,
+            padding_idx=universe_idx,
+            **kwargs,
+        )
+        self.embedding_dim = embedding_dim
+        self.box_initializer = box_initializer
+        self.universe_idx = universe_idx
+        self.universe_min = universe_min
+        self.universe_max = universe_max
+        self.reinit()
+    
+    def reinit(self):
+        if self.box_initializer is None:
+            self.box_initializer = UniformBoxInitializer(
+                dimensions=self.embedding_dim,
+                num_boxes=int(self.weight.shape[0]),
+                minimum = self.universe_min,
+                maximum = self.universe_max
+            )
+
+        self.box_initializer(self.weight)
+        self._fill_universe_idx()
+
+    def _fill_universe_idx(self):
+        if self.universe_idx is not None:
+            with torch.no_grad():
+                universe_left = torch.full((self.embedding_dim,), self.universe_min)
+                universe_right = torch.full((self.embedding_dim,), self.universe_max)
+                universe_data = torch.cat([universe_left, universe_right])
+                self.weight[self.universe_idx].copy_(universe_data)
+
+    def forward(self, inputs: torch.Tensor) -> BoxTensor:
+        emb = super().forward(inputs)
+        emb = rearrange(emb, "... (box d) -> ... box d", box=2)
+        left = emb[..., 0, :]
+        right = emb[..., 1, :]
+        return BoxTensor((left, right))
+
+    def all_boxes(self) -> BoxTensor:
+        weights = rearrange(self.weight, "... (box d) -> ... box d", box=2)
+        left = weights[..., 0, :]
+        right = weights[..., 1, :]
+        return BoxTensor((left, right)) 
+
+    def get_bounding_box(self) -> BoxTensor:
+        all_ = self.all_boxes()
+        left = all_.left 
+        right = all_.right
+        left_min, _ = left.min(dim=0)
+        right_max, _ = right.max(dim=0)
+        return BoxTensor.from_corners(left_min, right_max)
+
 
 
 class EntityEncoder(nn.Module):
@@ -116,9 +188,13 @@ class SetToBoxTransformer(nn.Module):
         attention_mask = attention_mask.bool()
         if attention_mask.dim() == 3:
             attention_mask = torch.any(attention_mask.bool(), dim=-1)
-        attention_mask = ~attention_mask
-        x = self.transformer_encoder(input_set, src_key_padding_mask=attention_mask)
-        x = torch.nan_to_num(x)  # for robustness to empty sets
+        
+        pad = torch.zeros([input_set.size(0), 1, input_set.size(-1)], device=input_set.device)
+        pad_mask = torch.full([attention_mask.size(0), 1], True, device=input_set.device).bool()
+        input_set = torch.cat([pad, input_set], dim=1)
+        attention_mask = torch.cat([pad_mask, attention_mask], dim=1)
+        x = self.transformer_encoder(input_set, src_key_padding_mask=~attention_mask)
+        x[~attention_mask] = 0.
         x = torch.mean(x, dim=1)
         left = self.left_proj(x)
         offset = self.offset_proj(x)

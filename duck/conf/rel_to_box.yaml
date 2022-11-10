@@ -1,0 +1,47 @@
+log_dir: /checkpoints/matzeni/duck/logs
+ckpt_dir: /checkpoints/matzeni/duck/checkpoints
+run_name: rel_to_box
+debug: False
+
+defaults:
+  - optim: adamw
+  - _self_
+
+data:
+  _target_: duck.datamodule.RelToBoxDataModule
+  rel_probs_path: /fsx/matzeni/data/duck/rel_probs.json
+  rel_catalogue_idx_path: /fsx/matzeni/data/duck/bert_rel_256_idx.txt
+  shuffle: True
+  batch_size: 4096
+
+task:
+  _target_: duck.task.RelToBox
+
+rel_to_box:
+  dim: 1024
+  boxes:
+    intersection_temperature: 0.0001
+    volume_temperature: 0.1
+
+trainer:
+  max_epochs: 100
+  min_epochs: 20
+  accelerator: gpu
+  devices: 1
+  num_nodes: 1
+  log_every_n_steps: 1000
+
+checkpoint_callback:
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  monitor: train_loss
+  every_n_train_steps: 10000
+  mode: min 
+  save_last: true
+  verbose: true
+  filename: ${run_name}_{epoch}_{duck_loss:.3f}
+  save_top_k: 1
+  dirpath: ${ckpt_dir}
+
+hydra:
+  run:
+    dir: .
