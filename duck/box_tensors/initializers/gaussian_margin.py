@@ -21,7 +21,7 @@ def gaussian_margin_boxes(
 
     if mean < 0:
         raise ValueError(
-            ValueError(f"Mean should be >_ 0 but got {stddev}")
+            ValueError(f"Mean should be >= 0 but got {mean}")
         )
 
     if maximum < minimum:

@@ -1,6 +1,6 @@
-ent_catalogue_idx_path: /fsx/matzeni/data/duck/bert_ent_256_idx.txt
+ent_catalogue_idx_path: /fsx/matzeni/data/duck/ent_idx.txt
 ent_catalogue_path: /fsx/matzeni/data/duck/bert_ent_256.h5
-rel_catalogue_idx_path: /fsx/matzeni/data/duck/bert_rel_256_idx.txt
+rel_catalogue_idx_path: /fsx/matzeni/data/duck/rel_idx.txt
 rel_catalogue_path: /fsx/matzeni/data/duck/bert_rel_256.h5
 ent_to_rel_path: /fsx/matzeni/data/duck/ent_to_rel.json
 index_path: /fsx/matzeni/data/duck/duck_index_flat
