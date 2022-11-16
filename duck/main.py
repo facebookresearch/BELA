@@ -8,10 +8,11 @@ from duck.task.duck_entity_disambiguation import Duck
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 from pathlib import Path
-
+import torch
+import logging
 
 def configure_wandb_logger(config, model):
-    if ("debug" in config and config.debug) or "fast_dev_run" in config.trainer:
+    if config.get("debug") or "fast_dev_run" in config.trainer:
         return None 
     run_name = config.run_name if "run_name" in config else None
     logger = WandbLogger(
@@ -21,7 +22,7 @@ def configure_wandb_logger(config, model):
         save_dir=config.log_dir,
         config=dict(config)
     )
-    wandb.watch(model, log="all", log_freq=1000)
+    wandb.watch(model, log="all", log_freq=10)
     return logger
     
 
@@ -33,7 +34,8 @@ def main(config: DictConfig):
     os.environ["NCCL_NSOCKS_PERTHREAD"] = "4"
     os.environ["NCCL_SOCKET_NTHREADS"] = "2"
 
-    if config.get("debug_mode"):
+    if config.get("debug"):
+        torch.autograd.set_detect_anomaly(True)
         os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
         os.environ["NCCL_BLOCKING_WAIT"] = "1"
 
@@ -43,11 +45,14 @@ def main(config: DictConfig):
     Path(config.ckpt_dir).mkdir(exist_ok=True, parents=True)
 
     datamodule = hydra.utils.instantiate(config.data)
-    task = hydra.utils.instantiate(config.task, config, data=datamodule) 
+    task = hydra.utils.instantiate(config.task, config, data=datamodule)     
+    if config.get("pretrained_model_path") is not None:
+        task = task.load_from_checkpoint(config.pretrained_model_path)
+
     logger = configure_wandb_logger(config, task)
     checkpoint_callback = hydra.utils.instantiate(config.checkpoint_callback)
     checkpoint_callback.CHECKPOINT_NAME_LAST = config.checkpoint_callback.filename + "_last"
-
+    
     trainer = Trainer(
         **config.trainer,
         callbacks=[checkpoint_callback],

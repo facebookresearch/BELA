@@ -1,15 +1,17 @@
-from typing import Optional, Any
+from typing import Callable, Optional, Any
 import torch
 from torch import nn, Tensor
 from duck.box_tensors.box_tensor import BoxTensor
 
 from duck.box_tensors.initializers.abstract_initializer import BoxInitializer
+from duck.box_tensors.initializers import GaussianMarginBoxInitializer
 from duck.box_tensors.initializers.uniform import UniformBoxInitializer
 from einops import rearrange
 
 from duck.box_tensors import BoxTensor
 from bela.models.hf_encoder import HFEncoder
 from einops import rearrange
+import math
 
 from duck.common.utils import activation_function
 
@@ -20,10 +22,8 @@ class BoxEmbedding(torch.nn.Embedding):
         self,
         num_embeddings: int,
         embedding_dim: int,
-        box_initializer: BoxInitializer = None,
+        box_parametrizaton: str = "uniform",
         universe_idx: Optional[int] = None,
-        universe_min: float = 0.0,
-        universe_max: float = 1.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -32,23 +32,55 @@ class BoxEmbedding(torch.nn.Embedding):
             padding_idx=universe_idx,
             **kwargs,
         )
+        self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self.box_initializer = box_initializer
+        self.parametrization = box_parametrizaton
         self.universe_idx = universe_idx
-        self.universe_min = universe_min
-        self.universe_max = universe_max
+        self.universe_min = 0.0
+        self.universe_max =  1.0
+        self.box_constructor = self._set_box_constructor()
+        self.box_initializer = self._set_box_initializer()
         self.reinit()
     
-    def reinit(self):
-        if self.box_initializer is None:
-            self.box_initializer = UniformBoxInitializer(
+    def _set_box_constructor(self):
+        if self.parametrization == "uniform":
+            return None
+        if self.parametrization == "gaussian_margin":
+            return None
+        if self.parametrization == "sigmoid":
+            return BoxTensor.sigmoid_constructor
+        if self.parametrization == "softplus":
+            return BoxTensor.softplus_constructor
+        raise ValueError(f"Unsupported parametrization {self.parametrization}")
+
+    def _set_box_initializer(self):
+        if self.parametrization == "uniform":
+            return UniformBoxInitializer(
                 dimensions=self.embedding_dim,
                 num_boxes=int(self.weight.shape[0]),
                 minimum = self.universe_min,
                 maximum = self.universe_max
             )
-
-        self.box_initializer(self.weight)
+        if self.parametrization == "gaussian_margin":
+            return GaussianMarginBoxInitializer(
+                dimensions=self.embedding_dim,
+                num_boxes=int(self.weight.shape[0]),
+                minimum = self.universe_min,
+                maximum = self.universe_max,
+                stddev=0.01
+            )
+        if self.parametrization == "sigmoid":
+            self.universe_min = -100
+            self.universe_max = -self.universe_min
+            return None
+        if self.parametrization == "softplus":
+            return
+        raise ValueError(f"Unsupported parametrization {self.parametrization}")
+        
+    def reinit(self):
+        if self.box_initializer is not None:
+            self.box_initializer(self.weight)
+        
         self._fill_universe_idx()
 
     def _fill_universe_idx(self):
@@ -64,6 +96,8 @@ class BoxEmbedding(torch.nn.Embedding):
         emb = rearrange(emb, "... (box d) -> ... box d", box=2)
         left = emb[..., 0, :]
         right = emb[..., 1, :]
+        if self.box_constructor is not None:
+            return self.box_constructor(left, right)
         return BoxTensor((left, right))
 
     def all_boxes(self) -> BoxTensor:
@@ -79,7 +113,6 @@ class BoxEmbedding(torch.nn.Embedding):
         left_min, _ = left.min(dim=0)
         right_max, _ = right.max(dim=0)
         return BoxTensor.from_corners(left_min, right_max)
-
 
 
 class EntityEncoder(nn.Module):

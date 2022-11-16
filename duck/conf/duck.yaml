@@ -14,9 +14,9 @@ data:
   val_path: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
   test_path: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
   ent_to_rel_path: /fsx/matzeni/data/duck/ent_to_rel.json
-  ent_catalogue_idx_path: /fsx/matzeni/data/duck/bert_ent_256_idx.txt
+  ent_catalogue_idx_path: /fsx/matzeni/data/duck/ent_idx.txt
   ent_catalogue_data_path: /fsx/matzeni/data/duck/bert_ent_256_tok_ids.h5
-  rel_catalogue_idx_path: /fsx/matzeni/data/duck/bert_rel_256_idx.txt
+  rel_catalogue_idx_path: /fsx/matzeni/data/duck/rel_idx.txt
   rel_catalogue_data_path: /fsx/matzeni/data/duck/bert_rel_256_repr.h5
   neighbors_path: /fsx/matzeni/data/duck/duck_neighbors.json
   stop_rels_path: /fsx/matzeni/data/duck/stop_rels.jsonl

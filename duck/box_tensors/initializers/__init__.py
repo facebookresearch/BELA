@@ -1,1 +1,2 @@
 from .uniform import UniformBoxInitializer
+from .gaussian_margin import GaussianMarginBoxInitializer

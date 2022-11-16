@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from duck.box_tensors.box_tensor import BoxTensor
-from duck.common.utils import list_to_tensor, tiny_value_of_dtype
+from duck.common.utils import list_to_tensor, logsubexp, tiny_value_of_dtype
 from mblink.task.blink_task import ElBiEncoderTask
 from einops import rearrange
 from duck.box_tensors.volume import Volume
@@ -99,11 +99,8 @@ class DuckJaccardLoss(DuckLoss, ABC):
         log_intersection = self.volume(self.intersection(entity_boxes, neighbor_boxes))
         log_ent_volume = self.volume(entity_boxes)
         log_neigh_volume = self.volume(neighbor_boxes)
-        ent_volume = torch.exp(log_ent_volume).clamp(0, self.clamp_value)
-        neigh_volume = torch.exp(log_neigh_volume).clamp(0, self.clamp_value)
-        intersection_volume = torch.exp(log_intersection).clamp(0, self.clamp_value)
-        union = ent_volume + neigh_volume - intersection_volume
-        log_union = torch.log(union + self.eps)
+        log_sum = torch.logaddexp(log_ent_volume, log_neigh_volume)
+        log_union = logsubexp(log_sum, log_intersection)
         return log_intersection - log_union
 
     def target(self, entity_relations, neighbor_relations):

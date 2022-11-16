@@ -25,7 +25,7 @@ def uniform_boxes(
 
     if delta_max > (maximum - minimum):
         raise ValueError(
-            f"Expected: delta_max {delta_max} <= (max-min) {maximum-minimum}"
+            f"Expected: delta_max {delta_max} <= (max-min) {maximum - minimum}"
         )
 
     if maximum <= minimum:

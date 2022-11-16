@@ -167,6 +167,24 @@ class BoxTensor(object):
         assert left.shape == right.shape, "left and right shape not matching"
 
         return cls((left, right))
+    
+    @classmethod
+    def sigmoid_constructor(
+            cls: Type[TBoxTensor], v1: Tensor, v2: Tensor
+    ) -> TBoxTensor:
+        assert v1.shape == v2.shape, "left and right shape not matching"
+        left = torch.sigmoid(v1)
+        right = left + torch.sigmoid(v2) * (1.0 - left)
+        return cls((left, right))
+
+    @classmethod
+    def softplus_constructor(
+            cls: Type[TBoxTensor], v1: Tensor, v2: Tensor, beta=1.0
+    ) -> TBoxTensor:
+        assert v1.shape == v2.shape, "left and right shape not matching"
+        left = v1
+        right = left + torch.nn.functional.softplus(v2, beta=beta)
+        return cls((left, right))
 
     def __repr__(self) -> str:
         if self.data is not None:
@@ -177,10 +195,10 @@ class BoxTensor(object):
         else:
             return (
                 f"{self.__class__.__name__}(\n\tleft={self._left.__repr__()},"
-                f"\n\tright={self._right.__repr__()}\n)"  # type:ignore
+                f"\n\tright={self._right.__repr__()}\n)"
             )
 
-    def __eq__(self, other: TBoxTensor) -> bool:  # type:ignore
+    def __eq__(self, other: TBoxTensor) -> bool:
         return torch.allclose(self.left, other.left) and torch.allclose(
             self.right, other.right
         )

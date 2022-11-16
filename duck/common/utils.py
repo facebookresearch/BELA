@@ -55,7 +55,6 @@ def dict_to_yaml(config, path='config.yaml'):
         f.write(yaml)
 
 
-
 def get_logger(output_dir=None):
     if output_dir != None:
         output_dir = Path(output_dir)
@@ -118,6 +117,8 @@ def most_frequent_relations(
 
 
 def activation_function(name: str):
+    if name is None:
+        return None
     name = name.lower().strip()
     activations = {
         "relu": torch.relu,
@@ -229,3 +230,41 @@ def pad_tensors(tensors, pad_value):
         else:
             raise ValueError('Padding is supported for up to 4D tensors')
     return padded_tensor
+
+
+def logsubexp(x, y, eps=1e-7):
+    return x + torch.log1p(-torch.exp(y - x) + eps)
+
+
+def log1m(x, log_input=True, eps=1e-7, clamp=True):
+    if log_input:
+        x = torch.exp(x)
+    if clamp:
+        x = x.clamp(0, 1)
+    return torch.log1p(-x + eps)
+
+
+def mean_over_batches(batch_values, prefix=None, suffix=None):
+    """
+    :param batch_values: a list of dictionaries containing metrics for each batch
+    :param prefix: prefix to add to the name of each metric
+    :return: a dictionary containing mean values over batches for each metric
+    """
+    metrics = batch_values[0].keys()
+    prefix = "" if prefix is None else f"{prefix}_"
+    suffix = "" if suffix is None else f"_{suffix}"
+    return {
+        f"{prefix}{metric}{suffix}": torch.tensor([x[metric] for x in batch_values]).float().mean()
+        for metric in metrics
+    }
+
+def prefix_suffix_keys(dictionary, prefix=None, suffix=None):
+    prefix = "" if prefix is None else f"{prefix}_"
+    suffix = "" if suffix is None else f"_{suffix}"
+    return {
+        f"{prefix}{key}{suffix}": value for key, value in dictionary.items()
+    }
+
+def metric_dict_to_string(kv_map, separator="\t"):
+    lines = [f"{key}: {value:.3f}" for key, value in kv_map.items()]
+    return separator.join(lines)
