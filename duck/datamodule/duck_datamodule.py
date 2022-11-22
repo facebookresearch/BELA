@@ -7,7 +7,7 @@ from unittest.mock import NonCallableMagicMock
 import torch
 import h5py
 from pytorch_lightning import LightningDataModule
-from duck.common.utils import list_to_tensor, load_json, load_jsonl
+from duck.common.utils import list_to_tensor, load_json, load_jsonl, any_none
 
 from mblink.utils.utils import EntityCatalogue, order_entities
 from mblink.transforms.blink_transform import BlinkTransform
@@ -20,10 +20,11 @@ logger = logging.getLogger()
 
 
 class RelationCatalogue:
-    def __init__(self, data_path, idx_path):
-        self.data_file = h5py.File(data_path, "r")
-        self.data = self.data_file["data"][:]
-
+    def __init__(self, idx_path, data_path=None):
+        self.data = None
+        if data_path is not None:
+            self.data_file = h5py.File(data_path, "r")
+            self.data = self.data_file["data"][:]
         logger.info(f"Reading relation catalogue index {idx_path}")
         self.idx = {}
         with open(idx_path, "rt") as fd:
@@ -39,6 +40,10 @@ class RelationCatalogue:
         if is_string:
             relations = [relations]
         rel_indices = [self.idx[rel] for rel in relations]
+        if self.data is None:
+            if not is_string:
+                rel_indices = rel_indices[0]
+            return rel_indices, None
         value = self.data[rel_indices].tolist()
         if self.data.dtype == int or self.data.dtype == np.int32:
             value = [v[1 : v[0] + 1] for v in value]
@@ -225,10 +230,12 @@ class DuckTransform(BlinkTransform):
         self.max_relation_len = max_relation_len
         self.add_eos_bos = add_eos_bos
 
-    def _transform_relations(
+    def _transform_relation_ids(
         self,
         relation_token_ids: List[List[List[int]]],
     ) -> List[List[List[int]]]:
+        if relation_token_ids is None:
+            return None
         result = []
         for i, relation in enumerate(relation_token_ids):
             result.append([])
@@ -247,17 +254,19 @@ class DuckTransform(BlinkTransform):
     ):
         return [self._transform_entity(neighbors) for neighbors in neighbor_token_ids]
     
-    def _transform_neighbor_relations(
+    def _transform_neighbor_relation_ids(
         self,
         neighbor_relation_token_ids
-    ):
-        return [self._transform_relations(rels) for rels in neighbor_relation_token_ids]
+    ): 
+        return [self._transform_relation_ids(rels) for rels in neighbor_relation_token_ids]
 
     def _list_to_tensor(
         self,
         data,
         pad_value=None
     ):
+        if data is None:
+            return None
         if pad_value is None:
             pad_value = self.pad_token_id
         tensor, attention_mask = list_to_tensor(list(data), pad_value=pad_value)
@@ -267,6 +276,26 @@ class DuckTransform(BlinkTransform):
             'attention_mask': attention_mask
         }
     
+    def _transform_relations(self, relation_data):
+        if any_none(relation_data):
+            return None
+        relation_pad = 0.0
+        if torch.jit.isinstance(relation_data, List[List[List[int]]]):
+            relation_data = self._transform_relation_ids(relation_data)
+            relation_pad = None
+        return self._list_to_tensor(relation_data, pad_value=relation_pad)
+    
+    def _transform_neighbor_relations(self, neighbor_relation_data):
+        if any_none(neighbor_relation_data):
+            return None
+        relation_pad = 0.0
+        if torch.jit.isinstance(neighbor_relation_data, List[List[List[List[int]]]]):
+            neighbor_relation_data = self._transform_neighbor_relation_ids(
+                neighbor_relation_data
+            )
+            relation_pad = None
+        return self._list_to_tensor(neighbor_relation_data, pad_value=relation_pad)
+
     def _to_tensor(self, token_ids, attention_mask_pad_idx=0):
         return self._list_to_tensor(token_ids, pad_value=None)
 
@@ -278,12 +307,8 @@ class DuckTransform(BlinkTransform):
         batch["token_ids"] = batch["entity_token_ids"]
         mention_tensor, entity_tensor = super().forward(batch)
         relation_data = batch["relation_data"]
-        relation_pad = 0.0
-        if torch.jit.isinstance(relation_data, List[List[List[int]]]):
-            relation_data = self._transform_relations(relation_data)
-            relation_pad = None
-        relations_tensor = self._list_to_tensor(relation_data, pad_value=relation_pad)
-
+        relations_tensor = self._transform_relations(relation_data)
+        
         neighbors_tensor = None
         neighbor_token_ids = batch["neighbor_token_ids"]
         if neighbor_token_ids is not None:
@@ -294,14 +319,8 @@ class DuckTransform(BlinkTransform):
         neighbor_relation_tensor = None
         neighbor_relation_data = batch["neighbor_relation_data"]
         if neighbor_relation_data is not None:
-            relation_pad = 0.0
-            if torch.jit.isinstance(neighbor_relation_data, List[List[List[List[int]]]]):
-                neighbor_relation_data = self._transform_neighbor_relations(
-                    neighbor_relation_data
-                )
-                relation_pad = None
-            neighbor_relation_tensor = self._list_to_tensor(neighbor_relation_data)
-
+            neighbor_relation_tensor = self._transform_neighbor_relations(neighbor_relation_data)
+    
         return {
             "mentions": mention_tensor,
             "entities": entity_tensor,
@@ -319,11 +338,11 @@ class EdDuckDataModule(LightningDataModule):
         val_path: str,
         test_path: str,
         ent_to_rel_path: str,
-        ent_catalogue_data_path: str,
         ent_catalogue_idx_path: str,
-        rel_catalogue_data_path: str,
+        ent_catalogue_data_path: str,
         rel_catalogue_idx_path: str,
-        neighbors_path: str,
+        rel_catalogue_data_path: Optional[str] = None,
+        neighbors_path: Optional[str] = None,
         stop_rels_path: Optional[str] = None,
         pretrained_relations: bool = True,
         batch_size: int = 2,
@@ -340,7 +359,7 @@ class EdDuckDataModule(LightningDataModule):
             ent_catalogue_data_path, ent_catalogue_idx_path
         )
         self.rel_catalogue = RelationCatalogue(
-            rel_catalogue_data_path, rel_catalogue_idx_path
+            rel_catalogue_idx_path, rel_catalogue_data_path
         )
         self.pretrained_relations = pretrained_relations
         logger.info(f"Reading mapping from entities to relations: {ent_to_rel_path}")

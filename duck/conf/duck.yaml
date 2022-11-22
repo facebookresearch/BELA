@@ -17,10 +17,10 @@ data:
   ent_catalogue_idx_path: /fsx/matzeni/data/duck/ent_idx.txt
   ent_catalogue_data_path: /fsx/matzeni/data/duck/bert_ent_256_tok_ids.h5
   rel_catalogue_idx_path: /fsx/matzeni/data/duck/rel_idx.txt
-  rel_catalogue_data_path: /fsx/matzeni/data/duck/bert_rel_256_repr.h5
+  # rel_catalogue_data_path: /fsx/matzeni/data/duck/bert_rel_256_repr.h5
   neighbors_path: /fsx/matzeni/data/duck/duck_neighbors.json
   stop_rels_path: /fsx/matzeni/data/duck/stop_rels.jsonl
-  pretrained_relations: True
+  # pretrained_relations: True
   batch_size: 32
   num_neighbors_per_entity: 1
   shuffle: True
@@ -35,6 +35,7 @@ task:
   _target_: duck.task.Duck
 
 duck:
+  rel_to_box_model: ${ckpt_dir}/r2b_wd/r2b_wd_uniform_epoch=152_kldiv_train=0.0136_last.ckpt
   base_model:
       _target_: bela.models.hf_encoder.HFEncoder
       model_path: ${language_model}

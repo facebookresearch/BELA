@@ -126,7 +126,6 @@ class RelToBoxDataModule(LightningDataModule):
         )
     
     def collate(self, batch):
-        # rel_ids, rel_labels, target_probability = zip(*[item.values() for item in batch])
         rel_ids = [r["rel_ids"] for r in batch]
         rel_labels = [r["rel_labels"] for r in batch]
         target_probability = [r["target_probability"] for r in batch]

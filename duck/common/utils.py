@@ -185,6 +185,15 @@ def equalize_depth(nested_list, depth=None):
             equalize_depth(item, depth - 1) 
 
 
+def any_none(values):
+    return any(
+        v is None or (
+            isinstance(v, list) and any_none(v)
+        )
+        for v in values
+    )
+    
+
 def _list_to_tensor(values, pad_value, dtype=None):
     if isinstance(values, torch.Tensor):
         return values

@@ -262,8 +262,8 @@ dependencies:
     - pydispatcher==2.0.5
     - pymysql==1.0.2
     - pysimplegui==4.48.0
-    - pytorch-lightning==1.3.8
-    - pytorch-transformers==1.2.0
+    - pytorch-lightning
+    - pytorch-transformers
     - pyyaml==5.4.1
     - queuelib==1.6.2
     - readability-lxml==0.8.1
@@ -284,7 +284,7 @@ dependencies:
     - threadpoolctl==3.0.0
     - tinysegmenter==0.3
     - tldextract==3.1.2
-    - torchmetrics==0.5.1
+    - torchmetrics
     - transformers==4.10.2
     - twisted==21.7.0
     - urllib3==1.26.6

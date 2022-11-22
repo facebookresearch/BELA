@@ -11,7 +11,8 @@ from mblink.task.blink_task import ElBiEncoderTask
 from einops import rearrange
 from duck.box_tensors.volume import Volume
 from duck.box_tensors.intersection import Intersection
-from duck.modules.modules import HFSetToBoxTransformer, SetToBoxTransformer
+from duck.modules import BoxEmbedding, HFSetToBoxTransformer, SetToBoxTransformer
+from duck.task.rel_to_box import RelToBox
 import transformers
 from abc import ABC, abstractmethod
 
@@ -232,6 +233,7 @@ class Duck(pl.LightningModule):
         self.mention_encoder = None
         self.entity_encoder = None
         self.relation_box_encoder = None
+        self.box_embedding = None
         self.optimizer = None
         self.volume = None
         self.intersection = None
@@ -256,21 +258,24 @@ class Duck(pl.LightningModule):
         self.biencoder_task.setup(stage)
         self.mention_encoder = self.biencoder_task.mention_encoder
         self.entity_encoder = self.biencoder_task.entity_encoder
-        if not self.config.data.pretrained_relations:
-            self.relation_box_encoder = HFSetToBoxTransformer(
-            hydra.utils.instantiate(self.config.duck.base_model), batched=False
-        )
-        else:
-            self.relation_box_encoder = SetToBoxTransformer(
-                dim=self.mention_encoder.transformer.config.hidden_size,
-                hidden_dim=self.mention_encoder.transformer.config.hidden_size,
-                **self.config.duck.box_encoder
-            )
-
-        # TODO: Load checkpoints here
+        # if not self.config.data.pretrained_relations:
+        #     self.relation_box_encoder = HFSetToBoxTransformer(
+        #     hydra.utils.instantiate(self.config.duck.base_model), batched=False
+        # )
+        # else:
+        #     self.relation_box_encoder = SetToBoxTransformer(
+        #         dim=self.mention_encoder.transformer.config.hidden_size,
+        #         hidden_dim=self.mention_encoder.transformer.config.hidden_size,
+        #         **self.config.duck.box_encoder
+        #     )
+        self.box_embedding = self.setup_box_embedding_layer()
         self.optimizer = hydra.utils.instantiate(
             self.config.optim, self.parameters(), _recursive_=False
         )
+    
+    def setup_box_embedding_layer(self):
+        rel2box = RelToBox.load_from_checkpoint(self.config.duck.rel_to_box_model)
+        self.box_embedding = rel2box.box_embedding.freeze()
 
     def sim_score(self, mentions_repr, entities_repr):
         scores = torch.matmul(mentions_repr, torch.transpose(entities_repr, 0, 1))
@@ -336,7 +341,7 @@ class Duck(pl.LightningModule):
         
     def training_step(self, batch, batch_idx):
         if batch is None:
-            return None
+            return None  # for debug
             
         representations = self(batch)
         mentions = representations["mentions"]
@@ -369,7 +374,6 @@ class Duck(pl.LightningModule):
                 "duck_loss": loss
             })
         return loss
-
 
     def configure_optimizers(self):
         return self.optimizer

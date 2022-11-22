@@ -114,6 +114,36 @@ class BoxEmbedding(torch.nn.Embedding):
         right_max, _ = right.max(dim=0)
         return BoxTensor.from_corners(left_min, right_max)
 
+    @classmethod
+    def from_pretrained(
+        cls,
+        embeddings,
+        freeze: bool = True,
+        box_parametrization: str = "uniform",
+        universe_idx: Optional[int] = None,
+        **kwargs: Any
+    ):
+        
+        assert embeddings.dim() == 2, \
+            "Embeddings parameter is expected to be 2-dimensional"
+        rows, cols = embeddings.shape
+        assert cols % 2 == 0, \
+            "The embedding size is expected to be even for all box parametrizations"
+
+        embedding = cls(
+            num_embeddings=rows,
+            embedding_dim=int(cols / 2),
+            box_parametrizaton=box_parametrization,
+            universe_idx=universe_idx,
+            **kwargs
+        )
+        embedding.weight.requires_grad = not freeze
+        return embedding
+    
+    def freeze(self):
+        self.weight.requires_grad = False
+        return self
+
 
 class EntityEncoder(nn.Module):
     """
