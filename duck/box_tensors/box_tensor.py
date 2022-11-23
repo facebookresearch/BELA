@@ -1,4 +1,6 @@
 from typing import (
+    List,
+    Sequence,
     Tuple,
     Union,
     Any,
@@ -216,9 +218,18 @@ class BoxTensor(object):
 
         return self.from_corners(z1, z2)
     
-    def cat(self, other: TBoxTensor, dim=0):
-        left = torch.cat([self.left, other.left], dim=dim)
-        right = torch.cat([self.right, other.right], dim=dim)
+    def cat(self, other: Union[TBoxTensor, Sequence[TBoxTensor]], dim=0):
+        if not isinstance(other, Sequence):
+            other = [other]
+        left = torch.cat([self.left] + [o.left for o in  other], dim=dim)
+        right = torch.cat([self.right] +  [o.right for o in  other], dim=dim)
+        return BoxTensor((left, right))
+
+    def stack(self, other: Union[TBoxTensor, Sequence[TBoxTensor]], dim=0):
+        if not isinstance(other, Sequence):
+            other = [other]
+        left = torch.stack([self.left] + [o.left for o in  other], dim=dim)
+        right = torch.stack([self.right] +  [o.right for o in  other], dim=dim)
         return BoxTensor((left, right))
 
     def broadcast(self, target_shape: Tuple) -> None:

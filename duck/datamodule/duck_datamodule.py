@@ -41,7 +41,7 @@ class RelationCatalogue:
             relations = [relations]
         rel_indices = [self.idx[rel] for rel in relations]
         if self.data is None:
-            if not is_string:
+            if is_string:
                 rel_indices = rel_indices[0]
             return rel_indices, None
         value = self.data[rel_indices].tolist()
@@ -230,12 +230,10 @@ class DuckTransform(BlinkTransform):
         self.max_relation_len = max_relation_len
         self.add_eos_bos = add_eos_bos
 
-    def _transform_relation_ids(
+    def _transform_relation_token_ids(
         self,
         relation_token_ids: List[List[List[int]]],
     ) -> List[List[List[int]]]:
-        if relation_token_ids is None:
-            return None
         result = []
         for i, relation in enumerate(relation_token_ids):
             result.append([])
@@ -254,19 +252,17 @@ class DuckTransform(BlinkTransform):
     ):
         return [self._transform_entity(neighbors) for neighbors in neighbor_token_ids]
     
-    def _transform_neighbor_relation_ids(
+    def _transform_neighbor_relation_token_ids(
         self,
         neighbor_relation_token_ids
     ): 
-        return [self._transform_relation_ids(rels) for rels in neighbor_relation_token_ids]
+        return [self._transform_relation_token_ids(rels) for rels in neighbor_relation_token_ids]
 
     def _list_to_tensor(
         self,
         data,
         pad_value=None
     ):
-        if data is None:
-            return None
         if pad_value is None:
             pad_value = self.pad_token_id
         tensor, attention_mask = list_to_tensor(list(data), pad_value=pad_value)
@@ -276,12 +272,20 @@ class DuckTransform(BlinkTransform):
             'attention_mask': attention_mask
         }
     
+    def _transform_relation_ids(self, relation_ids):
+        tensor, attention_mask = list_to_tensor(list(relation_ids), pad_value=-1)
+        attention_mask = attention_mask.int()
+        return {
+            'data': tensor + 1,
+            'attention_mask': attention_mask
+        }
+    
     def _transform_relations(self, relation_data):
         if any_none(relation_data):
             return None
         relation_pad = 0.0
         if torch.jit.isinstance(relation_data, List[List[List[int]]]):
-            relation_data = self._transform_relation_ids(relation_data)
+            relation_data = self._transform_relation_token_ids(relation_data)
             relation_pad = None
         return self._list_to_tensor(relation_data, pad_value=relation_pad)
     
@@ -290,7 +294,7 @@ class DuckTransform(BlinkTransform):
             return None
         relation_pad = 0.0
         if torch.jit.isinstance(neighbor_relation_data, List[List[List[List[int]]]]):
-            neighbor_relation_data = self._transform_neighbor_relation_ids(
+            neighbor_relation_data = self._transform_neighbor_relation_token_ids(
                 neighbor_relation_data
             )
             relation_pad = None
@@ -320,13 +324,18 @@ class DuckTransform(BlinkTransform):
         neighbor_relation_data = batch["neighbor_relation_data"]
         if neighbor_relation_data is not None:
             neighbor_relation_tensor = self._transform_neighbor_relations(neighbor_relation_data)
-    
+
+        relation_ids = self._transform_relation_ids(batch["relation_ids"])
+        neighbor_relation_ids = self._transform_relation_ids(batch["neighbor_relation_ids"])
+        
         return {
             "mentions": mention_tensor,
             "entities": entity_tensor,
             "relations": relations_tensor,
+            "relation_ids": relation_ids,
             "neighbors": neighbors_tensor,
-            "neighbor_relations": neighbor_relation_tensor
+            "neighbor_relations": neighbor_relation_tensor,
+            "neighbor_relation_ids": neighbor_relation_ids
         }
 
 
@@ -518,20 +527,17 @@ class EdDuckDataModule(LightningDataModule):
                 "mention": mention,
                 "right_context": right_context,
                 "entity_token_ids": entity_token_ids,
+                "relation_ids": relation_ids,
                 "relation_data": relation_data,
                 "neighbor_token_ids": neighbor_token_ids,
-                "neighbor_relation_data": neighbor_relation_data
+                "neighbor_relation_data": neighbor_relation_data,
+                "neighbor_relation_ids": neighbor_relation_ids
             }
         )
 
         result["entity_labels"] = entity_labels
         result["entity_ids"] = torch.tensor(entity_ids, dtype=torch.long)
         result["relation_labels"] = relation_labels
-        result["relation_ids"] = [torch.tensor(rids) for rids in relation_ids]
-        result["neighbor_relation_ids"] = [
-            [torch.tensor(rids) for rids in neigh_rels]
-            for neigh_rels in neighbor_relation_ids
-        ]
         result["neighbor_ids"] = torch.tensor(neighbor_ids)
         result["neighbor_labels"] = neighbor_labels
         result["neighbor_relation_labels"] = neighbor_relation_labels

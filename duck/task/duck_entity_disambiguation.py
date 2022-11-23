@@ -237,14 +237,6 @@ class Duck(pl.LightningModule):
         self.optimizer = None
         self.volume = None
         self.intersection = None
-        if config.duck.duck_loss == "jaccard_mse":
-            self.duck_loss = DuckJaccardMSELoss(**self.config.duck.boxes)
-        elif config.duck.duck_loss == "double":
-            self.duck_loss = DuckDoubleMSELoss(**self.config.duck.boxes)
-        elif config.duck.duck_loss == "jaccard_kldiv":
-            self.duck_loss = DuckJaccardKLDivLoss(**self.config.duck.boxes)
-        else:
-            raise ValueError(f"Unsupported loss {config.loss}")
         self.disambiguation_loss = None
         self.setup(None)
 
@@ -268,7 +260,7 @@ class Duck(pl.LightningModule):
         #         hidden_dim=self.mention_encoder.transformer.config.hidden_size,
         #         **self.config.duck.box_encoder
         #     )
-        self.box_embedding = self.setup_box_embedding_layer()
+        self.setup_box_embedding_layer()
         self.optimizer = hydra.utils.instantiate(
             self.config.optim, self.parameters(), _recursive_=False
         )
@@ -284,25 +276,15 @@ class Duck(pl.LightningModule):
     def forward(self, batch):
         mentions = batch["mentions"] 
         entities = batch["entities"]
-        relations = batch["relations"]
         neighbors = batch["neighbors"]
-        neighbor_relations = batch["neighbor_relations"]
 
         bsz = mentions["data"].size(0)
         assert bsz == entities["data"].size(0)
-        assert bsz == relations["data"].size(0)
         assert bsz == neighbors["data"].size(0)
-        assert bsz == neighbor_relations["data"].size(0)
+       
         assert mentions["data"].size(-1) <= self.config.data.transform.max_mention_len
         assert entities["data"].size(-1) <= self.config.data.transform.max_entity_len
         assert neighbors["data"].size(-1) <= self.config.data.transform.max_entity_len
-        if self.config.data.pretrained_relations:
-            dim = self.mention_encoder.transformer.config.hidden_size
-            assert relations["data"].size(-1) == dim
-            assert neighbor_relations["data"].size(-1) == dim
-        else:
-            assert relations["data"].size(-1) <= self.config.data.transform.max_relation_len
-            assert neighbor_relations["data"].size(-1) <=  self.config.data.transform.max_relation_len
 
         num_rels = torch.any(batch["relations"]["attention_mask"].bool(), dim=-1).sum(dim=-1).tolist()
         assert num_rels == [rels.size(0) for rels in batch["relation_ids"]]
@@ -321,23 +303,16 @@ class Duck(pl.LightningModule):
             rearrange(neighbors["attention_mask"], "b n l -> (b n) l")
         )
         neighbor_repr = rearrange(neighbor_repr, "(b n) d -> b n d", b=bsz)
-        entity_boxes = self.relation_box_encoder(
-            relations["data"],
-            attention_mask=relations["attention_mask"]
-        )
-        neighbor_boxes = self.relation_box_encoder(
-            rearrange(neighbor_relations["data"], "b n r l -> (b n) r l"),
-            rearrange(neighbor_relations["attention_mask"], "b n r l -> (b n) r l"),
-        )
-        neighbor_boxes = neighbor_boxes.rearrange("(b n) d -> b n d", b=bsz)
 
         return {
             "mentions": mention_repr,
             "entities": entity_repr,
-            "entity_boxes": entity_boxes,
             "neighbors": neighbor_repr,
-            "neighbor_boxes": neighbor_boxes
         }
+    
+    def relation_ids_to_box(self, batch):
+        boxes = self.box_embedding(batch["relation_ids"]["data"])
+        
         
     def training_step(self, batch, batch_idx):
         if batch is None:

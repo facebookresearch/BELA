@@ -27,7 +27,7 @@ class Intersection(AbstractIntersection):
         self.intersection_temperature = intersection_temperature
         self.approximation_mode = approximation_mode
 
-    def _forward(self, t1: BoxTensor, t2: BoxTensor) -> BoxTensor:
+    def _forward(self, box: BoxTensor, dim=0) -> BoxTensor:
         """Performs the intersection of t1 and t2.
 
         Args:
@@ -38,11 +38,11 @@ class Intersection(AbstractIntersection):
             Intersection box
         """
         if self.intersection_temperature == 0:
-            return hard_intersection(t1, t2)
+            return hard_intersection(box, dim=dim)
         else:
             return gumbel_intersection(
-                t1,
-                t2,
+                box,
+                dim,
                 self.intersection_temperature,
                 self.approximation_mode,
             )
