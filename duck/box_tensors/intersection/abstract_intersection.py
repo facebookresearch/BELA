@@ -2,39 +2,30 @@ from typing import Optional
 import torch
 
 from duck.box_tensors import BoxTensor
+from duck.box_tensors.functional import stack_box
 
 
 class AbstractIntersection(torch.nn.Module):
     """Abstract class for the intersection of boxes"""
 
-    def forward(self,
-        box1: BoxTensor,
-        box2: Optional[BoxTensor] = None,
+    def __init__(
+        self,
         dim: int = 0
+    ):
+        super(AbstractIntersection, self).__init__()
+        self.dim = dim
+
+    def forward(
+        self,
+        *args
     ) -> BoxTensor:
-        box = box1
-        if box2 is not None:
-            # broadcast if necessary
-            if len(box1.box_shape) >= len(box2.box_shape):
-                box2.broadcast(box1.box_shape)
-            else:
-                box1.broadcast(box2.box_shape)
-            
-            box = box1.stack(box2, dim=dim)
+        assert len(args) > 0, "Expected at least one box tensor"
+        box = args[0]
+        if len(args) > 1:
+            assert self.dim == 0, \
+                "A sequence of tensors was given, but dim is not 0"
+            box = stack_box(args)
+        return self._forward(box)
 
-        return self._forward(box, dim=dim)
-
-    def _forward(self, box: BoxTensor, dim=0) -> BoxTensor:
-        raise NotImplementedError
-
-    def forward_old(self, left: BoxTensor, right: BoxTensor) -> BoxTensor:
-        # broadcast if necessary
-        if len(left.box_shape) >= len(right.box_shape):
-            right.broadcast(left.box_shape)
-        else:
-            left.broadcast(right.box_shape)
-
-        return self._forward_old(left, right)
-
-    def _forward_old(self, left: BoxTensor, right: BoxTensor) -> BoxTensor:
+    def _forward(self, box: BoxTensor) -> BoxTensor:
         raise NotImplementedError
