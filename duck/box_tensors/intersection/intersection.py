@@ -11,11 +11,13 @@ class Intersection(AbstractIntersection):
 
     def __init__(
         self,
+        dim: int = 0,
         intersection_temperature: float = 0.0,
         approximation_mode: Optional[str] = None,
     ) -> None:
         """
         Args:
+            dim: dimension along which the intersection is performed
             intersection_temperature: Gumbel's beta parameter: if non-zero performs 
                 the Gumbel intersection, otherwise returns the hard intersection
             approximation_mode: Only for gumbel intersection:
@@ -23,26 +25,25 @@ class Intersection(AbstractIntersection):
                 separate value for forward and backward passes  ('clipping_forward')
                 or no clipping ('None')
         """
-        super().__init__()
+        super().__init__(dim=dim)
         self.intersection_temperature = intersection_temperature
         self.approximation_mode = approximation_mode
 
-    def _forward(self, box: BoxTensor, dim=0) -> BoxTensor:
+    def _forward(self, box: BoxTensor) -> BoxTensor:
         """Performs the intersection of t1 and t2.
 
         Args:
-            t1: First operand of the intersection
-            t2: Second operand of the intersection
+           box: BoxTensor containing the boxes to intersect
 
         Returns:
-            Intersection box
+            BoxTensor obtained by the intersection of box along dimension dim
         """
         if self.intersection_temperature == 0:
-            return hard_intersection(box, dim=dim)
+            return hard_intersection(box, dim=self.dim)
         else:
             return gumbel_intersection(
                 box,
-                dim,
-                self.intersection_temperature,
-                self.approximation_mode,
+                dim=self.dim,
+                intersection_temperature=self.intersection_temperature,
+                approximation_mode=self.approximation_mode,
             )

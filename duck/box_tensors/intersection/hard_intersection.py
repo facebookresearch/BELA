@@ -16,14 +16,14 @@ def hard_intersection(
 
 class HardIntersection(AbstractIntersection):
     """Hard intersection operation as a Layer/Module"""
+    
     def _forward(self, box: TBoxTensor):
         """Returns the intersection of t1 and t2.
 
         Args:
-            t1: First operand of the intersection
-            t2: Second operand of the intersection
+            box: the BoxTensor containing the boxes to intersect
 
         Returns:
-            The BoxTensor obtained by performing the hard intersection of t1 and t2
+            The BoxTensor obtained by performing the hard intersection of along dimension dim
         """
         return hard_intersection(box, self.dim)

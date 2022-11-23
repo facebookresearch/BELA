@@ -74,15 +74,15 @@ def gumbel_intersection(
     <https://arxiv.org/abs/2010.04831>`.
 
     Args:
-        box1: BoxTensor representing the left operand of the intersection
-        box2: BoxTensor representing the right operand of the intersection
+        box: BoxTensor containing the boxes to intersect
+        dim: dimension along which to perform the intersection
         intersection_temperature: gumbel's beta parameter
         approximation_mode: Either hard clipping ('clipping') or hard clipping with separate value
             for forward and backward passes  ('clipping_forward') or
             `None` to not use any approximation.
 
     Returns:
-        The BoxTensor obtained by Gumbel intersection of box1 and box2.
+        The BoxTensor obtained by Gumbel intersection of box along dimension dim 
     """
     if intersection_temperature == 0:
         raise ValueError("intersection_temperature must be non-zero.")
@@ -106,7 +106,8 @@ def gumbel_intersection(
 
 
 class GumbelIntersection(AbstractIntersection):
-    """Gumbel intersection operation as a Layer/Module.
+    """
+    Gumbel intersection operation as a Layer/Module.
 
     Performs the intersection operation as described in 
     `Improving Local Identifiability in Probabilistic Box Embeddings
@@ -121,6 +122,7 @@ class GumbelIntersection(AbstractIntersection):
     ) -> None:
         """
         Args:
+            dim: dimension along which to perform the intersection
             intersection_temperature: Gumbel's beta parameter
             approximation_mode: Either hard clipping ('clipping') or hard clipping with separate value
             for forward and backward passes  ('clipping_forward') or
@@ -137,7 +139,6 @@ class GumbelIntersection(AbstractIntersection):
 
         Args:
             box: box tensor containing the boxes to intersect
-            dim: dimension along which the intersection needs to be performed
 
         Returns:
             The box obtained by Gumbel intersection of the input tensor along 
