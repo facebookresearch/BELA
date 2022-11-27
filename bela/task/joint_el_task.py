@@ -943,6 +943,7 @@ class JointELTask(LightningModule):
                 loss += el_loss
 
         self.log("train_loss", loss, prog_bar=True)
+        assert not torch.isnan(loss)
 
         return loss
 
