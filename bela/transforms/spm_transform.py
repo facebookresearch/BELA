@@ -16,9 +16,10 @@ class SPMTransform(nn.Module):
         add_special_tokens: bool = True,
     ):
         super().__init__()
-        sp_model_path = sp_model_path or os.path.join(os.path.dirname(__file__), "../../data/sp_model")
+        sp_model_path = sp_model_path or os.path.join(os.path.dirname(__file__), "../data/sp_model")
         self.processor = spm.SentencePieceProcessor(sp_model_path)
         self.sep_token = '</s>'
+        self.unk_token_id = 3
         self.max_seq_len = max_seq_len
         self.add_special_tokens = add_special_tokens
 
@@ -32,7 +33,11 @@ class SPMTransform(nn.Module):
             if self.add_special_tokens:
                 token_ids_with_offsets.append((0,0,0))
             for idx, piece in enumerate(spt.pieces):
-                token_ids_with_offsets.append((piece.id + 1, current_offset, current_offset + len(piece.surface)))
+                if piece.id != 0:
+                    token_id = piece.id + 1
+                else:
+                    token_id = self.unk_token_id
+                token_ids_with_offsets.append((token_id, current_offset, current_offset + len(piece.surface)))
                 current_offset += len(piece.surface)
 
                 # take into account special tokens
