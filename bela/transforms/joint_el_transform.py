@@ -559,15 +559,15 @@ class JointELXlmrRawTextTransform(SPMTransform):
         mention_lengths_column: str = "mention_lengths",
         mentions_seq_lengths_column: str = "mentions_seq_lengths",
         entities_column: str = "entities",
-        token_ids_column: str = "token_ids",
+        token_ids_column: str = "input_ids",
         seq_lens_column: str = "seq_lens",
-        pad_mask_column: str = "pad_mask",
+        pad_mask_column: str = "attention_mask",
         tokens_mapping_column: str = "tokens_mapping",
         sp_tokens_boundaries_column: str = "sp_tokens_boundaries",
         insertions_column: str = "insertions",
     ):
         super().__init__(
-            sp_model_path=sp_model_path or "bela/data/sp_model",
+            sp_model_path=sp_model_path,
             max_seq_len=max_seq_len,
             add_special_tokens=False,
         )
