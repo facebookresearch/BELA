@@ -282,6 +282,7 @@ class MentionScoresHead(nn.Module):
             & torch.gt(mask_ctxt.unsqueeze(2), 0)
             & torch.gt(valid_starts_ends_mask, 0)
         )
+
         # DIM: (bs, starts, ends)
         # 0 is not a valid
         mention_scores[~valid_mask] = float("-inf")  # invalids have logprob=-inf (p=0)
@@ -508,7 +509,7 @@ class JointELTask(LightningModule):
         return encoder_state
 
     def setup_gpu_index(self):
-        gpu_id = int(os.environ.get("LOCAL_RANK", "0"))
+        gpu_id = self.local_rank
 
         flat_config = faiss.GpuIndexFlatConfig()
         flat_config.device = gpu_id
