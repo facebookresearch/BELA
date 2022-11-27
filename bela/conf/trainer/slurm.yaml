@@ -4,27 +4,26 @@ defaults:
 
 trainer:
   gpus: 8
-  num_nodes: 1
-  max_epochs: 25
-  max_steps: null
+  num_nodes: 4
+  max_epochs: 2
   num_sanity_val_steps: 0
   log_every_n_steps: 10
   gradient_clip_val: 2.0
   accumulate_grad_batches: 1
-  plugins: ddp_sharded
-  strategy: ddp
-  accelerator: gpu
-  # precision: 16
+  accelerator: cuda
+  strategy: ddp_sharded
+  precision: 16
 
 hydra:
   launcher:
     gpus_per_node: ${trainer.gpus}
     tasks_per_node: ${trainer.gpus}
     nodes: ${trainer.num_nodes}
+    #timeout_min: 10080 # 7 days
     timeout_min: 7200 # 5 days
     cpus_per_task: 10
     mem_gb: 0
-    partition: hipri
-    # constraint: volta32gb
+    partition: learnai4p
+    account: all
   sweep:
-    dir: /checkpoints/${env:USER}/hydra_outputs/${hydra.launcher.name}/${now:%Y-%m-%d-%H%M%S}
+    dir: /checkpoints/${oc.env:USER}/bela/${now:%Y-%m-%d-%H%M%S}
