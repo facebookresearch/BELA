@@ -1,0 +1,3 @@
+# @package _group_
+_target_: bela.transforms.joint_el_transform.JointELXlmrRawTextTransform
+max_seq_len: 256
