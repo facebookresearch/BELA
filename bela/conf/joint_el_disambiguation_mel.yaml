@@ -1,0 +1,33 @@
+defaults:
+  - config
+  - datamodule: joint_el_datamodule
+  - task/transform: joint_el_xlmr_raw_transform_large
+  - task/model: xlmr_large
+  - task/optim: adamw
+  - trainer: gpu_1_host
+
+task:
+  _target_: bela.task.joint_el_task.JointELTask
+  only_train_disambiguation: true
+  embeddings_path: /fsx/movb/data/matcha/mel/embeddings.pt
+  optim:
+    lr: 1e-05
+  use_gpu_index: true
+  load_from_checkpoint: "/data/home/movb/work/BELA/outputs/2022-11-24/03-38-17/lightning_logs/version_0/checkpoints/last.ckpt"
+
+datamodule:
+  train_path: /fsx/movb/data/matcha/mel/train.txt
+  val_path: /fsx/movb/data/matcha/mel/eval.txt
+  test_path: /fsx/movb/data/matcha/mel/test.txt
+  ent_catalogue_idx_path: /fsx/movb/data/matcha/mel/index.txt
+  batch_size: 24
+
+trainer:
+  max_epochs: 1
+  val_check_interval: 3000
+  limit_val_batches: 500
+
+
+checkpoint_callback:
+    monitor: valid_recall_at_1
+    # every_n_train_steps: 301
