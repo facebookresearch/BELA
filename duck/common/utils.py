@@ -11,6 +11,7 @@ import sys
 import pickle
 import json
 import copy
+import math
 
 
 def tiny_value_of_dtype(dtype: torch.dtype) -> float:
@@ -39,7 +40,7 @@ def tiny_value_of_dtype(dtype: torch.dtype) -> float:
         raise TypeError("Does not support dtype " + str(dtype))
 
 
-def make_reproducible(seed=42, ngpus=1):
+def seed_prg(seed=42, ngpus=1):
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -245,12 +246,80 @@ def logsubexp(x, y, eps=1e-7):
     return x + torch.log1p(-torch.exp(y - x) + eps)
 
 
-def log1m(x, log_input=True, eps=1e-7, clamp=True):
-    if log_input:
-        x = torch.exp(x)
+def log1mexp(x: torch.Tensor, split_point=None,
+             exp_zero_eps=1e-7, clamp=True) -> torch.Tensor:
+    """
+    Computes log(1 - exp(x)).
+    Splits at x=log(1/2) for x in (-inf, 0] i.e. at -x=log(2) for -x in [0, inf).
+    = log1p(-exp(x)) when x <= log(1/2)
+    or
+    = log(-expm1(x)) when log(1/2) < x <= 0
+    For details, see
+    https://cran.r-project.org/web/packages/Rmpfr/vignettes/log1mexp-note.pdf
+    https://github.com/visinf/n3net/commit/31968bd49c7d638cef5f5656eb62793c46b41d76
+    """
+    split_point = split_point if split_point is not None else math.log(0.5)
     if clamp:
-        x = x.clamp(0, 1)
-    return torch.log1p(-x + eps)
+        x = x.clamp(max=0.0)
+    logexpm1_switch = x > split_point
+    result = torch.zeros_like(x)
+    logexpm1 = torch.log((-torch.expm1(x[logexpm1_switch])).clamp_min(1e-38))
+    # hack the backward pass
+    # if expm1(x) gets very close to zero, then the grad log() will produce inf
+    # and inf*0 = nan. Hence clip the grad so that it does not produce inf
+    logexpm1_bw = torch.log(-torch.expm1(x[logexpm1_switch]) + exp_zero_eps)
+    result[logexpm1_switch] = logexpm1.detach() + (
+        logexpm1_bw - logexpm1_bw.detach())
+    #Z[1 - logexpm1_switch] = torch.log1p(-torch.exp(x[1 - logexpm1_switch]))
+    result[~logexpm1_switch] = torch.log1p(-torch.exp(x[~logexpm1_switch]).clamp(0, 1))
+
+    return result
+
+
+# def logexpm1(x: torch.Tensor, split_point=None,
+#              exp_zero_eps=1e-7, clamp=True) -> torch.Tensor:
+#     """
+#     Computes log(exp(x) - 1).
+#     Splits at x=log(1/2) for x in (-inf, 0] i.e. at -x=log(2) for -x in [0, inf).
+#     = log1p(-exp(x)) * log(-1) when x <= log(1/2)
+#     or
+#     = log(expm1(x)) when log(1/2) < x <= 0
+#     """
+#     split_point = split_point if split_point is not None else math.log(0.5)
+#     if clamp:
+#         x = x.clamp(max=0.0)
+#     logexpm1_switch = x > split_point
+#     result = torch.zeros_like(x)
+#     logexpm1 = (torch.expm1(x[logexpm1_switch]).log().clamp_min(1e-38))
+#     # hack the backward pass
+#     # if expm1(x) gets very close to zero, then the grad log() will produce inf
+#     # and inf*0 = nan. Hence clip the grad so that it does not produce inf
+#     logexpm1_bw = torch.log(torch.expm1(x[logexpm1_switch]) + exp_zero_eps)
+#     result[logexpm1_switch] = logexpm1.detach() + (
+#         logexpm1_bw - logexpm1_bw.detach())
+#     #Z[1 - logexpm1_switch] = torch.log1p(-torch.exp(x[1 - logexpm1_switch]))
+#     result[~logexpm1_switch] = torch.log1p(-torch.exp(x[~logexpm1_switch]).clamp(0, 1)) * torch.log(-torch.ones_like(x))
+
+#     return result
+
+
+def logexpm1(x: torch.Tensor):
+    """
+    Numerically stable implementation of the inverse softplusL log(exp(x) - 1)
+    https://cran.r-project.org/web/packages/Rmpfr/vignettes/log1mexp-note.pdf
+    also see: https://github.com/JuliaStats/LogExpFunctions.jl/blob/59b8c0984359a7093561049b5e268ea979bedfa6/src/basicfuns.jl#L231
+    """
+    result = torch.zeros_like(x)
+    eps = 1e-5
+    # zone0 = (x.abs() <= eps)
+    zone1 = (x <= 18.) # & (x.abs() > eps)
+    zone2 = (x > 18.) & (x < 33.3) 
+    zone3 = (x >= 33.3)
+    result[zone1] = torch.log(torch.relu(torch.expm1(x[zone1])) + eps)
+    # result[zone1] = torch.log(torch.expm1(x[zone1]))
+    result[zone2] = x[zone2] - torch.exp(-(x[zone2]))
+    result[zone3] = torch.exp(-x[zone3])
+    return result
 
 
 def mean_over_batches(batch_values, prefix=None, suffix=None):
@@ -267,9 +336,9 @@ def mean_over_batches(batch_values, prefix=None, suffix=None):
         for metric in metrics
     }
 
-def prefix_suffix_keys(dictionary, prefix=None, suffix=None):
-    prefix = "" if prefix is None else f"{prefix}_"
-    suffix = "" if suffix is None else f"_{suffix}"
+def prefix_suffix_keys(dictionary, prefix=None, suffix=None, separator=""):
+    prefix = "" if prefix is None else f"{prefix}{separator}"
+    suffix = "" if suffix is None else f"{separator}{suffix}"
     return {
         f"{prefix}{key}{suffix}": value for key, value in dictionary.items()
     }
@@ -277,3 +346,13 @@ def prefix_suffix_keys(dictionary, prefix=None, suffix=None):
 def metric_dict_to_string(kv_map, separator="\t"):
     lines = [f"{key}: {value:.3f}" for key, value in kv_map.items()]
     return separator.join(lines)
+
+def tensor_set_intersection(t1, t2):
+    combined = torch.cat((t1, t2))
+    uniques, counts = combined.unique(return_counts=True)
+    return uniques[counts > 1]
+
+def tensor_set_difference(t1, t2):
+    combined = torch.cat((t1, t2))
+    uniques, counts = combined.unique(return_counts=True)
+    return uniques[counts == 1]

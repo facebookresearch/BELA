@@ -172,21 +172,49 @@ class BoxTensor(object):
     
     @classmethod
     def sigmoid_constructor(
-            cls: Type[TBoxTensor], v1: Tensor, v2: Tensor
+            cls: Type[TBoxTensor], v1: Tensor, v2: Tensor, margin: float = 0.5
     ) -> TBoxTensor:
         assert v1.shape == v2.shape, "left and right shape not matching"
-        left = torch.sigmoid(v1)
-        right = left + torch.sigmoid(v2) * (1.0 - left)
+        left = -margin - (1 - margin) * torch.sigmoid(v1)
+        right = margin + (1 - margin) * torch.sigmoid(v2)
         return cls((left, right))
 
     @classmethod
     def softplus_constructor(
-            cls: Type[TBoxTensor], v1: Tensor, v2: Tensor, beta=1.0
+            cls: Type[TBoxTensor], v1: Tensor, v2: Tensor, beta=1.0, margin=0.1
     ) -> TBoxTensor:
         assert v1.shape == v2.shape, "left and right shape not matching"
         left = v1
-        right = left + torch.nn.functional.softplus(v2, beta=beta)
+        right = left + torch.nn.functional.softplus(v2, beta=beta) + margin
         return cls((left, right))
+    
+    @classmethod
+    def relu_constructor(
+            cls: Type[TBoxTensor], v1: Tensor, v2: Tensor, margin=0.1
+    ) -> TBoxTensor:
+        assert v1.shape == v2.shape, "left and right shape not matching"
+        left = v1
+        right = left + torch.relu(v2) + margin
+        return cls((left, right))
+
+    @classmethod
+    def construct(
+        cls: Type[TBoxTensor], parametrization: str, v1: Tensor, v2: Tensor
+    ) -> TBoxTensor:
+        constructor = cls.get_constructor(parametrization)
+        return constructor(v1, v2)
+
+    @classmethod
+    def get_constructor(cls: Type[TBoxTensor], parametrization: str):
+        if parametrization == "corners":
+            return cls.from_corners
+        if parametrization == "sigmoid":
+            return cls.sigmoid_constructor
+        if parametrization == "softplus":
+            return cls.softplus_constructor
+        if parametrization == "relu":
+            return cls.relu_constructor
+        raise ValueError(f"Unsupported parametrization {parametrization}")
 
     def __repr__(self) -> str:
         if self.data is not None:
@@ -301,6 +329,11 @@ class BoxTensor(object):
                     self.left.unsqueeze_(d)  
                     self.right.unsqueeze_(d)
             assert self.box_shape == tuple(potential_final_shape)
+
+    def detach(self):
+        return BoxTensor(
+            (self.left.detach(), self.right.detach())
+        )
 
 
 def _box_shape_ok(t: Tensor) -> bool:

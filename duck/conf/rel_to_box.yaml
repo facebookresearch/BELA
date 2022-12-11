@@ -3,12 +3,13 @@ ckpt_dir: /checkpoints/matzeni/duck/checkpoints
 run_name: rel_to_box
 debug: false
 
-pretrained_model_path: null
+resume_path: ${ckpt_dir}/r2b_wd_origin_epoch=49_kldiv_train=0.0053_last.ckpt
 
 defaults:
   - optim: adamw
   - _self_
-
+  - trainer: 1gpu
+  
 optim:
   lr: 1e-3
 
@@ -33,20 +34,6 @@ rel_to_box:
     intersection_temperature: 0.0001
     volume_temperature: 0.1
     parametrization: sigmoid  # options: uniform, gaussian_margin, sigmoid, softplus 
-  # regularization:
-  #   _target_: duck.box_tensors.regularization.L2SideBoxRegularizer
-  #   weight: 1.0
-  #   reduction: sum
-
-trainer:
-  max_epochs: 1000
-  min_epochs: 300
-  accelerator: gpu
-  devices: 1
-  num_nodes: 1
-  log_every_n_steps: 10
-  num_sanity_val_steps: 10
-  check_val_every_n_epoch: 10
 
 checkpoint_callback:
   _target_: pytorch_lightning.callbacks.ModelCheckpoint
@@ -59,6 +46,13 @@ checkpoint_callback:
   save_top_k: 1
   dirpath: ${ckpt_dir}
 
+trainer:
+  max_epochs: 1000
+  min_epochs: 300
+  check_val_every_n_epoch: 40
+
 hydra:
   run:
     dir: .
+  job:
+    name: ${run_name}

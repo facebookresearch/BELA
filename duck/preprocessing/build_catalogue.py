@@ -9,27 +9,29 @@ import hydra
 from omegaconf import OmegaConf, DictConfig
 import torch
 
-from duck.common.utils import device
+from duck.common.utils import device, load_pkl
 
 logger = logging.getLogger()
 
 class CatalogueBuilder:
-    def __init__(self,
+    def __init__(
+        self,
         input_path,
         output_tok_ids_path,
         output_idx_path,
-        output_repr_path,
+        output_repr_path=None,
+        kb_path=None,
         model="bert-large-uncased",
         label_key="wikipedia_title",
         text_key="text",
         batch_size=256,
-        max_seq_length=256,
-        compute_representations=False
+        max_seq_length=256
     ):
         self.input_path = Path(input_path)
         self.output_tok_ids_path = Path(output_tok_ids_path)
         self.output_repr_path = Path(output_repr_path) if output_repr_path else None
-        self.output_idx_path = Path(output_idx_path)
+        self.output_idx_path = Path(output_idx_path) if kb_path else None
+        self.kb_path = Path(kb_path)
         self.label_key = label_key
         self.text_key = text_key
         self.batch_size = batch_size
@@ -37,14 +39,14 @@ class CatalogueBuilder:
         self.device = device()
         self.tokenizer = AutoTokenizer.from_pretrained(model)
         self.language_model = AutoModel.from_pretrained(model).to(self.device).eval()
-        self.compute_representations = compute_representations
+        self.compute_representations = output_repr_path is not None
 
         self.input_data = self._read_input()
-        self.token_ids, self.representations = self._process()
-        self.index = list(self.input_data.keys())
-
+        self.kb = self._read_kb()
+        self.index, self.token_ids, self.representations = self._process()
+    
     def _read_input(self):
-        logger.info("Reading input data")
+        logger.info(f"Reading input data {str(self.input_path)}")
         with open(self.input_path, 'r') as f:
             data = [json.loads(line.strip()) for line in tqdm(f.readlines())]
             if len(data) == 1:
@@ -55,22 +57,36 @@ class CatalogueBuilder:
                 record[self.label_key]: record
                 for record in data
             }
-
+    
+    def _read_kb(self):
+        logger.info(f"Reading KB: {str(self.kb_path)}")
+        if self.kb_path is None:
+            return None
+        kb = load_pkl(self.kb_path)
+        in_kb_entries = [entry for entry in self.input_data if entry in kb]
+        coverage = float(len(in_kb_entries)) / len(self.input_data)
+        logger.info(f"KB coverage: {coverage:.4f}")
+        return {k: sorted(list(v))[0] for k, v in kb.items()}
+                
     def _process(self):
         logger.info("Tokenizing")
         token_ids = []
         representations = []
+        index = []
         data = list(self.input_data.values())
         for i in tqdm(range(0, len(data), self.batch_size)):
             batch_raw = data[i:i + self.batch_size]
             batch = []
             for entry in batch_raw:
                 label = entry[self.label_key]
-                text = entry[self.text_key]
-                if isinstance(text, list):
-                    text = "".join(entry["text"][:10])
-                description = f"{label} {self.tokenizer.sep_token} {text}"
-                batch.append(description)
+                if self.kb is None or label in self.kb:
+                    text = entry[self.text_key]
+                    if isinstance(text, list):
+                        text = "".join(entry["text"][:10])
+                    description = f"{label} {self.tokenizer.sep_token} {text}"
+                    batch.append(description)
+                    index_id = label if self.kb is None else self.kb[label]
+                    index.append(index_id)
             tokens = self.tokenizer(
                 batch,
                 truncation=True,
@@ -98,14 +114,16 @@ class CatalogueBuilder:
         token_ids = np.concatenate([size_prefix, token_ids], axis=1)
         if not self.compute_representations:
             representations = None
-        return token_ids, representations
+        assert len(index) == token_ids.shape[0]
+        return index, token_ids, representations
     
     def _save(self):
         logger.info("Saving")
         with h5py.File(self.output_tok_ids_path, "w") as f:
             f['data'] = self.token_ids
-        with h5py.File(self.output_repr_path, "w") as f:
-            f['data'] = self.representations
+        if self.output_repr_path is not None:
+            with h5py.File(self.output_repr_path, "w") as f:
+                f['data'] = self.representations
         with open(self.output_idx_path, "w") as f:
             f.writelines("\n".join(self.index))
 
@@ -113,7 +131,7 @@ class CatalogueBuilder:
         self._save()
 
 
-@hydra.main(config_path="../conf/preprocessing", config_name="catalogue")
+@hydra.main(config_path="../conf/preprocessing", config_name="catalogue", version_base=None)
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     CatalogueBuilder(**config).build()

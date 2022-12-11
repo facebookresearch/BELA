@@ -1,3 +1,4 @@
+import math
 from typing import List
 import pytorch_lightning as pl
 import hydra
@@ -6,29 +7,293 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from duck.box_tensors.box_tensor import BoxTensor
-from duck.common.utils import list_to_tensor, logsubexp, tiny_value_of_dtype
+from duck.common.utils import list_to_tensor, log1mexp, logexpm1, logsubexp, mean_over_batches, tensor_set_difference, prefix_suffix_keys
+from duck.modules.modules import EmbeddingToBox
 from mblink.task.blink_task import ElBiEncoderTask
-from einops import rearrange
+from einops import rearrange, repeat
 from duck.box_tensors.volume import Volume
 from duck.box_tensors.intersection import Intersection
 from duck.modules import BoxEmbedding, HFSetToBoxTransformer, SetToBoxTransformer
 from duck.task.rel_to_box import RelToBox
 import transformers
 from abc import ABC, abstractmethod
+import faiss
+import os
+from tqdm import tqdm
+from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall
+import wandb
+from torchmetrics.retrieval import RetrievalRecall
+from pytorch_lightning.strategies import DDPShardedStrategy, DDPStrategy
 
 
 transformers.logging.set_verbosity_error()
 logger = logging.getLogger(__name__)
 
 
-class DuckLoss(nn.Module, ABC):
+class NormEntityBoxHardDistance(nn.Module):
+    def __init__(
+        self,
+        inside_weight: float = 0.0,
+        reduction: str = "none"
+    ):
+        super(NormEntityBoxHardDistance, self).__init__()
+        self.inside_weight = inside_weight
+        self.reduction = reduction
+    
+    def _dist_outside(self, entities, boxes):
+        left_delta = boxes.left - entities
+        right_delta = entities - boxes.right
+        left_delta = torch.max(left_delta, torch.zeros_like(left_delta))
+        right_delta = torch.max(right_delta, torch.zeros_like(right_delta))
+        return torch.linalg.vector_norm(left_delta + right_delta, ord=2, dim=-1)
+    
+    def _dist_inside(self, entities, boxes):
+        distance =  boxes.center - torch.min(
+            boxes.right,
+            torch.max(
+                boxes.left,
+                entities
+            )
+        )
+        return torch.linalg.vector_norm(distance, ord=2, dim=-1)
+    
+    def _reduce(self, distance):
+        if self.reduction == "mean":
+            return distance.mean()
+        elif self.reduction == "sum":
+            return distance.sum()
+        elif self.reduction == "none":
+            return distance
+        raise ValueError(f"Unsupported reduction {self.reduction}")
+    
+    def forward(self, entities, boxes):
+        inside_distance = 0.0
+        if self.inside_weight > 0:
+            inside_distance = self._dist_inside(entities, boxes)
+        outside_distance = self._dist_outside(entities, boxes)
+        return outside_distance + self.inside_weight * inside_distance
+        
+
+class DuckMaxMarginRankingLoss(nn.Module):
+    def __init__(self,
+        distance_function=None,
+        margin: float = 1.0,
+        inside_weight: float = 0.1,
+        reduction: str = "mean",
+        return_logging_metrics: bool = True
+    ):
+        super(DuckMaxMarginRankingLoss, self).__init__()
+        self.distance_function = distance_function or NormEntityBoxHardDistance(inside_weight=inside_weight)
+        self.margin = margin
+        self.reduction = reduction
+        self.return_logging_metrics = return_logging_metrics
+    
+    def _reduce(self, loss):
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        elif self.reduction == "none":
+            return loss
+        raise ValueError(f"Unsupported reduction {self.reduction}")
+
+    def forward(
+        self,
+        entities: Tensor,
+        positive_boxes: BoxTensor,
+        negative_boxes: BoxTensor,
+        **kwargs
+    ):
+        negative_boxes = negative_boxes.rearrange("b n d -> n b d")
+        if positive_boxes.left.dim() == 3:
+            positive_boxes = positive_boxes.rearrange("b n d -> n b d")
+        else:
+            positive_boxes = positive_boxes.rearrange("b d -> 1 b d")
+        
+        positive_dist = self.distance_function(entities, positive_boxes)
+        negative_dist = self.distance_function(entities, negative_boxes).mean(dim=0)
+        
+        rel_ids = kwargs.get("rel_ids")
+        mask= torch.full_like(positive_dist, True).bool()
+        if rel_ids is not None:
+            mask = rel_ids["attention_mask"].bool()
+            mask = rearrange(mask, "b n -> n b")
+            mask[0, :] = True  # if the entity has no relations it is placed in the universe
+        positive_dist[~mask] = 0.0
+        positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
+        delta = positive_dist - negative_dist + self.margin
+        loss = torch.max(delta, torch.zeros_like(delta))
+        if not self.return_logging_metrics:
+            return loss
+        return {
+            "loss": self._reduce(loss),
+            "positive_distance": wandb.Histogram(positive_dist.detach().cpu().numpy()),
+            "negative_distance": wandb.Histogram(negative_dist.detach().cpu().numpy()),
+            "positive_distance_mean": positive_dist.mean(),
+            "negative_distance_mean": negative_dist.mean()
+        }
+
+
+class DuckNCEMarginLoss(nn.Module):
+    def __init__(self,
+        distance_function=None,
+        margin: float = 1.0,
+        inside_weight: float = 0.1,
+        reduction: str = "mean"
+    ):
+        super(DuckNCEMarginLoss, self).__init__()
+        self.distance_function = distance_function or NormEntityBoxHardDistance(inside_weight=inside_weight)
+        self.margin = margin
+        self.reduction = reduction
+    
+    def _reduce(self, loss):
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        elif self.reduction == "none":
+            return loss
+        raise ValueError(f"Unsupported reduction {self.reduction}")
+
+    def forward(
+        self,
+        entities: Tensor,
+        positive_boxes: BoxTensor,
+        negative_boxes: BoxTensor,
+        **kwargs
+    ):
+        negative_boxes = negative_boxes.rearrange("b n d -> n b d")
+        if positive_boxes.left.dim() == 3:
+            positive_boxes = positive_boxes.rearrange("b n d -> n b d")
+        else:
+            positive_boxes = positive_boxes.rearrange("b d -> 1 b d")
+        positive_dist = self.distance_function(entities, positive_boxes)
+        negative_dist = self.distance_function(entities, negative_boxes)
+
+        eps = 1e-6
+        positive_term = torch.sigmoid(self.margin - positive_dist) + eps
+        positive_term = positive_term.clamp_max(1.0).log().mean(dim=0)
+        negative_term = torch.sigmoid(negative_dist - self.margin) + eps
+        negative_term = negative_term.clamp_max(1.0).log().mean(dim=0)
+        loss = -positive_term - negative_term
+        return self._reduce(loss)
+
+
+class GumbelBoxProbabilisticMembership(nn.Module):
+    def __init__(
+        self,
+        intersection_temperature: float = 1.0,
+        log_scale=True,
+        clamp=True,
+        dropout: float = 0.9,
+        dim=-1
+    ):
+        super(GumbelBoxProbabilisticMembership, self).__init__()
+        self.intersection_temperature = intersection_temperature
+        self.log_scale = log_scale
+        self.dim = dim
+        self.clamp = clamp
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, entity, box):
+        logp_gt_left = -torch.exp(
+            ((box.left - entity) / self.intersection_temperature).clamp(-100.0, +10.0)
+        )
+
+        logp_lt_right = -torch.exp(
+            ((entity - box.right) / self.intersection_temperature).clamp(-100.0, +10.0)
+        )
+
+        if self.clamp:
+            # If the entity is far from the box along any dimension,
+            # the value of the probabilistic membership function approaches zero very quickly,
+            # so the logarithm becomes -inf. We clamp it to a minimum of -100.0 as in
+            # https://pytorch.org/docs/stable/generated/torch.nn.BCELoss.html#torch.nn.BCELoss
+            logp_gt_left.clamp_(-100.0, 0.0)
+            logp_lt_right.clamp_(-100.0, 0.0)
+
+        lse = torch.logaddexp(logp_gt_left, logp_lt_right)
+        result = logexpm1(lse)
+
+        if self.clamp:
+            result.clamp_(-100.0, 0.0)
+
+        result = self.dropout(result)
+        
+        result = result.sum(dim=-1)
+
+        if self.clamp:
+            result.clamp_(-100.0, 0.0)
+        
+        if not self.log_scale:
+            result = result.exp()
+
+        return result
+    
+    def forward_naive(self, entity, box):
+        p_gt_left = torch.exp(
+            -torch.exp(
+                (box.left - entity) / self.intersection_temperature
+            )
+        )
+
+        p_lt_right = torch.exp(
+            -torch.exp(
+                (entity - box.right) / self.intersection_temperature
+            )
+        )
+
+        return p_gt_left + p_lt_right - 1
+
+
+
+class GumbelBoxMembershipNLLLoss(nn.Module):
+    def __init__(
+        self,
+        intersection_temperature: float = 1.0,
+        reduction="mean"
+    ):
+        super(GumbelBoxMembershipNLLLoss, self).__init__()
+        self.probabilistic_membership = GumbelBoxProbabilisticMembership(
+            intersection_temperature=intersection_temperature,
+            log_scale=True,
+            dim=-1
+        )
+        self.nll = nn.NLLLoss(reduction=reduction)
+    
+    def forward(
+        self,
+        entities,
+        entity_boxes,
+        neighbor_boxes,
+        **kwargs
+    ):
+        if entity_boxes.left.dim() == 2:
+            entity_boxes = entity_boxes.rearrange("b d -> b 1 d")
+        boxes = entity_boxes.cat(neighbor_boxes, dim=1)
+        with torch.no_grad():
+            target = torch.zeros_like(boxes.left[..., 0]).long()
+            target[:, 0:entity_boxes.box_shape[1]] = 1
+            target = target.detach()
+        entities = repeat(entities, "b d -> b n d", n=boxes.box_shape[1])
+        logp = self.probabilistic_membership(entities, boxes)
+        logp = rearrange(logp, "b n -> (b n)")
+        logp = torch.stack([
+            log1mexp(logp),
+            logp
+        ], dim=-1)
+        target = rearrange(target, "b n -> (b n)")
+        return self.nll(logp, target)
+
+
+class NegativeBoxLoss(nn.Module):
     def __init__(
         self,
         intersection_temperature: float = 1.0,
         volume_temperature: float = 1.0,
-        rel_threshold: int = 1
-    ):
-        super(DuckLoss, self).__init__()
+        reduction="mean"
+    ):  
+        super(NegativeBoxLoss, self).__init__()
         self.intersection = Intersection(
             intersection_temperature=intersection_temperature
         )
@@ -36,191 +301,76 @@ class DuckLoss(nn.Module, ABC):
             intersection_temperature=intersection_temperature,
             volume_temperature=volume_temperature
         )
-        self.eps = tiny_value_of_dtype(torch.float)
-        self.rel_threshold = rel_threshold
-    
-    @abstractmethod
-    def target(self, entity_relations, neighbor_relations):
-        pass
-
-    def reduce(self, loss):
-        return loss.mean()
-    
-    def mask_loss(self, loss, entity_relations, neighbor_relations):
-        mask_neighbor_indices = [
-            (i, j)
-            for i, rel_sets in enumerate(neighbor_relations)
-            for j, t in enumerate(rel_sets) if t.size(0) < self.rel_threshold
-        ]
-        if len(mask_neighbor_indices) > 0:
-            neigh_i, neigh_j = zip(*mask_neighbor_indices)
-            loss[list(neigh_i), list(neigh_j)] = 0.
-        mask_ent_indices = [i for i, t in enumerate(entity_relations) if t.size(0) < self.rel_threshold]
-        loss[mask_ent_indices] = 0.
-        return loss
-
-
-class DuckJaccardLoss(DuckLoss, ABC):
-    def __init__(
-        self,
-        intersection_temperature: float = 1.0,
-        volume_temperature: float = 1.0,
-        rel_threshold: int = 1
-    ):
-        super(DuckJaccardLoss, self).__init__(
-            intersection_temperature=intersection_temperature,
-            volume_temperature=volume_temperature,
-            rel_threshold=rel_threshold
-        )
-        self.clamp_value = 10
-
-    @abstractmethod
-    def criterion(self, log_pred_jaccard, target_jaccard):
-        pass
+        self.nll_anchor = nn.NLLLoss(reduction=reduction)
+        self.nll_negative = nn.NLLLoss(reduction=reduction)
     
     def forward(
         self,
-        entity_boxes: BoxTensor,
-        neighbor_boxes: BoxTensor,
-        entity_relations: List[Tensor],
-        neighbor_relations: List[List[Tensor]]
+        anchor,
+        negative
     ):
-        log_pred_jaccard = self.log_box_jaccard(entity_boxes, neighbor_boxes)
-        target_jaccard = self.target(entity_relations, neighbor_relations)
-        loss = self.criterion(log_pred_jaccard, target_jaccard)
-        loss = self.mask_loss(loss, entity_relations, neighbor_relations)
-        return self.reduce(loss)
-    
-    def log_box_jaccard(self,
-        entity_boxes: BoxTensor,
-        neighbor_boxes: BoxTensor
-    ):
-        num_neighbors = neighbor_boxes.box_shape[1]
-        entity_boxes = entity_boxes.repeat("b d -> b n d", n=num_neighbors)
-        log_intersection = self.volume(self.intersection(entity_boxes, neighbor_boxes))
-        log_ent_volume = self.volume(entity_boxes)
-        log_neigh_volume = self.volume(neighbor_boxes)
-        log_sum = torch.logaddexp(log_ent_volume, log_neigh_volume)
-        log_union = logsubexp(log_sum, log_intersection)
-        return log_intersection - log_union
-
-    def target(self, entity_relations, neighbor_relations):
-        result = []
-        for i, ent_rels in enumerate(entity_relations):
-            result.append([])
-            ent_neighbors = neighbor_relations[i]
-            for neigh_rels in ent_neighbors:
-                concat = torch.cat([ent_rels, neigh_rels])
-                _, counts = torch.unique(concat, return_counts=True)
-                intersection = sum(counts > 1)
-                union = concat.size(0)
-                jaccard_score = torch.tensor(0.)
-                if union > 0:
-                    jaccard_score = intersection / (union + self.eps)
-                result[i].append(jaccard_score)
-        return torch.tensor(result, device=result[0][0].device)
+        anchor = anchor.repeat("b d -> b n d", n=negative.box_shape[1])
+        intersection = self.intersection(anchor, negative)
+        log_intersection_over_anchor = self.volume(intersection) - self.volume(anchor)
+        log_intersection_over_negative = self.volume(intersection) - self.volume(negative)
+        target_anchor = torch.zeros_like(log_intersection_over_anchor).long()
+        target_negative = torch.zeros_like(log_intersection_over_negative).long()
+        log_intersection_over_anchor = torch.stack([
+            log_intersection_over_anchor,
+            log1mexp(log_intersection_over_anchor)
+        ], dim=-1)
+        log_intersection_over_negative = torch.stack([
+            log_intersection_over_negative,
+            log1mexp(log_intersection_over_negative)
+        ], dim=-1)
+        loss_anchor = self.nll_anchor(
+            rearrange(log_intersection_over_anchor, "b n c -> b c n"),
+            target_anchor
+        )
+        loss_negative = self.nll_negative(
+            rearrange(log_intersection_over_negative, "b n c -> b c n"),
+            target_negative
+        )
+        return loss_anchor + loss_negative
 
 
-class DuckJaccardKLDivLoss(DuckJaccardLoss):
+class AttentionBasedGumbelIntersection(nn.Module):
     def __init__(
         self,
-        intersection_temperature: float = 1.0,
-        volume_temperature: float = 1.0,
-        rel_threshold: int = 1
+        size=1024,
+        attn_heads=8,
+        dropout=0.1,
+        intersection_temperature=1.0,
+        dim=0
     ):
-        super(DuckJaccardKLDivLoss, self).__init__(
+        super(AttentionBasedGumbelIntersection, self).__init__()
+        self.gumbel_intersection = Intersection(
             intersection_temperature=intersection_temperature,
-            volume_temperature=volume_temperature,
-            rel_threshold=rel_threshold
+            dim=dim
         )
-        self.kldiv = nn.KLDivLoss(reduction="none")
+        self.attn = nn.MultiheadAttention(size, attn_heads, dropout=dropout)
+        self.ffn = nn.Sequential(
+            nn.Linear(2 * size, 2 * size),
+            nn.Dropout(p=dropout),
+            nn.ReLU(),
+            nn.Linear(2 * size, size)
+        )
+        self.dim = dim
     
-    def criterion(self, log_pred_jaccard, gt_jaccard):
-        return self.kldiv(log_pred_jaccard, gt_jaccard)
-
-    def reduce(self, loss):
-        return loss.sum() / loss.size(0)
-
-
-class DuckJaccardMSELoss(DuckJaccardLoss):
-    def __init__(
-        self,
-        intersection_temperature: float = 1.0,
-        volume_temperature: float = 1.0,
-        rel_threshold: int = 1,
-        log_scale: bool = True
-    ):
-        super(DuckJaccardMSELoss, self).__init__(
-            intersection_temperature=intersection_temperature,
-            volume_temperature=volume_temperature,
-            rel_threshold=rel_threshold
-        )
-        self.log_scale = log_scale
-    
-    def criterion(
-        self,
-        log_pred_jaccard,
-        target_jaccard
-    ):
-        if not self.log_scale:
-            return torch.square(target_jaccard - torch.exp(log_pred_jaccard).clamp(0, 1))
-        return torch.square(torch.log(target_jaccard + self.eps) - log_pred_jaccard)
-
-
-class DuckDoubleMSELoss(DuckLoss):
-    def __init__(
-        self,
-        intersection_temperature: float = 1.0,
-        volume_temperature: float = 1.0,
-        rel_threshold: int = 1,
-        log_scale: bool = True
-    ):
-        super(DuckDoubleMSELoss, self).__init__(
-            intersection_temperature=intersection_temperature,
-            volume_temperature=volume_temperature,
-            rel_threshold=rel_threshold
-        )
-        self.log_scale = log_scale
-
-    def forward(
-        self,
-        entity_boxes: BoxTensor,
-        neighbor_boxes: BoxTensor,
-        entity_relations: List[Tensor],
-        neighbor_relations: List[List[Tensor]]
-    ):
-        num_neighbors = neighbor_boxes.box_shape[1]
-        entity_boxes = entity_boxes.repeat("b d -> b n d", n=num_neighbors)
-        log_intersection = self.volume(self.intersection(entity_boxes, neighbor_boxes))
-        log_ent_volume = self.volume(entity_boxes)
-        log_neigh_volume = self.volume(neighbor_boxes)
-        log_ent_neigh_prob = log_intersection - log_ent_volume
-        log_neigh_ent_prob = log_intersection - log_neigh_volume
-        log_probs = rearrange(
-            [log_ent_neigh_prob, log_neigh_ent_prob],
-             "probs b n -> b n probs"
-        )
-        gt_probs = self.target(entity_relations, neighbor_relations)
-        if self.log_scale:
-            mse = torch.square(torch.log(gt_probs + self.eps) - log_probs)
-        else:
-            mse = torch.square(gt_probs - torch.exp(log_probs).clamp(0, 1))
-        # mse = self.mask_loss(mse, entity_relations, neighbor_relations)
-        return mse.mean()
-
-    def target(self, entity_relations, neighbor_relations):
-        probs = []
-        for i, ent_rels in enumerate(entity_relations):
-            probs.append([])
-            ent_neighbors = neighbor_relations[i]
-            for neigh_rels in ent_neighbors:
-                concat = torch.cat([ent_rels, neigh_rels])
-                _, counts = torch.unique(concat, return_counts=True)
-                intersection = sum(counts > 1)
-                ent_neigh_prob = intersection / (neigh_rels.size(0) + self.eps)
-                neigh_ent_prob = intersection / (ent_rels.size(0) + self.eps)
-                probs[i].append([ent_neigh_prob, neigh_ent_prob])
-        return torch.tensor(probs, device=probs[0][0][0].device)
+    def forward(self, boxes):
+        boxes_center = boxes.center
+        intersection = self.gumbel_intersection(boxes)
+        intersection_center = intersection.center
+        centers = torch.cat([repeat(intersection_center, "b d -> r b d", r=boxes_center.size(0)), boxes_center], dim=self.dim)
+        center, _ = self.attn(centers, centers, centers)
+        center = center.mean(dim=self.dim)
+        offset = intersection.right - intersection.left
+        box_data = torch.cat([boxes.left, boxes.right], dim=-1)
+        box_data = self.ffn(box_data).mean(dim=self.dim)
+        offset = offset * torch.sigmoid(box_data)
+        left = center - offset / 2
+        right = center + offset / 2
+        return BoxTensor((left, right))
 
 
 class Duck(pl.LightningModule):
@@ -232,45 +382,200 @@ class Duck(pl.LightningModule):
         self.biencoder_task = None
         self.mention_encoder = None
         self.entity_encoder = None
-        self.relation_box_encoder = None
-        self.box_embedding = None
+        self.rel_encoder = None
         self.optimizer = None
         self.volume = None
         self.intersection = None
-        self.disambiguation_loss = None
+        self.duck_loss = None
+        self.ent_index = None
+        self.negative_box_loss = NegativeBoxLoss(
+            intersection_temperature=self.config.duck.boxes.intersection_temperature,
+            volume_temperature=self.config.duck.boxes.volume_temperature
+        )
+        self.ed_loss = nn.CrossEntropyLoss()
+        self.filter_ddp = False
+        self.data = kwargs.get("data")
+        self.no_box_ablation = False
+
+        if self.config.get("ablations"):
+            self.no_box_ablation = self.config.ablations.get("blink") or False
+        
         self.setup(None)
+
+    def on_validation_start(self) -> None:
+        self.setup_entity_index()
+
+    def on_validation_end(self) -> None:
+        logger.info("Freeing index")
+        self.free_index()
+
+    def setup_entity_index(self) -> None:
+        self.eval()
+        ent_token_ids = self.data.ent_catalogue.data[:, 1:]
+        num_entities = ent_token_ids.shape[0]
+        world_size = self.config.trainer.devices * self.config.trainer.num_nodes
+        device_data_size = math.ceil(num_entities / world_size)
+        dim = self.entity_encoder.transformer.config.hidden_size
+        
+        bsz = 512
+
+        local_index = torch.zeros(
+            device_data_size,
+            self.mention_encoder.transformer.config.hidden_size,
+            device=self.device
+        ).detach().half()
+
+        print(f"Local index size: {local_index.size()}")
+
+        start = self.global_rank * device_data_size
+        end = min((self.global_rank + 1) * device_data_size, num_entities)
+
+        if self.config.get("debug"):
+            logger.info("Debug mode: skipping index update")
+        else:
+            logger.info(f"Updating entity index from entity {start} to {end} on local rank {self.global_rank}")
+            with torch.no_grad():
+                for i in tqdm(range(start, end, bsz)):
+                    end_index = min(i + bsz, end)
+                    batch = ent_token_ids[i:end_index].tolist()
+                    batch = self.data.transform._transform_entity(batch)
+                    batch = self.data.transform._to_tensor(batch)
+                    entity_repr, _ = self.entity_encoder(
+                        batch["data"].to(self.device),
+                        attention_mask=batch["attention_mask"].to(self.device),
+                    )
+                    local_index[i - start:end_index - start] = entity_repr.half().detach()
+                logger.info("Gathering local indices")
+                torch.cuda.empty_cache()
+                indexes = self.all_gather(local_index.detach())
+                assert indexes.size(0) == world_size
+                ent_index_cpu = rearrange(indexes.cpu(), "w e d -> (w e) d") #.float()
+                indexes = None
+                torch.cuda.empty_cache()
+                self.ent_index = ent_index_cpu.detach().to(self.device)
+    
+    def setup_entity_index_sequential(self) -> None:
+        ent_token_ids = self.data.ent_catalogue.data[:, 1:]
+        num_entities = ent_token_ids.shape[0]
+
+        if self.config.get("debug"):
+            logger.info("Debug mode: instantiating random index")
+            self.ent_index = torch.zeros(
+                num_entities,
+                self.mention_encoder.transformer.config.hidden_size,
+                device=self.device
+            ).detach()
+            return
+        bsz = 512
+
+        self.ent_index = torch.zeros(
+            num_entities,
+            self.mention_encoder.transformer.config.hidden_size,
+            device=self.device
+        ).detach()
+
+        logger.info(f"Updating entity index")
+        with torch.no_grad():
+            for i in tqdm(range(0, num_entities, bsz)):
+                batch = ent_token_ids[i:i + bsz].tolist()
+                batch = self.data.transform._transform_entity(batch)
+                batch = self.data.transform._to_tensor(batch)
+                entity_repr, _ = self.entity_encoder(
+                    batch["data"].to(self.device),
+                    attention_mask=batch["attention_mask"].to(self.device),
+                )
+                self.ent_index[i:i + bsz] = entity_repr.detach()
+    
+    def free_index(self):
+        self.ent_index = None
+        torch.cuda.empty_cache()
 
     def setup(self, stage: str):
         if stage == "test":
             return
-        # resetting call_configure_sharded_model_hook attribute so that we could configure model
+
         self.call_configure_sharded_model_hook = False
 
         self.biencoder_task = ElBiEncoderTask(self.config.duck.base_model, self.config.optim)
         self.biencoder_task.setup(stage)
         self.mention_encoder = self.biencoder_task.mention_encoder
         self.entity_encoder = self.biencoder_task.entity_encoder
-        # if not self.config.data.pretrained_relations:
-        #     self.relation_box_encoder = HFSetToBoxTransformer(
-        #     hydra.utils.instantiate(self.config.duck.base_model), batched=False
-        # )
-        # else:
-        #     self.relation_box_encoder = SetToBoxTransformer(
-        #         dim=self.mention_encoder.transformer.config.hidden_size,
-        #         hidden_dim=self.mention_encoder.transformer.config.hidden_size,
-        #         **self.config.duck.box_encoder
-        #     )
-        self.setup_box_embedding_layer()
-        self.optimizer = hydra.utils.instantiate(
-            self.config.optim, self.parameters(), _recursive_=False
+        self.intersection = Intersection(
+            intersection_temperature=self.config.duck.boxes.intersection_temperature,
+            dim=0
         )
-    
-    def setup_box_embedding_layer(self):
-        rel2box = RelToBox.load_from_checkpoint(self.config.duck.rel_to_box_model)
-        self.box_embedding = rel2box.box_embedding.freeze()
+        
+        self.setup_rel_encoder()
+        self.optimizer = hydra.utils.instantiate(
+            self.config.optim,
+            [p for p in self.parameters() if p.requires_grad],
+            _recursive_=False
+        )
 
-    def sim_score(self, mentions_repr, entities_repr):
-        scores = torch.matmul(mentions_repr, torch.transpose(entities_repr, 0, 1))
+        if self.config.duck.duck_loss is not None and not self.no_box_ablation:
+            self.duck_loss = hydra.utils.instantiate(
+                self.config.duck.duck_loss
+            )
+
+        self.micro_f1 = MulticlassF1Score(num_classes=len(self.data.ent_catalogue), average='micro')
+        self.retrieval_recall = RetrievalRecall()
+        
+    def _setup_pretrained_box_embeddings(self):
+        logger.info(f"Setting up pretrained box embeddings")
+        with torch.no_grad():
+            rel2box = RelToBox.load_from_checkpoint(self.config.duck.rel_to_box_model)
+            self.rel_encoder = rel2box.box_embedding
+            all_boxes = self.rel_encoder.all_boxes()
+            data = torch.cat((all_boxes.left, all_boxes.right), -1)
+            self.rel_encoder.weight.copy_(data)
+            self.rel_encoder.parametrization = "uniform"
+            self.rel_encoder.box_constructor = self.rel_encoder._set_box_constructor()
+
+    def _setup_untrained_box_embeddings(self):
+        parametrization = self.config.duck.boxes.parametrization
+        logger.info(f"Setting up box embeddings with {parametrization} parametrization")
+        self.rel_encoder = BoxEmbedding(
+            len(self.data.rel_catalogue),
+            self.entity_encoder.transformer.config.hidden_size,
+            box_parametrizaton=parametrization,
+            universe_idx=0
+        )
+        self.rel_encoder.universe_min = -100.0
+        self.rel_encoder.universe_max = -2 * self.rel_encoder.universe_min
+        self.rel_encoder.reinit()
+
+    def _setup_rel_description_to_box_encoder(self):
+        parametrization = self.config.duck.boxes.parametrization
+        logger.info(f"Setting up relation encoder with {parametrization} box parametrization")
+        embeddings = self.data.rel_catalogue.data
+        embeddings = torch.from_numpy(embeddings).to(self.device)
+        embeddings = torch.cat([
+            torch.zeros_like(embeddings)[0].unsqueeze(0),
+            embeddings
+        ])
+        self.rel_encoder = EmbeddingToBox(
+            embeddings=embeddings,
+            box_parametrization=parametrization,
+            padding_idx=0
+        )
+
+    def setup_rel_encoder(self):
+        if self.config.duck.get("rel_to_box_model") is not None:
+            self._setup_pretrained_box_embeddings(self)
+            return
+        if self.data.rel_catalogue.data is None:
+            self._setup_untrained_box_embeddings()
+            return
+        self._setup_rel_description_to_box_encoder()
+
+    def sim_score(self, mentions_repr: Tensor, entities_repr: Tensor):
+        # eps = 1e-8
+        # mentions_repr = mentions_repr / (torch.norm(mentions_repr, p=2, dim=-1).unsqueeze(-1) + eps)
+        # entities_repr = entities_repr / (torch.norm(entities_repr, p=2, dim=-1).unsqueeze(-1) + eps)
+        scores = torch.matmul(
+            mentions_repr.to(entities_repr.dtype),
+            torch.transpose(entities_repr, 0, 1)
+        )
         return scores
     
     def forward(self, batch):
@@ -280,15 +585,13 @@ class Duck(pl.LightningModule):
 
         bsz = mentions["data"].size(0)
         assert bsz == entities["data"].size(0)
-        assert bsz == neighbors["data"].size(0)
+        if neighbors is not None:
+            assert bsz == neighbors["data"].size(0)
        
         assert mentions["data"].size(-1) <= self.config.data.transform.max_mention_len
         assert entities["data"].size(-1) <= self.config.data.transform.max_entity_len
-        assert neighbors["data"].size(-1) <= self.config.data.transform.max_entity_len
-
-        num_rels = torch.any(batch["relations"]["attention_mask"].bool(), dim=-1).sum(dim=-1).tolist()
-        assert num_rels == [rels.size(0) for rels in batch["relation_ids"]]
-        assert num_rels == [len(rels) for rels in batch["relation_labels"]]
+        if neighbors is not None:
+            assert neighbors["data"].size(-1) <= self.config.data.transform.max_entity_len
 
         mention_repr, _ = self.mention_encoder(
             mentions["data"], attention_mask=mentions["attention_mask"]
@@ -297,69 +600,177 @@ class Duck(pl.LightningModule):
             entities["data"],
             attention_mask=entities["attention_mask"],
         )
-        bsz = neighbors["data"].size(0)
-        neighbor_repr, _ = self.entity_encoder(
-            rearrange(neighbors["data"], "b n l -> (b n) l"),
-            rearrange(neighbors["attention_mask"], "b n l -> (b n) l")
-        )
-        neighbor_repr = rearrange(neighbor_repr, "(b n) d -> b n d", b=bsz)
+        
+        entity_boxes = None
+        if not self.no_box_ablation:
+            rel_ids = batch["relation_ids"]["data"]
+            entity_boxes = self.relations_to_box(rel_ids)
+            mask = batch["entity_tensor_mask"].bool()
+            entity_repr[mask] = entity_repr[mask] + entity_boxes.center.mean(dim=1)
+            # intersection = self.intersection(entity_boxes.rearrange("b n d -> n b d"))
+            # entity_repr[mask] = entity_boxes.left + torch.sigmoid(entity_repr[mask]) * (entity_boxes.right - entity_boxes.left)
+
+        neighbor_repr = None
+        neighbor_boxes = None
+        if neighbors is not None:
+            neighbor_repr, _ = self.entity_encoder(
+                rearrange(neighbors["data"], "b n l -> (b n) l"),
+                rearrange(neighbors["attention_mask"], "b n l -> (b n) l")
+            )
+            neighbor_repr = rearrange(neighbor_repr, "(b n) d -> b n d", b=bsz)
+            neighbor_relation_ids = rearrange(batch["neighbor_relation_ids"]["data"], "b n r -> r b n")
+            neighbor_boxes = self.relations_to_box(neighbor_relation_ids)
+            # neighbor_repr = neighbor_boxes.left + torch.sigmoid(neighbor_repr) * (neighbor_boxes.right - neighbor_boxes.left)
 
         return {
             "mentions": mention_repr,
             "entities": entity_repr,
             "neighbors": neighbor_repr,
+            "entity_boxes": entity_boxes,
+            "neighbor_boxes": neighbor_boxes
         }
     
-    def relation_ids_to_box(self, batch):
-        boxes = self.box_embedding(batch["relation_ids"]["data"])
-        
-        
+    def relations_to_box(self, rel_ids):
+        # rel_ids = rearrange(batch["relation_ids"]["data"], "b r -> r b")
+        return self.rel_encoder(rel_ids.long())
+        # return boxes.rearrange("r b d -> b r d")
+        # return self.intersection(boxes)
+
     def training_step(self, batch, batch_idx):
         if batch is None:
             return None  # for debug
             
         representations = self(batch)
+        
+        representations, batch = self._gather_representations(representations, batch)
+
         mentions = representations["mentions"]
         entities = representations["entities"]
         entity_boxes = representations["entity_boxes"]
-        neighbors = representations["neighbors"]
-        neighbor_boxes = representations["neighbor_boxes"]
+        target = batch["targets"]
 
-        entity_relation_ids = batch["relation_ids"]
-        neighbor_relation_ids = batch["neighbor_relation_ids"]
-        
-        mask = batch["entity_tensor_mask"]
-        entities = entities[mask.bool()]
-        sim_score = self.sim_score(mentions, entities)
+        scores = self.sim_score(mentions, entities)
+        ed_loss = self.ed_loss(scores, target)
 
-        neighbors, neighbor_boxes, neighbor_relation_ids = self._extend_with_in_batch_neighbors(
-            neighbors,
-            neighbor_boxes,
-            neighbor_relation_ids
-        )
+        negative_boxes = self.sample_negative_boxes(batch["relation_ids"]["data"])
 
-        loss = self.duck_loss(
-            entity_boxes,
-            neighbor_boxes,
-            entity_relation_ids,
-            neighbor_relation_ids
-        )
+        duck_loss = 0.0
+        duck_loss_metrics = {}
+        if self.duck_loss is not None:
+            duck_loss = self.duck_loss(
+                entities,
+                entity_boxes,
+                negative_boxes,
+                rel_ids=batch["relation_ids"]
+            )
+            if isinstance(duck_loss, dict):
+                duck_loss_metrics = {k: v for k, v in duck_loss.items() if k != "loss"}
+                duck_loss_metrics = prefix_suffix_keys(duck_loss_metrics, prefix="train/")
+                duck_loss = duck_loss["loss"]
+                
+
+        loss = duck_loss + ed_loss
+
+        metrics = {
+            "train/duck_loss": duck_loss,
+            "train/ed_loss": ed_loss,
+            "train/loss": loss
+        }
+        metrics.update({
+            k: v
+            for k, v in duck_loss_metrics.items()
+            if k != "loss" and isinstance(v, torch.Tensor) 
+        })
+
         if self.logger is not None:
-            self.log_dict({
-                "duck_loss": loss
-            })
-        return loss
+            self.log_dict(metrics)
+            if not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
+                wandb.log({
+                    k: v
+                    for k, v in duck_loss_metrics.items()
+                    if k not in metrics
+                })
+        
+        metrics["loss"] = loss
+
+        return metrics
+
+    def training_epoch_end(self, outputs):
+        mean_metrics = mean_over_batches(outputs, suffix="epoch")
+        self.log_dict(mean_metrics, sync_dist=True)
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        representations = self(batch)
+        mentions = representations["mentions"]
+        entities = self.ent_index
+        target = batch["entity_ids"]
+        scores = self.sim_score(mentions, entities)
+        preds = scores.argmax(dim=-1)
+        return {
+            "preds": preds,
+            "target": target,
+            "topk": scores.topk(100)
+        }
+
+    def validation_epoch_end(self, outputs):
+        metrics = {}
+        if len(self.trainer.val_dataloaders) == 1:
+            outputs = [outputs]
+        dataset_names = list(self.config.data.val_paths.keys())
+        assert len(dataset_names) == len(outputs)
+        for i, dataset in enumerate(dataset_names):
+            dataset = dataset.upper()
+            dataset_outputs = outputs[i]
+            preds = torch.cat([o["preds"] for o in dataset_outputs])
+            target = torch.cat([o["target"] for o in dataset_outputs])
+            topk = [o["topk"] for o in dataset_outputs]
+            micro_f1 = self.micro_f1(preds, target)
+            metrics[f"{dataset}/Micro-F1"] = micro_f1
+            if dataset == "AIDA":
+                metrics["val_aida_f1"] = micro_f1
+            for k in [10, 30, 50, 100]:
+                metrics[f"{dataset}/Recall@{k}"] = self.recall_at_k(topk, target, k)
+            tqdm.write(f"Micro F1 on {dataset}: \t{micro_f1:.4f}")
+        metrics["avg_micro_f1"] = torch.stack([
+            v for k, v in metrics.items() if "Micro-F1" in k
+        ]).mean()
+        self.log_dict(metrics, sync_dist=True)
+    
+    def recall_at_k(self, top, target, k):
+        top_scores = torch.cat([t.values for t in top])[:, :k]
+        top_indices = torch.cat([t.indices for t in top])[:, :k]
+        target = (top_indices.transpose(0, 1) == target).transpose(0, 1)
+
+        index = repeat(
+            torch.arange(top_scores.size(0), device=self.device),
+            "b -> b k", k=top_scores.size(1)
+        )
+        return self.retrieval_recall(
+            top_scores.contiguous().view(-1),
+            target.contiguous().view(-1),
+            index.contiguous().view(-1),
+        )
 
     def configure_optimizers(self):
         return self.optimizer
     
+    def sample_negative_boxes(self, relation_ids):
+        with torch.no_grad():
+            ids_range = torch.arange(len(self.data.rel_catalogue) + 1).to(self.device)
+            negative_ids = []
+            for rels in relation_ids:
+                negative_pool = tensor_set_difference(ids_range, rels)
+                sample_indices = torch.multinomial(torch.ones_like(negative_pool).float(), num_samples=self.config.duck.num_negative_boxes)
+                sample = negative_pool[sample_indices]
+                negative_ids.append(sample)
+            negative_ids = torch.stack(negative_ids).detach()
+        return self.rel_encoder(negative_ids)
+
     def _extend_with_in_batch_neighbors(
         self,
         neighbors,
-        neighbor_boxes,
-        neighbor_relation_ids,
-    ):
-        
+        neighbor_boxes
+    ):  
         bsz = neighbors.size(0)
         num_in_batch_neighbors = self.config.duck.in_batch_neighbors
         for _ in range(num_in_batch_neighbors):
@@ -371,14 +782,144 @@ class Duck(pl.LightningModule):
             in_batch_neighbors = rearrange(neighbors, "b n d -> (b n) d")[perm]
             in_batch_neighbors = rearrange(in_batch_neighbors, "(b n) d -> b n d", b=bsz)[:, :1, :]
             neighbors = torch.cat([neighbors, in_batch_neighbors], dim=1)
-            neighbor_rel_tensor, mask = list_to_tensor(neighbor_relation_ids, pad_value=-1)
-            neighbor_rel_tensor = rearrange(neighbor_rel_tensor, "b n r -> (b n) r")[perm]
-            neighbor_rel_tensor = rearrange(neighbor_rel_tensor, "(b n) r -> b n r", b=bsz)
-            mask = mask.bool()
-            mask = rearrange(mask, "b n r -> (b n) r")[perm]
-            mask = rearrange(mask, "(b n) r -> b n r", b=bsz)
-            for i, neigh_rels in enumerate(neighbor_relation_ids):
-                neigh_rels.append(
-                    neighbor_rel_tensor[i, 0, :][mask[i, 0]]
+        return neighbors, neighbor_boxes
+
+    def _gather_representations(self, representations, batch):
+        entities = representations["entities"]
+        mask = batch["entity_tensor_mask"].bool()
+
+        if not self.filter_ddp or not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
+            representations["entities"] = entities[mask]
+            return representations, batch
+
+        mentions = representations["mentions"]
+        target = batch["targets"]
+        entity_ids = batch["entity_ids"]
+        rel_ids = batch["relation_ids"]
+        
+        entity_boxes = representations["entity_boxes"]
+
+        mentions_to_send = mentions.detach()
+        entities_to_send = entities.detach()
+        entity_boxes_to_send = entity_boxes.detach()
+
+        all_mentions_repr = self.all_gather(mentions_to_send)  # num_workers x bs
+        all_entities_repr = self.all_gather(entities_to_send)
+
+        all_boxes = BoxTensor(
+            (self.all_gather(entity_boxes_to_send.left), self.all_gather(entity_boxes_to_send.right))
+        )
+        all_targets = self.all_gather(target)
+        # we are not filtering duplicated entities now
+        all_entity_ids = self.all_gather(entity_ids)
+        all_rel_ids = {
+            "data": self.all_gather(rel_ids["data"].detach()),
+            "attention_mask": self.all_gather(rel_ids["attention_mask"].detach())
+        }
+        all_mask = self.all_gather(mask)
+
+        # offset = 0
+        all_mentions_list = []
+        all_entities_list = []
+        all_entity_ids_list = []
+        all_targets_list = []
+        all_boxes_list = []
+        all_rel_ids_list = []
+
+        # Add current device representations first.
+        # It is needed so we would not filter calculated on this
+        # device representations.
+        all_mentions_list.append(mentions)
+        entities = entities[mask]
+        all_entities_list.append(entities)
+        all_entity_ids_list.append(entity_ids[mask].tolist())
+        all_targets_list.append(target)
+        all_boxes_list.append(entity_boxes)
+        all_rel_ids_list.append(rel_ids)
+        # offset += entities_repr.size(0)
+
+        for i in range(all_targets.size(0)):
+            if i != self.global_rank:
+                all_mentions_list.append(all_mentions_repr[i])
+                all_entities_list.append(all_entities_repr[i][all_mask[i]])
+                all_entity_ids_list.append(
+                    all_entity_ids[i][all_mask[i].bool()].tolist()
                 )
-        return neighbors, neighbor_boxes, neighbor_relation_ids
+                all_targets_list.append(all_targets[i])
+                all_boxes_list.append(all_boxes[i])
+                all_rel_ids_list.append({
+                    "data": all_rel_ids["data"][i],
+                    "attention_mask": all_rel_ids["attention_mask"][i]
+                })
+
+        mentions = torch.cat(all_mentions_list, dim=0)  # total_ctx x dim
+        # entities_repr = torch.cat(all_entities_list, dim=0)  # total_query x dim
+        # targets = torch.cat(all_targets_list, dim=0)
+        entities, boxes, rel_ids, target = self.filter_representations(
+            all_entities_list,
+            all_entity_ids_list,
+            all_boxes_list,
+            all_rel_ids_list,
+            all_targets_list,
+        )
+        
+        representations["mentions"] = mentions
+        representations["entities"] = entities
+        representations["entity_boxes"] = boxes
+        batch["target"] = target
+        batch["relation_ids"] = rel_ids
+
+        logger.info(f"Entity size: {entities.size()}")
+        logger.info(f"Boxes size: {boxes.box_shape}")
+        logger.info(f"Rel ids: {rel_ids['data'].size()}")
+
+        return representations, batch
+    
+    def filter_representations(
+        self, all_entities_list, all_entity_ids_list, all_boxes_list, all_rel_ids_list, all_targets_list
+    ):
+        filtered_entities_repr = []
+        filtered_targets = []
+        filtered_boxes = []
+        filtered_rel_ids_data = []
+        filtered_rel_ids_mask = []
+        ent_indexes_map = {}
+
+        for entities_repr, entity_ids, boxes, rel_ids, targets, in zip(
+            all_entities_list,
+            all_entity_ids_list,
+            all_boxes_list,
+            all_rel_ids_list,
+            all_targets_list,
+        ):
+            for i, entity_repr in enumerate(entities_repr):
+                ent_id = entity_ids[i]
+                box = boxes[i]
+                if ent_id not in ent_indexes_map:
+                    ent_idx = len(ent_indexes_map)
+                    ent_indexes_map[ent_id] = ent_idx
+                    filtered_entities_repr.append(entity_repr)
+                    filtered_boxes.append(box)
+                    filtered_rel_ids_data.append(rel_ids["data"][i])
+                    filtered_rel_ids_mask.append(rel_ids["attention_mask"][i])
+            for target in targets.tolist():
+                filtered_targets.append(ent_indexes_map[entity_ids[target]])
+
+        filtered_entities_repr = torch.stack(filtered_entities_repr, dim=0)
+        filtered_boxes = BoxTensor((
+            torch.stack([box.left for box in filtered_boxes], dim=0),
+            torch.stack([box.right for box in filtered_boxes], dim=0)
+        ))
+        
+        filtered_rel_ids = {
+            "data": torch.stack(filtered_rel_ids_data, dim=0),
+            "attention_mask": torch.stack(filtered_rel_ids_mask, dim=0)
+        }
+
+        filtered_targets = torch.tensor(
+            filtered_targets,
+            dtype=torch.long,
+            device=filtered_entities_repr.get_device(),
+        )
+
+        return filtered_entities_repr, filtered_boxes, filtered_rel_ids, filtered_targets

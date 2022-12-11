@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - override /hydra/launcher: submitit_slurm
+
+trainer:
+  devices: 8
+  num_nodes: 6
+  num_sanity_val_steps: 0
+  log_every_n_steps: 10
+  strategy: ddp_sharded
+  accelerator: gpu
+  
+hydra:
+  launcher:
+    name: ${hydra.job.name}
+    gpus_per_node: ${trainer.devices}
+    tasks_per_node: ${trainer.devices}
+    nodes: ${trainer.num_nodes}
+    timeout_min: 7200 # 5 days
+    cpus_per_task: 10
+    mem_gb: 0
+    partition: learnai4p
+
+  sweep:
+    dir: /checkpoints/${oc.env:USER}/duck/${now:%Y-%m-%d-%H%M%S}

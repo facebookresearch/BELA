@@ -7,20 +7,29 @@ debug: False
 defaults:
   - optim: adamw
   - _self_
+  - trainer: 1gpu
 
 data:
   _target_: duck.datamodule.EdDuckDataModule
-  train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
-  val_path: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
-  test_path: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
+  train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
+  val_paths:
+    aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
+    aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
+    ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
+    acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
+    clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
+    msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
+    wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
+  test_paths:
+    aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
   ent_to_rel_path: /fsx/matzeni/data/duck/ent_to_rel.json
+  wikipedia_to_wikidata_path: /fsx/matzeni/data/duck/wikipedia_to_wikidata_en.pkl
   ent_catalogue_idx_path: /fsx/matzeni/data/duck/ent_idx.txt
   ent_catalogue_data_path: /fsx/matzeni/data/duck/bert_ent_256_tok_ids.h5
   rel_catalogue_idx_path: /fsx/matzeni/data/duck/rel_idx.txt
-  # rel_catalogue_data_path: /fsx/matzeni/data/duck/bert_rel_256_repr.h5
-  neighbors_path: /fsx/matzeni/data/duck/duck_neighbors.json
+  rel_catalogue_data_path: /fsx/matzeni/data/duck/bert_rel_256_repr.h5
+  # neighbors_path: /fsx/matzeni/data/duck/duck_neighbors.json
   stop_rels_path: /fsx/matzeni/data/duck/stop_rels.jsonl
-  # pretrained_relations: True
   batch_size: 32
   num_neighbors_per_entity: 1
   shuffle: True
@@ -35,47 +44,47 @@ task:
   _target_: duck.task.Duck
 
 duck:
-  rel_to_box_model: ${ckpt_dir}/r2b_wd/r2b_wd_uniform_epoch=152_kldiv_train=0.0136_last.ckpt
+  # rel_to_box_model: ${ckpt_dir}/r2b_wd/r2b_wd_origin_epoch=79_kldiv_train=0.0018_last.ckpt
   base_model:
       _target_: bela.models.hf_encoder.HFEncoder
       model_path: ${language_model}
   boxes:
     intersection_temperature: 0.0001
     volume_temperature: 0.1
-    rel_threshold: 1
-  box_encoder:
-    num_layers: 3
-    dropout: 0.1
-    attn_heads: 8
-    activation: softmax
-    margin: 0.5
-  duck_loss: jaccard_mse
-  in_batch_neighbors: 5
+    parametrization: relu
+  num_negative_boxes: 30 
+  duck_loss:
+    _target_: duck.task.duck_entity_disambiguation.DuckMaxMarginRankingLoss
+    margin: 20.0
+    inside_weight: 0.2
+    # _target_: duck.task.duck_entity_disambiguation.GumbelBoxMembershipNLLLoss
+    # intersection_temperature: 0.1
+    # _target_: duck.task.duck_entity_disambiguation.DuckNCEMarginLoss
+    # margin: 25
+    # inside_weight: 0.2
 
 trainer:
-  max_epochs: 10
+  max_epochs: 30
   min_epochs: 10
-  val_check_interval: 100
-  accelerator: gpu
-  devices: 1
-  num_nodes: 1
-  num_sanity_val_steps: 10
+  # val_check_interval: 10000
+  # check_val_every_n_epoch: 5
+  num_sanity_val_steps: 0
   log_every_n_steps: 1
-  #gradient_clip_val: 2.0
-  #accumulate_grad_batches: 1
-  #plugins: ddp_sharded
-  #strategy: ddp_sharded
 
 checkpoint_callback:
   _target_: pytorch_lightning.callbacks.ModelCheckpoint
-  monitor: duck_loss
-  every_n_train_steps: 100
-  mode: min 
+  monitor: avg_micro_f1
+  every_n_train_steps: 10001
+  mode: max
   save_last: true
   verbose: true
-  filename: ${run_name}_{epoch}_{duck_loss:.3f}
+  filename: ${run_name}_{epoch}_{avg_micro_f1:.3f}
   save_top_k: 1
   dirpath: ${ckpt_dir}
+
+ablations:
+  blink: False
+  pretrained_box_embeddings: False
 
 hydra:
   run:

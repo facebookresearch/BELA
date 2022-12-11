@@ -40,7 +40,8 @@ class BoxEmbedding(torch.nn.Embedding):
         self.universe_max =  1.0
         self.box_constructor = self._set_box_constructor()
         self.box_initializer = self._set_box_initializer()
-        self.reinit()
+        if kwargs.get("_weight") is None:
+            self.reinit()
     
     def _set_box_constructor(self):
         if self.parametrization == "uniform":
@@ -70,16 +71,20 @@ class BoxEmbedding(torch.nn.Embedding):
                 stddev=0.01
             )
         if self.parametrization == "sigmoid":
-            self.universe_min = -100
-            self.universe_max = -self.universe_min
+            self.universe_min = +100
+            self.universe_max = +self.universe_min
             return None
         if self.parametrization == "softplus":
             return
         raise ValueError(f"Unsupported parametrization {self.parametrization}")
         
     def reinit(self):
-        if self.box_initializer is not None:
-            self.box_initializer(self.weight)
+        with torch.no_grad():
+            self.box_constructor = self._set_box_constructor()
+            self.box_initializer = self._set_box_initializer()
+            self.reset_parameters()
+            if self.box_initializer is not None:
+                self.box_initializer(self.weight)
         
         self._fill_universe_idx()
 
@@ -104,7 +109,9 @@ class BoxEmbedding(torch.nn.Embedding):
         weights = rearrange(self.weight, "... (box d) -> ... box d", box=2)
         left = weights[..., 0, :]
         right = weights[..., 1, :]
-        return BoxTensor((left, right)) 
+        if self.box_constructor is not None:
+            return self.box_constructor(left, right)
+        return BoxTensor((left, right))
 
     def get_bounding_box(self) -> BoxTensor:
         all_ = self.all_boxes()
@@ -113,6 +120,33 @@ class BoxEmbedding(torch.nn.Embedding):
         left_min, _ = left.min(dim=0)
         right_max, _ = right.max(dim=0)
         return BoxTensor.from_corners(left_min, right_max)
+    
+    def set_universe_to_bounding_box(self) -> None:
+        if self.box_constructor is not None:
+            return
+        with torch.no_grad():
+            weights = rearrange(self.weight, "... (box d) -> ... box d", box=2)
+            left = weights[..., 0, :]
+            right = weights[..., 1, :]
+            left_min, _ = left.min(dim=0)
+            right_max, _ = right.max(dim=0)
+            universe_data = torch.cat([left_min, right_max])
+            self.weight[self.universe_idx].copy_(universe_data)
+    
+    def to_origin(self) -> None:
+        with torch.no_grad():
+            centroid = self.centroid.detach()
+            all_ = self.all_boxes()
+            left = all_.left - centroid
+            right = all_.right - centroid
+            weights = torch.cat([left, right], dim=-1)
+            freeze = not self.weight.requires_grad
+            return self.from_pretrained(weights, freeze=freeze, universe_idx=self.universe_idx)
+
+    @property
+    def centroid(self):
+        all_boxes = self.all_boxes()
+        return all_boxes.center.mean()
 
     @classmethod
     def from_pretrained(
@@ -135,8 +169,11 @@ class BoxEmbedding(torch.nn.Embedding):
             embedding_dim=int(cols / 2),
             box_parametrizaton=box_parametrization,
             universe_idx=universe_idx,
+            _weight=embeddings,
             **kwargs
         )
+        # with torch.no_grad():
+        #     embedding.weight.copy_(embeddings)
         embedding.weight.requires_grad = not freeze
         return embedding
     
@@ -311,3 +348,34 @@ class HFSetToBoxTransformer(nn.Module):
         offset = torch.sigmoid(x[:, 1, :]) + self.min_margin
         right = left + offset
         return BoxTensor((left, right))
+
+
+class EmbeddingToBox(nn.Module):
+    def __init__(
+        self,
+        embeddings: torch.Tensor,
+        box_parametrization: str = "softplus",
+        padding_idx: Optional[int] = None
+    ):
+        super(EmbeddingToBox, self).__init__()
+        self.embedding = nn.Embedding.from_pretrained(embeddings, padding_idx=padding_idx)
+        self.dim = embeddings.size(-1)
+        self.hidden_dim = 2 * self.dim
+        self.ffn = nn.Sequential(
+            nn.Linear(self.dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim)
+        )
+        self.parametrization = box_parametrization
+        self.padding_idx = padding_idx
+
+    def forward(self, input_ids):
+        x = self.embedding(input_ids)
+        x = self.ffn(x)
+        x = rearrange(x, "... (corners d) -> ... corners d", corners=2)
+        v1 = x[..., 0, :]
+        v2 = x[..., 1, :]
+        return BoxTensor.construct(
+            self.parametrization,
+            v1, v2
+        )

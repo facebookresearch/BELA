@@ -1,0 +1,9 @@
+# @package _global_
+
+trainer:
+  devices: 8
+  num_nodes: 1
+  log_every_n_steps: 10
+  accelerator: gpu
+  strategy: ddp_sharded
+  val_check_interval: 10000
