@@ -195,34 +195,39 @@ def any_none(values):
     )
     
 
-def _list_to_tensor(values, pad_value, dtype=None):
+def _list_to_tensor(values, pad_value, dtype=None, size=None):
     if isinstance(values, torch.Tensor):
         return values
     if len(values) == 0:
         return torch.tensor([], dtype=dtype)
     if isinstance(values[0], torch.Tensor):
-        return pad_tensors(values, pad_value=pad_value)
+        return pad_tensors(values, pad_value=pad_value, size=size)
     if not isinstance(values[0], list):
         return torch.tensor(values, dtype=dtype)
     return _list_to_tensor([
-        _list_to_tensor(v, pad_value=pad_value) for v in values
-    ], pad_value=pad_value)
+        _list_to_tensor(v, pad_value=pad_value, size=size) for v in values
+    ], pad_value=pad_value, size=size)
 
 
-def list_to_tensor(values, pad_value, dtype=None):
+def list_to_tensor(values, pad_value, dtype=None, size=None):
     values = list(copy.deepcopy(values))
     equalize_depth(values)
     mask = generate_mask_list(values)
-    tensor = _list_to_tensor(values, pad_value=pad_value, dtype=dtype)
-    mask = _list_to_tensor(mask, pad_value=False)
+    tensor = _list_to_tensor(values, pad_value=pad_value, dtype=dtype, size=size)
+    mask = _list_to_tensor(mask, pad_value=False, size=size)
     return tensor, mask
 
 
-def pad_tensors(tensors, pad_value):
+def pad_tensors(tensors, pad_value, size=None):
     rep = tensors[0]
     padded_dim = []
     for dim in range(rep.dim()):
         max_dim = max([tensor.size(dim) for tensor in tensors])
+        if size is not None:
+            dim_size = size
+            if isinstance(size, tuple):
+                dim_size = size[dim] or 0
+            max_dim = max(max_dim, dim_size)
         padded_dim.append(max_dim)
     padded_dim = [len(tensors)] + padded_dim
     padded_tensor = torch.full(padded_dim, pad_value)

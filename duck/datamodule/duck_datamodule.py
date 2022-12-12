@@ -242,6 +242,7 @@ class DuckTransform(BlinkTransform):
         max_entity_len: int = 128,
         max_relation_len: int = 64,
         add_eos_bos: bool = False,
+        max_num_rels = None
     ):
         super().__init__(
             model_path=model_path,
@@ -253,7 +254,8 @@ class DuckTransform(BlinkTransform):
         )
         self.max_relation_len = max_relation_len
         self.add_eos_bos = add_eos_bos
-
+        self.max_num_rels = max_num_rels
+    
     def _transform_relation_token_ids(
         self,
         relation_token_ids: List[List[List[int]]],
@@ -297,7 +299,12 @@ class DuckTransform(BlinkTransform):
         }
     
     def _transform_relation_ids(self, relation_ids):
-        tensor, attention_mask = list_to_tensor(list(relation_ids), pad_value=-1, dtype=torch.long)
+        tensor, attention_mask = list_to_tensor(
+            list(relation_ids),
+            pad_value=-1,
+            dtype=torch.long,
+            size=self.max_num_rels
+        )
         attention_mask = attention_mask.int()
         return {
             'data': (tensor + 1).long(),
@@ -418,7 +425,7 @@ class EdDuckDataModule(LightningDataModule):
             self.duck_neighbors = load_json(neighbors_path)
             self._map_neighbors_to_id()
             
-        
+        self.transform.max_num_rels = max(len(rels) for rels in self.ent_to_rel.values())
         self.shuffle = shuffle
 
         self.stop_rels = None
@@ -433,7 +440,6 @@ class EdDuckDataModule(LightningDataModule):
         if "jump_to_batch" in kwargs:
             self.jump_to_batch = kwargs["jump_to_batch"]
 
-    
     def _map_neighbors_to_id(self):
         if self.label_to_id is None:
             return
@@ -443,7 +449,6 @@ class EdDuckDataModule(LightningDataModule):
             if e in self.label_to_id
         }
         return self.duck_neighbors
-
     
     def _duck_dataset(self, path, **kwargs):
         return EdDuckDataset(
@@ -572,6 +577,7 @@ class EdDuckDataModule(LightningDataModule):
             [self.transform.bos_idx, self.transform.eos_idx]
         ] * pad_length
         entity_indexes += [0] * pad_length
+        relation_ids += [[0] * self.transform.max_num_rels] * pad_length
         
 
         result = self.transform(
@@ -614,7 +620,6 @@ def order_entities(
     filtered_relation_ids = []
     filtered_relation_labels = []
 
-
     tuples = zip(
         entity_data,
         entity_indices,
@@ -636,7 +641,6 @@ def order_entities(
             filtered_entity_labels.append(ent_label)
             filtered_relation_ids.append(rel_ids)
             filtered_relation_labels.append(rel_labels)
-
 
     return (
         filtered_entity_data,
