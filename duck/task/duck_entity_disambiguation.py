@@ -1,5 +1,5 @@
 import math
-from typing import List
+from typing import Any, List
 import pytorch_lightning as pl
 import hydra
 import logging
@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch import Tensor
 from duck.box_tensors.box_tensor import BoxTensor
 from duck.common.utils import list_to_tensor, log1mexp, logexpm1, logsubexp, mean_over_batches, tensor_set_difference, prefix_suffix_keys
-from duck.modules.modules import EmbeddingToBox
+from duck.modules.modules import EmbeddingToBox, JointEntRelsEncoder, TransformerSetEncoder
 from mblink.task.blink_task import ElBiEncoderTask
 from einops import rearrange, repeat
 from duck.box_tensors.volume import Volume
@@ -24,6 +24,7 @@ from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, 
 import wandb
 from torchmetrics.retrieval import RetrievalRecall
 from pytorch_lightning.strategies import DDPShardedStrategy, DDPStrategy
+from omegaconf import open_dict
 
 
 transformers.logging.set_verbosity_error()
@@ -378,7 +379,6 @@ class Duck(pl.LightningModule):
         super(Duck, self).__init__()
         logger.info("Instantiating Duck for entity disambiguation")
         self.config = config
-        self.save_hyperparameters(config)
         self.biencoder_task = None
         self.mention_encoder = None
         self.entity_encoder = None
@@ -387,7 +387,9 @@ class Duck(pl.LightningModule):
         self.volume = None
         self.intersection = None
         self.duck_loss = None
+        self.duck_point_loss = None
         self.ent_index = None
+        self.dim = None
         self.negative_box_loss = NegativeBoxLoss(
             intersection_temperature=self.config.duck.boxes.intersection_temperature,
             volume_temperature=self.config.duck.boxes.volume_temperature
@@ -396,23 +398,33 @@ class Duck(pl.LightningModule):
         self.gather_on_ddp = True
         self.data = kwargs.get("data")
         self.no_box_ablation = False
-
+        self.rel_set_transformer = None
+        self.joint_ent_rel_transformer = None
+        self.ablations = self.config.get("ablations") or {}
+        self.relations_as_points = self.ablations.get("relations_as_points") or False
+        self.joint_ent_rel_encoding = self.ablations.get("joint_ent_rel_encoding")
+        if self.joint_ent_rel_encoding:
+            self.relations_as_points = True
         if self.config.get("ablations"):
-            self.no_box_ablation = self.config.ablations.get("blink") or False
-        
-        self.setup(None)
+            self.no_box_ablation = self.ablations.get("blink") \
+                or self.relations_as_points \
+                or self.joint_ent_rel_encoding or False
+        stage = self.config.get("stage") or kwargs.get("stage")
+        self.setup(stage)
+        with open_dict(self.config):
+            self.config.stage = "loading"
+        self.save_hyperparameters(self.config)
 
     def on_validation_start(self) -> None:
-        self.setup_entity_index()
+        self.update_entity_index()
 
     def on_validation_end(self) -> None:
         logger.info("Freeing index")
         self.free_index()
 
-    def setup_entity_index(self) -> None:
+    def update_entity_index(self) -> None:
         self.eval()
-        ent_token_ids = self.data.ent_catalogue.data[:, 1:]
-        num_entities = ent_token_ids.shape[0]
+        num_entities = len(self.data.ent_catalogue.entities)
         world_size = self.config.trainer.devices * self.config.trainer.num_nodes
         device_data_size = math.ceil(num_entities / world_size)
         dim = self.entity_encoder.transformer.config.hidden_size
@@ -430,20 +442,18 @@ class Duck(pl.LightningModule):
         start = self.global_rank * device_data_size
         end = min((self.global_rank + 1) * device_data_size, num_entities)
         
+        ent_emb_dataset = self.data.train_dataset.ent_emb_dataset
         with torch.no_grad():
             if self.config.get("debug"):
                 logger.info("Debug mode: skipping index update")
             else:
-                logger.info(f"Updating entity index from entity {start} to {end} on local rank {self.global_rank}")
+                logger.info(f"Updating entity index from entity {start} to {end} on local rank {self.global_rank} ({str(self.device)})")
                 for i in tqdm(range(start, end, bsz)):
                     end_index = min(i + bsz, end)
-                    batch = ent_token_ids[i:end_index].tolist()
-                    batch = self.data.transform._transform_entity(batch)
-                    batch = self.data.transform._to_tensor(batch)
-                    entity_repr, _ = self.entity_encoder(
-                        batch["data"].to(self.device),
-                        attention_mask=batch["attention_mask"].to(self.device),
-                    )
+                    ent_batch = ent_emb_dataset.get_slice(i, end_index)
+                    ent_batch = self.data.transform.transform_ent_data(ent_batch)
+                    ent_batch = self.transfer_batch_to_device(ent_batch)
+                    entity_repr = self.encode_entity(ent_batch)
                     local_index[i - start:end_index - start] = entity_repr.half().detach()
             logger.info("Gathering local indices")
             torch.cuda.empty_cache()
@@ -456,6 +466,41 @@ class Duck(pl.LightningModule):
             torch.cuda.empty_cache()
             self.ent_index = ent_index_cpu.detach().to(self.device)
     
+    def transfer_batch_to_device(
+        self,
+        batch: Any,
+        device: torch.device = None,
+        dataloader_idx: int = 0
+    ) -> Any:
+        device = device or self.device
+        return super().transfer_batch_to_device(batch, device, dataloader_idx)
+    
+    def encode_entity(self, ent_batch):
+        entities = ent_batch["entities"]
+        entity_repr, _ = self.entity_encoder(
+            entities["data"],
+            attention_mask=entities["attention_mask"],
+        )
+        
+        entity_boxes = None
+        if not self.no_box_ablation:
+            rel_ids = ent_batch["relation_ids"]["data"]
+            entity_boxes = self.relations_to_box(rel_ids)
+            relation_mask = ent_batch["relation_ids"]["attention_mask"].bool()
+            centers = entity_boxes.center
+            centers[relation_mask] = 0.0
+            center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
+            entity_repr = entity_repr + center  
+        elif self.joint_ent_rel_encoding:
+            relations = self.rel_encoder(ent_batch["relation_ids"]["data"])
+            entity_repr = self.joint_ent_rel_transformer(
+                entity_repr,
+                relations,
+                ent_batch["relation_ids"]["attention_mask"]
+            )
+        return entity_repr
+
+
     def setup_entity_index_sequential(self) -> None:
         ent_token_ids = self.data.ent_catalogue.data[:, 1:]
         num_entities = ent_token_ids.shape[0]
@@ -495,18 +540,30 @@ class Duck(pl.LightningModule):
     def setup(self, stage: str):
         if stage == "test":
             return
-
+        if stage == "loading" or self.data is None:
+            with open_dict(self.config):
+                self.config.data.val_paths = {}
+                self.config.data.train_path = "/fsx/matzeni/data/GENRE/aida-train-kilt.jsonl"
+            self.data = hydra.utils.instantiate(self.config.data)
+        
         self.call_configure_sharded_model_hook = False
 
         self.biencoder_task = ElBiEncoderTask(self.config.duck.base_model, self.config.optim)
         self.biencoder_task.setup(stage)
         self.mention_encoder = self.biencoder_task.mention_encoder
         self.entity_encoder = self.biencoder_task.entity_encoder
+        self.dim = self.entity_encoder.transformer.config.hidden_size
         self.intersection = Intersection(
             intersection_temperature=self.config.duck.boxes.intersection_temperature,
             dim=0
         )
         
+        if self.relations_as_points:
+            if self.joint_ent_rel_encoding:
+                self.joint_ent_rel_transformer = JointEntRelsEncoder(self.dim)
+            else: 
+                self.rel_set_transformer = TransformerSetEncoder(self.dim)
+
         self.setup_rel_encoder()
         self.optimizer = hydra.utils.instantiate(
             self.config.optim,
@@ -518,6 +575,9 @@ class Duck(pl.LightningModule):
             self.duck_loss = hydra.utils.instantiate(
                 self.config.duck.duck_loss
             )
+        
+        if self.relations_as_points:
+            self.duck_point_loss = nn.BCEWithLogitsLoss()
 
         self.micro_f1 = MulticlassF1Score(num_classes=len(self.data.ent_catalogue), average='micro')
         self.retrieval_recall = RetrievalRecall()
@@ -561,11 +621,24 @@ class Duck(pl.LightningModule):
             padding_idx=0
         )
 
+    def _setup_rel_set_encoder(self):
+        logger.info(f"Setting up relations to point encoder")
+        embeddings = self.data.rel_catalogue.data
+        embeddings = torch.from_numpy(embeddings).to(self.device)
+        embeddings = torch.cat([
+            torch.zeros_like(embeddings)[0].unsqueeze(0),
+            embeddings
+        ])
+        self.rel_encoder = nn.Embedding.from_pretrained(embeddings, padding_idx=0)
+
     def setup_rel_encoder(self):
+        if self.relations_as_points:
+            self._setup_rel_set_encoder()
+            return
         if self.config.duck.get("rel_to_box_model") is not None:
             self._setup_pretrained_box_embeddings(self)
             return
-        if self.data.rel_catalogue.data is None:
+        if self.data is not None and self.data.rel_catalogue.data is None:
             self._setup_untrained_box_embeddings()
             return
         self._setup_rel_description_to_box_encoder()
@@ -615,6 +688,21 @@ class Duck(pl.LightningModule):
             # intersection = self.intersection(entity_boxes.rearrange("b n d -> n b d"))
             # entity_repr[mask] = entity_boxes.left + torch.sigmoid(entity_repr[mask]) * (entity_boxes.right - entity_boxes.left)
 
+        relation_set_embeddings = None
+        if self.relations_as_points:
+            relations = self.rel_encoder(batch["relation_ids"]["data"])
+            if self.joint_ent_rel_encoding:
+                entity_repr = self.joint_ent_rel_transformer(
+                    entity_repr,
+                    relations,
+                    batch["relation_ids"]["attention_mask"]
+                )
+            else:
+                relation_set_embeddings = self.rel_set_transformer(
+                    relations,
+                    batch["relation_ids"]["attention_mask"]
+                )
+
         neighbor_repr = None
         neighbor_boxes = None
         if neighbors is not None:
@@ -632,7 +720,8 @@ class Duck(pl.LightningModule):
             "entities": entity_repr,
             "neighbors": neighbor_repr,
             "entity_boxes": entity_boxes,
-            "neighbor_boxes": neighbor_boxes
+            "neighbor_boxes": neighbor_boxes,
+            "relation_set_embeddings": relation_set_embeddings
         }
     
     def relations_to_box(self, rel_ids):
@@ -653,11 +742,11 @@ class Duck(pl.LightningModule):
         entities = representations["entities"]
         entity_boxes = representations["entity_boxes"]
         target = batch["targets"]
-        mask = batch["entity_tensor_mask"].bool()
+        relation_set_embeddings = representations["relation_set_embeddings"]
 
         scores = self.sim_score(mentions, entities)
         ed_loss = self.ed_loss(scores, target)
-
+        
         negative_boxes = self.sample_negative_boxes(batch["relation_ids"]["data"])
         duck_loss = 0.0
         duck_loss_metrics = {}
@@ -674,7 +763,15 @@ class Duck(pl.LightningModule):
                 duck_loss_metrics = {k: v for k, v in duck_loss.items() if k != "loss"}
                 duck_loss_metrics = prefix_suffix_keys(duck_loss_metrics, prefix="train/")
                 duck_loss = duck_loss["loss"]
-                
+        
+        if self.relations_as_points and not self.joint_ent_rel_encoding:
+            ent_to_rel_target = torch.eye(entities.size(0)).to(self.device)
+            ent_to_rel_scores = torch.matmul(
+                relation_set_embeddings,
+                entities.transpose(0, 1)
+            )
+            duck_loss = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
+
         loss = duck_loss + ed_loss
 
         metrics = {
@@ -741,9 +838,10 @@ class Duck(pl.LightningModule):
             avg_metric_value = torch.stack([
                 v for k, v in metrics.items() if avg_metric_key in k
             ]).mean()
-            avg_metrics[avg_metric_key + "_avg"] = avg_metric_value
+            avg_metrics["Average/" + avg_metric_key] = avg_metric_value
         metrics.update(avg_metrics)
-        metrics["avg_micro_f1"] = metrics["Micro-F1_avg"]
+        metrics["avg_micro_f1"] = metrics["Average/Micro-F1"]
+        metrics["val_f1"] = metrics["BLINK_DEV/Micro-F1"]
         self.log_dict(metrics, sync_dist=True)
     
     def recall_at_k(self, top, target, k):
@@ -802,12 +900,15 @@ class Duck(pl.LightningModule):
         rel_ids = batch["relation_ids"]
         entity_boxes = representations["entity_boxes"]
         mask = batch["entity_tensor_mask"].bool()
+        relation_set_embeddings = representations["relation_set_embeddings"]
 
         if not self.gather_on_ddp or not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
             representations["entities"] = entities[mask]
             representations["entity_boxes"] = entity_boxes[mask] if entity_boxes is not None else None
             batch["relation_ids"]["data"] = rel_ids["data"][mask]
             batch["relation_ids"]["attention_mask"] = rel_ids["attention_mask"][mask]
+            if relation_set_embeddings is not None:
+                representations["relation_set_embeddings"] = relation_set_embeddings[mask]
             return representations, batch
 
         mentions_to_send = mentions.detach()
@@ -828,6 +929,10 @@ class Duck(pl.LightningModule):
         all_mentions_repr = self.all_gather(mentions_to_send)[start_rank:end_rank]  # num_workers x bs
         all_entities_repr = self.all_gather(entities_to_send)[start_rank:end_rank]
 
+        all_relation_set_embeddings = None
+        if relation_set_embeddings is not None:
+            all_relation_set_embeddings = self.all_gather(relation_set_embeddings.detach())[start_rank:end_rank]
+
         all_targets = self.all_gather(target)[start_rank:end_rank]
         # we are not filtering duplicated entities now
         all_entity_ids = self.all_gather(entity_ids)[start_rank:end_rank]
@@ -844,6 +949,7 @@ class Duck(pl.LightningModule):
         all_targets_list = []
         all_boxes_list = []
         all_rel_ids_list = []
+        all_relation_set_embeddings_list = []
 
         # Add current device representations first.
         all_mentions_list.append(mentions)
@@ -854,6 +960,7 @@ class Duck(pl.LightningModule):
         all_targets_list.append(target)
         all_boxes_list.append(entity_boxes)
         all_rel_ids_list.append(rel_ids)
+        all_relation_set_embeddings_list.append(relation_set_embeddings)
         # offset += entities_repr.size(0)
 
         for i in range(all_targets.size(0)):
@@ -872,46 +979,63 @@ class Duck(pl.LightningModule):
                     "data": all_rel_ids["data"][i][all_mask[i].bool()],
                     "attention_mask": all_rel_ids["attention_mask"][i][all_mask[i].bool()]
                 })
+                if all_relation_set_embeddings is not None:
+                    all_relation_set_embeddings_list.append(
+                        all_relation_set_embeddings[i][all_mask[i].bool()]
+                    )
+                else:
+                    all_relation_set_embeddings_list.append(None)
 
         mentions = torch.cat(all_mentions_list, dim=0)  # total_ctx x dim
         # entities_repr = torch.cat(all_entities_list, dim=0)  # total_query x dim
         # targets = torch.cat(all_targets_list, dim=0)
-        entities, boxes, rel_ids, target = self.filter_representations(
+        entities, boxes, rel_ids, target, relation_set_embeddings = self.filter_representations(
             all_entities_list,
             all_entity_ids_list,
             all_boxes_list,
             all_rel_ids_list,
             all_targets_list,
+            all_relation_set_embeddings_list
         )
         
         representations["mentions"] = mentions
         representations["entities"] = entities
         representations["entity_boxes"] = boxes
+        representations["relation_set_embeddings"] = relation_set_embeddings
         batch["targets"] = target
         batch["relation_ids"] = rel_ids
 
         return representations, batch
     
     def filter_representations(
-        self, all_entities_list, all_entity_ids_list, all_boxes_list, all_rel_ids_list, all_targets_list
+        self,
+        all_entities_list,
+        all_entity_ids_list,
+        all_boxes_list,
+        all_rel_ids_list,
+        all_targets_list,
+        all_relation_set_embeddings
     ):
         filtered_entities_repr = []
         filtered_targets = []
         filtered_boxes = []
         filtered_rel_ids_data = []
         filtered_rel_ids_mask = []
+        filtered_relation_set_embeddings = []
         ent_indexes_map = {}
 
-        for entities_repr, entity_ids, boxes, rel_ids, targets, in zip(
+        for entities_repr, entity_ids, boxes, rel_ids, targets, relation_set_embeddings in zip(
             all_entities_list,
             all_entity_ids_list,
             all_boxes_list,
             all_rel_ids_list,
             all_targets_list,
+            all_relation_set_embeddings
         ):
             for i, entity_repr in enumerate(entities_repr):
                 ent_id = entity_ids[i]
                 box = boxes[i] if boxes is not None else None
+                relation_set_emb = relation_set_embeddings[i] if relation_set_embeddings is not None else None
                 if ent_id not in ent_indexes_map:
                     ent_idx = len(ent_indexes_map)
                     ent_indexes_map[ent_id] = ent_idx
@@ -919,6 +1043,7 @@ class Duck(pl.LightningModule):
                     filtered_boxes.append(box)
                     filtered_rel_ids_data.append(rel_ids["data"][i])
                     filtered_rel_ids_mask.append(rel_ids["attention_mask"][i])
+                    filtered_relation_set_embeddings.append(relation_set_emb)
             for target in targets.tolist():
                 filtered_targets.append(ent_indexes_map[entity_ids[target]])
 
@@ -931,6 +1056,11 @@ class Duck(pl.LightningModule):
         else:
             filtered_boxes = None
         
+        if self.relations_as_points and not self.joint_ent_rel_encoding:
+            filtered_relation_set_embeddings = torch.stack(filtered_relation_set_embeddings, dim=0)
+        else:
+            filtered_relation_set_embeddings = None
+
         filtered_rel_ids = {
             "data": torch.stack(filtered_rel_ids_data, dim=0),
             "attention_mask": torch.stack(filtered_rel_ids_mask, dim=0)
@@ -942,4 +1072,8 @@ class Duck(pl.LightningModule):
             device=filtered_entities_repr.get_device(),
         )
 
-        return filtered_entities_repr, filtered_boxes, filtered_rel_ids, filtered_targets
+        return filtered_entities_repr, \
+            filtered_boxes, \
+            filtered_rel_ids, \
+            filtered_targets, \
+            filtered_relation_set_embeddings

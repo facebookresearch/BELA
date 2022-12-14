@@ -6,8 +6,8 @@ debug: False
 
 defaults:
   - optim: adamw
-  - _self_
   - trainer: 1gpu
+  - _self_
 
 data:
   _target_: duck.datamodule.EdDuckDataModule
@@ -73,25 +73,24 @@ duck:
 trainer:
   max_epochs: 30
   min_epochs: 10
-  # val_check_interval: 10000
-  # check_val_every_n_epoch: 5
   num_sanity_val_steps: 0
   log_every_n_steps: 1
 
 checkpoint_callback:
   _target_: pytorch_lightning.callbacks.ModelCheckpoint
-  monitor: avg_micro_f1
-  every_n_train_steps: 5001
+  monitor: val_f1
+  every_n_train_steps: 10001
   mode: max
   save_last: true
   verbose: true
-  filename: ${run_name}_{epoch}_{avg_micro_f1:.3f}
+  filename: ${run_name}_{epoch}_{val_f1:.3f}
   save_top_k: 1
   dirpath: ${ckpt_dir}
 
 ablations:
   blink: False
-  pretrained_box_embeddings: False
+  relations_as_points: False
+  joint_ent_rel_encoding: False
 
 hydra:
   run:

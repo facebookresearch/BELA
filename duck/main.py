@@ -39,6 +39,7 @@ def main(config: DictConfig):
         os.environ["NCCL_BLOCKING_WAIT"] = "1"
 
     os.environ["PL_SKIP_CPU_COPY_ON_DDP_TEARDOWN"] = "1"
+    os.environ["HYDRA_FULL_ERROR"] = "1"
 
     Path(config.log_dir).mkdir(exist_ok=True, parents=True)
     Path(config.ckpt_dir).mkdir(exist_ok=True, parents=True)

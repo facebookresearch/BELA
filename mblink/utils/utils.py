@@ -54,10 +54,12 @@ class EntityCatalogue:
 
         logger.info(f"Reading entity catalogue index {idx_path}")
         self.idx = {}
+        self.entities = []
         with open(idx_path, "rt") as fd:
             for idx, line in enumerate(fd):
                 ent_id = line.strip()
                 self.idx[ent_id] = idx
+                self.entities.append(ent_id)
 
     def __len__(self):
         return len(self.idx)

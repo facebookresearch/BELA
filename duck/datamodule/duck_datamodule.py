@@ -76,7 +76,7 @@ class EdDuckDataset(torch.utils.data.Dataset):
         self.rel_catalogue = rel_catalogue
         self.ent_to_rel = ent_to_rel
         self.label_to_id = label_to_id
-        self.neighbors_dataset = EntEmbDuckDataset(
+        self.ent_emb_dataset = EntEmbDuckDataset(
             neighbors,
             ent_catalogue,
             rel_catalogue,
@@ -104,7 +104,7 @@ class EdDuckDataset(torch.utils.data.Dataset):
         item = self.data[index]
         entity_id = item["entity_id"]
         entity_label = item["entity_label"]
-        additional_attributes = self.neighbors_dataset.get_by_entity(entity_id)
+        additional_attributes = self.ent_emb_dataset.get_by_entity(entity_id)
         item.update(additional_attributes)
         item["entity_label"] = entity_label
         return item
@@ -136,6 +136,8 @@ class EntEmbDuckDataset(torch.utils.data.Dataset):
                 e for e in ent_catalogue.idx
                 if len(self.ent_to_rel[e]) >= relation_threshold
             ]
+        else:
+            self.entities = [e for e in ent_catalogue.idx]
         self.num_neighbors_per_entity = num_neighbors_per_entity
         self.stop_rels = stop_rels or set()
         self.id_to_label = {eid: label for label, eid in label_to_id.items()}
@@ -167,11 +169,14 @@ class EntEmbDuckDataset(torch.utils.data.Dataset):
         return result
 
     def __len__(self):
-        return len(self.duck_neighbors)
+        return len(self.ent_catalogue)
     
-    def __get_item__(self, index):
-        entity_id = self.entities[index]
+    def __getitem__(self, index):
+        entity_id = self.ent_catalogue.entities[index]
         return self.get_by_entity(entity_id)
+
+    def get_slice(self, start, end):
+        return [self[i] for i in range(start, end)]
 
 
 class EdGenreDataset(torch.utils.data.Dataset):
@@ -333,6 +338,41 @@ class DuckTransform(BlinkTransform):
 
     def _to_tensor(self, token_ids, attention_mask_pad_idx=0):
         return self._list_to_tensor(token_ids, pad_value=None)
+
+    
+    def transform_ent_data(self, ent_data):
+        """
+        {
+            "entity_id": entity_id,
+            'entity_label': entity_label,
+            "entity_index": entity_index,
+            "entity_tokens": entity_tokens,
+            "relation_labels": rels,
+            "relation_indexes": relation_indices,
+            "relation_data": relation_data
+        }
+        """
+        entity_ids = [e["entity_index"] for e in ent_data]
+        entity_token_ids = [e["entity_tokens"] for e in ent_data]
+        relation_ids = [e["relation_indexes"] for e in ent_data]
+        entity_labels = [e["entity_label"] for e in ent_data]
+        relation_labels = [e["relation_labels"] for e in ent_data]
+        relation_data = [e["relation_data"] for e in ent_data]
+
+        relations_tensor = self._transform_relations(relation_data)
+        entity_token_ids = self._transform_entity(entity_token_ids)
+        entity_tensor = self._to_tensor(
+            entity_token_ids
+        )
+        relation_ids = self._transform_relation_ids(relation_ids)
+        entity_ids = torch.tensor(entity_ids, dtype=torch.long)
+        return {
+            "entities": entity_tensor,
+            "relations": relations_tensor,
+            "relation_ids": relation_ids,
+            "entity_labels": entity_labels,
+            "relation_labels": relation_labels
+        }
 
     def forward(
         self, batch: Dict[str, Any]

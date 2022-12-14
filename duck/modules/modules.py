@@ -172,8 +172,8 @@ class BoxEmbedding(torch.nn.Embedding):
             _weight=embeddings,
             **kwargs
         )
-        # with torch.no_grad():
-        #     embedding.weight.copy_(embeddings)
+        with torch.no_grad():
+            embedding.weight.copy_(embeddings)
         embedding.weight.requires_grad = not freeze
         return embedding
     
@@ -228,6 +228,96 @@ class EntityEncoder(nn.Module):
         return self.ffn(entity)
     
 
+class TransformerSetEncoder(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        hidden_dim: int = None,
+        num_layers: int = 3,
+        attn_heads: int = 8,
+        dropout: float = 0.1,
+    ):
+        super(TransformerSetEncoder, self).__init__()
+        self.dim = dim
+        hidden_dim = hidden_dim or 2 * dim
+        transformer_encoder_layer = nn.TransformerEncoderLayer(
+            dim, attn_heads, dim_feedforward=hidden_dim, dropout=dropout, batch_first=True
+        )
+        norm = nn.LayerNorm(dim)
+        self.transformer_encoder = nn.TransformerEncoder(transformer_encoder_layer, num_layers, norm=norm)
+       
+    def forward(
+        self,
+        input_set: Tensor,
+        attention_mask: Optional[Tensor] = None
+    ) -> Tensor:
+        """
+        Args:
+            input_set: set of embeddings as a Tensor of size (batch_size, l, dim),
+            where l is the number of embeddings in the set, dim is the dimensionality of the model
+            and batch_size is the batch_size
+        
+        Returns:
+            Tensor of size (batch_size, dim)
+        """
+        attention_mask = attention_mask.bool()
+        if attention_mask.dim() == 3:
+            attention_mask = torch.any(attention_mask.bool(), dim=-1)
+        
+        pad = torch.zeros([input_set.size(0), 1, input_set.size(-1)], device=input_set.device)
+        pad_mask = torch.full([attention_mask.size(0), 1], True, device=input_set.device).bool()
+        input_set = torch.cat([pad, input_set], dim=1)
+        attention_mask = torch.cat([pad_mask, attention_mask], dim=1)
+        x = self.transformer_encoder(input_set, src_key_padding_mask=~attention_mask)
+        x[~attention_mask] = 0.
+        return torch.mean(x, dim=1)
+
+
+class JointEntRelsEncoder(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        hidden_dim: int = None,
+        num_layers: int = 3,
+        attn_heads: int = 8,
+        dropout: float = 0.1
+    ):
+        super(JointEntRelsEncoder, self).__init__()
+        self.dim = dim
+        hidden_dim = hidden_dim or 2 * dim
+        transformer_encoder_layer = nn.TransformerEncoderLayer(
+            dim, attn_heads, dim_feedforward=hidden_dim, dropout=dropout, batch_first=True
+        )
+        norm = nn.LayerNorm(dim)
+        self.transformer_encoder = nn.TransformerEncoder(transformer_encoder_layer, num_layers, norm=norm)
+        transformer_decoder_layer = nn.TransformerDecoderLayer(
+            dim, attn_heads, dim_feedforward=hidden_dim, dropout=dropout, batch_first=True
+        )
+        self.transformer_decoder = nn.TransformerDecoder(
+            transformer_decoder_layer,
+            num_layers,
+            norm=nn.LayerNorm(dim)
+        )
+
+    def forward(self, entities, rels, attention_mask):
+        """
+        entities: (bsz, dim)
+        rels: (bsz, n, dim)
+        """
+        attention_mask = attention_mask.bool()
+        if attention_mask.dim() == 3:
+            attention_mask = torch.any(attention_mask.bool(), dim=-1)
+        
+        pad = torch.zeros([rels.size(0), 1, rels.size(-1)], device=rels.device)
+        pad_mask = torch.full([attention_mask.size(0), 1], True, device=rels.device).bool()
+        rels = torch.cat([pad, rels], dim=1)
+        attention_mask = torch.cat([pad_mask, attention_mask], dim=1)
+        rels = self.transformer_encoder(rels, src_key_padding_mask=~attention_mask)
+        rels[~attention_mask] = 0.
+        result = self.transformer_decoder(entities.unsqueeze(1), rels, memory_key_padding_mask=~attention_mask)
+        return result.squeeze(1)
+
+    
 class SetToBoxTransformer(nn.Module):
     """
     Module that encodes sets of pre-trained embeddings as boxes.
@@ -379,3 +469,4 @@ class EmbeddingToBox(nn.Module):
             self.parametrization,
             v1, v2
         )
+
