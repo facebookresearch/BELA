@@ -23,6 +23,7 @@ from tqdm import tqdm
 from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall
 import wandb
 from torchmetrics.retrieval import RetrievalRecall
+from torchmetrics import MeanMetric
 from pytorch_lightning.strategies import DDPShardedStrategy, DDPStrategy
 from omegaconf import open_dict
 
@@ -413,17 +414,48 @@ class Duck(pl.LightningModule):
         self.setup(stage)
         with open_dict(self.config):
             self.config.stage = "loading"
+        if not self.no_box_ablation:
+            self.gather_on_ddp = False
+
+        self.datasets = {
+            "val": [d.upper() for d in dict(self.config.data.val_paths).keys()],
+            "test": [d.upper() for d in dict(self.config.data.test_paths).keys()]
+        }
+        self.micro_f1 = nn.ModuleDict({ 
+            stage: nn.ModuleDict({
+                dataset: MulticlassF1Score(num_classes=len(self.data.ent_catalogue), average='micro')
+                for dataset in self.datasets[stage]
+            })
+            for stage in ["val", "test"]
+        })
+
+        self.retrieval_recall = nn.ModuleDict({
+            stage: nn.ModuleDict({
+                dataset: RetrievalRecall()
+                for dataset in self.datasets[stage]
+            })
+            for stage in ["val", "test"]
+        })
+
+        self.recall_steps = [10, 30, 50, 100]
+        metric_names = ["Micro-F1"] + [f"Recall@{k}" for k in self.recall_steps]
+        self.mean_metrics = nn.ModuleDict({
+            f"Mean/{metric_name}": MeanMetric()
+            for metric_name in metric_names
+        })
+
         self.save_hyperparameters(self.config)
 
     def on_validation_start(self) -> None:
-        self.update_entity_index()
+        self.setup_entity_index()
 
     def on_validation_end(self) -> None:
         logger.info("Freeing index")
         self.free_index()
 
-    def update_entity_index(self) -> None:
+    def setup_entity_index(self) -> None:
         self.eval()
+        torch.cuda.empty_cache()
         num_entities = len(self.data.ent_catalogue.entities)
         world_size = self.config.trainer.devices * self.config.trainer.num_nodes
         device_data_size = math.ceil(num_entities / world_size)
@@ -434,8 +466,9 @@ class Duck(pl.LightningModule):
         local_index = torch.zeros(
             device_data_size,
             dim,
-            device=self.device
-        ).detach().half()
+            device=self.device,
+            dtype=torch.float16
+        ).detach()
 
         print(f"Local index size: {local_index.size()}")
 
@@ -466,6 +499,38 @@ class Duck(pl.LightningModule):
             torch.cuda.empty_cache()
             self.ent_index = ent_index_cpu.detach().to(self.device)
     
+    def setup_entity_index_sequential(self) -> None:
+        self.eval()
+        num_entities = len(self.data.ent_catalogue.entities)
+        ent_emb_dataset = self.data.train_dataset.ent_emb_dataset
+
+        if self.config.get("debug"):
+            logger.info("Debug mode: instantiating random index")
+            self.ent_index = torch.zeros(
+                num_entities,
+                self.mention_encoder.transformer.config.hidden_size,
+                device=self.device
+            ).detach()
+            return
+
+        bsz = 512
+
+        self.ent_index = torch.zeros(
+            num_entities,
+            self.mention_encoder.transformer.config.hidden_size,
+            device=self.device
+        ).detach()
+
+        logger.info(f"Updating entity index")
+        with torch.no_grad():
+            for i in tqdm(range(0, num_entities, bsz)):
+                end_index = min(i + bsz, num_entities)
+                ent_batch = ent_emb_dataset.get_slice(i, end_index)
+                ent_batch = self.data.transform.transform_ent_data(ent_batch)
+                ent_batch = self.transfer_batch_to_device(ent_batch)
+                entity_repr = self.encode_entity(ent_batch)
+                self.ent_index[i:i + bsz] = entity_repr.detach()
+    
     def transfer_batch_to_device(
         self,
         batch: Any,
@@ -491,47 +556,14 @@ class Duck(pl.LightningModule):
             centers[relation_mask] = 0.0
             center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
             entity_repr = entity_repr + center  
-        elif self.joint_ent_rel_encoding:
-            relations = self.rel_encoder(ent_batch["relation_ids"]["data"])
-            entity_repr = self.joint_ent_rel_transformer(
-                entity_repr,
-                relations,
-                ent_batch["relation_ids"]["attention_mask"]
-            )
+        # elif self.joint_ent_rel_encoding:
+            #relations = self.rel_encoder(ent_batch["relation_ids"]["data"])
+            # entity_repr = self.joint_ent_rel_transformer(
+            #     entity_repr,
+            #     relations,
+            #     ent_batch["relation_ids"]["attention_mask"]
+            # )
         return entity_repr
-
-
-    def setup_entity_index_sequential(self) -> None:
-        ent_token_ids = self.data.ent_catalogue.data[:, 1:]
-        num_entities = ent_token_ids.shape[0]
-
-        if self.config.get("debug"):
-            logger.info("Debug mode: instantiating random index")
-            self.ent_index = torch.zeros(
-                num_entities,
-                self.mention_encoder.transformer.config.hidden_size,
-                device=self.device
-            ).detach()
-            return
-        bsz = 512
-
-        self.ent_index = torch.zeros(
-            num_entities,
-            self.mention_encoder.transformer.config.hidden_size,
-            device=self.device
-        ).detach()
-
-        logger.info(f"Updating entity index")
-        with torch.no_grad():
-            for i in tqdm(range(0, num_entities, bsz)):
-                batch = ent_token_ids[i:i + bsz].tolist()
-                batch = self.data.transform._transform_entity(batch)
-                batch = self.data.transform._to_tensor(batch)
-                entity_repr, _ = self.entity_encoder(
-                    batch["data"].to(self.device),
-                    attention_mask=batch["attention_mask"].to(self.device),
-                )
-                self.ent_index[i:i + bsz] = entity_repr.detach()
     
     def free_index(self):
         self.ent_index = None
@@ -579,8 +611,6 @@ class Duck(pl.LightningModule):
         if self.relations_as_points:
             self.duck_point_loss = nn.BCEWithLogitsLoss()
 
-        self.micro_f1 = MulticlassF1Score(num_classes=len(self.data.ent_catalogue), average='micro')
-        self.retrieval_recall = RetrievalRecall()
         
     def _setup_pretrained_box_embeddings(self):
         logger.info(f"Setting up pretrained box embeddings")
@@ -621,7 +651,7 @@ class Duck(pl.LightningModule):
             padding_idx=0
         )
 
-    def _setup_rel_set_encoder(self):
+    def _setup_rel_to_point_encoder(self):
         logger.info(f"Setting up relations to point encoder")
         embeddings = self.data.rel_catalogue.data
         embeddings = torch.from_numpy(embeddings).to(self.device)
@@ -633,7 +663,7 @@ class Duck(pl.LightningModule):
 
     def setup_rel_encoder(self):
         if self.relations_as_points:
-            self._setup_rel_set_encoder()
+            self._setup_rel_to_point_encoder()
             return
         if self.config.duck.get("rel_to_box_model") is not None:
             self._setup_pretrained_box_embeddings(self)
@@ -653,16 +683,52 @@ class Duck(pl.LightningModule):
         )
         return scores
     
+    def encode_with_boxes(self, entity, relations, relation_mask):
+        entity_boxes = self.relations_to_box(relations)
+        relation_mask = relation_mask.bool()
+        centers = entity_boxes.center
+        centers[relation_mask] = 0.0
+        center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
+        entity = entity + center
+        return entity, entity_boxes
+
+    def encode_entity_with_relations(self, entity, relation_ids):
+        entity_repr, _ = self.entity_encoder(
+            entity["data"],
+            attention_mask=entity["attention_mask"],
+        )
+        
+        entity_boxes = None
+        if not self.no_box_ablation:
+            entity_repr, entity_boxes = self.encode_with_boxes(
+                entity_repr,
+                relation_ids["data"],
+                relation_ids["attention_mask"].bool()
+            )
+
+        relation_set_embeddings = None
+        if self.relations_as_points:
+            relations = self.rel_encoder(relation_ids["data"])
+            if self.joint_ent_rel_encoding:
+                entity_repr = self.joint_ent_rel_transformer(
+                    entity_repr,
+                    relations,
+                    relation_ids["attention_mask"]
+                )
+            else:
+                relation_set_embeddings = self.rel_set_transformer(
+                    relations,
+                    relation_ids["attention_mask"]
+                )
+        return entity_repr, entity_boxes, relation_set_embeddings
+
     def forward(self, batch):
         mentions = batch["mentions"] 
         entities = batch["entities"]
+        relation_ids = batch["relation_ids"]
         neighbors = batch["neighbors"]
+        # neighbor_relation_ids = batch["neighbor_relation_ids"]
 
-        bsz = mentions["data"].size(0)
-        assert bsz == entities["data"].size(0)
-        if neighbors is not None:
-            assert bsz == neighbors["data"].size(0)
-       
         assert mentions["data"].size(-1) <= self.config.data.transform.max_mention_len
         assert entities["data"].size(-1) <= self.config.data.transform.max_entity_len
         if neighbors is not None:
@@ -671,57 +737,32 @@ class Duck(pl.LightningModule):
         mention_repr, _ = self.mention_encoder(
             mentions["data"], attention_mask=mentions["attention_mask"]
         )
-        entity_repr, _ = self.entity_encoder(
-            entities["data"],
-            attention_mask=entities["attention_mask"],
-        )
         
-        entity_boxes = None
-        if not self.no_box_ablation:
-            rel_ids = batch["relation_ids"]["data"]
-            entity_boxes = self.relations_to_box(rel_ids)
-            relation_mask = batch["relation_ids"]["attention_mask"].bool()
-            centers = entity_boxes.center
-            centers[relation_mask] = 0.0
-            center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
-            entity_repr = entity_repr + center
-            # intersection = self.intersection(entity_boxes.rearrange("b n d -> n b d"))
-            # entity_repr[mask] = entity_boxes.left + torch.sigmoid(entity_repr[mask]) * (entity_boxes.right - entity_boxes.left)
-
-        relation_set_embeddings = None
-        if self.relations_as_points:
-            relations = self.rel_encoder(batch["relation_ids"]["data"])
-            if self.joint_ent_rel_encoding:
-                entity_repr = self.joint_ent_rel_transformer(
-                    entity_repr,
-                    relations,
-                    batch["relation_ids"]["attention_mask"]
-                )
-            else:
-                relation_set_embeddings = self.rel_set_transformer(
-                    relations,
-                    batch["relation_ids"]["attention_mask"]
-                )
+        entity_repr, entity_boxes, relation_sets = self.encode_entity_with_relations(
+            entities,
+            relation_ids
+        )
 
         neighbor_repr = None
         neighbor_boxes = None
-        if neighbors is not None:
-            neighbor_repr, _ = self.entity_encoder(
-                rearrange(neighbors["data"], "b n l -> (b n) l"),
-                rearrange(neighbors["attention_mask"], "b n l -> (b n) l")
-            )
-            neighbor_repr = rearrange(neighbor_repr, "(b n) d -> b n d", b=bsz)
-            neighbor_relation_ids = rearrange(batch["neighbor_relation_ids"]["data"], "b n r -> r b n")
-            neighbor_boxes = self.relations_to_box(neighbor_relation_ids)
-            # neighbor_repr = neighbor_boxes.left + torch.sigmoid(neighbor_repr) * (neighbor_boxes.right - neighbor_boxes.left)
-
+        neighbor_relation_sets = None
+        
+        ## Neighbors are now concatenated to entities because they are not used to learn boxes
+        # 
+        # if neighbors is not None:
+        #     neighbor_repr, neighbor_boxes, neighbor_relation_sets = self.encode_entity_with_relations(
+        #         neighbors,
+        #         neighbor_relation_ids
+        #     )
+        
         return {
             "mentions": mention_repr,
             "entities": entity_repr,
             "neighbors": neighbor_repr,
             "entity_boxes": entity_boxes,
             "neighbor_boxes": neighbor_boxes,
-            "relation_set_embeddings": relation_set_embeddings
+            "relation_set_embeddings": relation_sets,
+            "neighbor_relation_sets": neighbor_relation_sets
         }
     
     def relations_to_box(self, rel_ids):
@@ -730,12 +771,68 @@ class Duck(pl.LightningModule):
         # return boxes.rearrange("r b d -> b r d")
         # return self.intersection(boxes)
 
+    def append_neighbors_to_entities(self, batch):
+        neighbors = batch["neighbors"]
+        entities = batch["entities"]
+        relation_ids = batch["relation_ids"]
+        neighbor_relation_ids = batch["neighbor_relation_ids"]
+
+        entities["data"] = torch.cat(
+            [entities["data"], neighbors["data"]]
+        )
+        entities["attention_mask"] = torch.cat(
+            [entities["attention_mask"], neighbors["attention_mask"]]
+        )
+        relation_ids["data"] = torch.cat(
+            [relation_ids["data"], neighbor_relation_ids["data"]]
+        )
+        relation_ids["attention_mask"] = torch.cat(
+            [relation_ids["attention_mask"], neighbor_relation_ids["attention_mask"]]
+        )
+        mask = batch["entity_tensor_mask"].bool()
+        mask = torch.cat(
+            [mask, torch.full((neighbors["data"].size(0), ), True, device=self.device)]
+        )
+        batch["entity_tensor_mask"] = mask
+        batch["entity_ids"] = torch.cat([
+            batch["entity_ids"],
+            batch["neighbor_ids"]
+        ])
+
+    def limit_neighbors(self, batch):
+        neighbors = batch["neighbors"]
+        max_neighbors = self.config.data.get("max_num_neighbors_per_batch")
+        neighbor_relation_ids = batch["neighbor_relation_ids"]
+
+        neighbors["data"] = rearrange(
+            neighbors["data"], "b n l -> (b n) l"
+        )
+        neighbors["attention_mask"] = rearrange(
+            neighbors["attention_mask"], "b n l -> (b n) l"
+        )
+        neighbor_relation_ids["data"] = rearrange(
+            neighbor_relation_ids["data"], "b n l -> (b n) l"
+        )
+        neighbor_relation_ids["attention_mask"] = rearrange(
+            neighbor_relation_ids["attention_mask"], "b n l -> (b n) l"
+        )
+        neighbor_ids = rearrange(batch["neighbor_ids"], "b n -> (b n)")
+        if max_neighbors is not None:
+            neighbors["data"] = neighbors["data"][:max_neighbors]
+            neighbors["attention_mask"] = neighbors["attention_mask"][:max_neighbors]
+            neighbor_relation_ids["data"] = neighbor_relation_ids["data"][:max_neighbors]
+            neighbor_relation_ids["attention_mask"] = neighbor_relation_ids["attention_mask"][:max_neighbors]
+            batch["neighbor_ids"] = neighbor_ids[:max_neighbors]
+
     def training_step(self, batch, batch_idx):
         if batch is None:
             return None  # for debug
             
+        if batch["neighbors"] is not None:
+            self.limit_neighbors(batch)
+            self.append_neighbors_to_entities(batch)
+   
         representations = self(batch)
-        
         representations, batch = self._gather_representations(representations, batch)
 
         mentions = representations["mentions"]
@@ -747,10 +844,10 @@ class Duck(pl.LightningModule):
         scores = self.sim_score(mentions, entities)
         ed_loss = self.ed_loss(scores, target)
         
-        negative_boxes = self.sample_negative_boxes(batch["relation_ids"]["data"])
         duck_loss = 0.0
         duck_loss_metrics = {}
         if self.duck_loss is not None:
+            negative_boxes = self.sample_negative_boxes(batch["relation_ids"]["data"])
             rel_ids = batch["relation_ids"]
             # rel_ids["attention_mask"] = rel_ids["attention_mask"][mask]
             duck_loss = self.duck_loss(
@@ -816,35 +913,44 @@ class Duck(pl.LightningModule):
         }
 
     def validation_epoch_end(self, outputs):
-        metrics = {}
+        logging_metrics = {}
+        value_metrics = {}
+        
         if len(self.trainer.val_dataloaders) == 1:
             outputs = [outputs]
-        dataset_names = list(self.config.data.val_paths.keys())
-        assert len(dataset_names) == len(outputs)
-        for i, dataset in enumerate(dataset_names):
-            dataset = dataset.upper()
+        datasets = self.datasets["val"]
+        assert len(datasets) == len(outputs)
+        for i, dataset in enumerate(datasets):
             dataset_outputs = outputs[i]
             preds = torch.cat([o["preds"] for o in dataset_outputs])
             target = torch.cat([o["target"] for o in dataset_outputs])
             topk = [o["topk"] for o in dataset_outputs]
-            micro_f1 = self.micro_f1(preds, target)
-            metrics[f"{dataset}/Micro-F1"] = micro_f1
-            for k in [10, 30, 50, 100]:
-                metrics[f"{dataset}/Recall@{k}"] = self.recall_at_k(topk, target, k)
+            micro_f1 = self.micro_f1["val"][dataset](preds, target)
+            logging_metrics[f"{dataset}/Micro-F1"] = self.micro_f1["val"][dataset]
+            value_metrics[f"{dataset}/Micro-F1"] = micro_f1
+            for k in self.recall_steps:
+                recall = self.recall_at_k(topk, target, k, dataset)
+                logging_metrics[f"{dataset}/Recall@{k}"] = self.retrieval_recall["val"][dataset]
+                value_metrics[f"{dataset}/Recall@{k}"] = recall
             tqdm.write(f"Micro F1 on {dataset}: \t{micro_f1:.4f}")
+        
         avg_metrics = {}
-        for dataset_metric in metrics:
+        for dataset_metric in value_metrics:
             avg_metric_key = dataset_metric.split("/")[-1]
+            dataset_name = dataset_metric.split("/")[0]
+            if dataset_name not in self.datasets["test"]:
+                continue
             avg_metric_value = torch.stack([
-                v for k, v in metrics.items() if avg_metric_key in k
+                v for k, v in value_metrics.items()
+                if avg_metric_key in k
             ]).mean()
             avg_metrics["Average/" + avg_metric_key] = avg_metric_value
-        metrics.update(avg_metrics)
-        metrics["avg_micro_f1"] = metrics["Average/Micro-F1"]
-        metrics["val_f1"] = metrics["BLINK_DEV/Micro-F1"]
-        self.log_dict(metrics, sync_dist=True)
+        logging_metrics.update(avg_metrics)
+        logging_metrics["avg_micro_f1"] = logging_metrics["Average/Micro-F1"]
+        logging_metrics["val_f1"] = logging_metrics.get("BLINK_DEV/Micro-F1") or logging_metrics["avg_micro_f1"]
+        self.log_dict(logging_metrics, sync_dist=True)
     
-    def recall_at_k(self, top, target, k):
+    def recall_at_k(self, top, target, k, dataset, stage="val"):
         top_scores = torch.cat([t.values for t in top])[:, :k]
         top_indices = torch.cat([t.indices for t in top])[:, :k]
         target = (top_indices.transpose(0, 1) == target).transpose(0, 1)
@@ -853,7 +959,7 @@ class Duck(pl.LightningModule):
             torch.arange(top_scores.size(0), device=self.device),
             "b -> b k", k=top_scores.size(1)
         )
-        return self.retrieval_recall(
+        return self.retrieval_recall[stage][dataset](
             top_scores.contiguous().view(-1),
             target.contiguous().view(-1),
             index.contiguous().view(-1),
@@ -874,23 +980,23 @@ class Duck(pl.LightningModule):
             negative_ids = torch.stack(negative_ids).detach()
         return self.rel_encoder(negative_ids)
 
-    def _extend_with_in_batch_neighbors(
-        self,
-        neighbors,
-        neighbor_boxes
-    ):  
-        bsz = neighbors.size(0)
-        num_in_batch_neighbors = self.config.duck.in_batch_neighbors
-        for _ in range(num_in_batch_neighbors):
-            num_neighbors = neighbors.size(1)
-            perm = torch.randperm(bsz * num_neighbors).to(neighbors.device)
-            in_batch_boxes = neighbor_boxes.rearrange("b n d -> (b n) d")[perm] \
-                .rearrange("(b n) d -> b n d", b=bsz)[:, :1, :]
-            neighbor_boxes = neighbor_boxes.cat(in_batch_boxes, dim=1)
-            in_batch_neighbors = rearrange(neighbors, "b n d -> (b n) d")[perm]
-            in_batch_neighbors = rearrange(in_batch_neighbors, "(b n) d -> b n d", b=bsz)[:, :1, :]
-            neighbors = torch.cat([neighbors, in_batch_neighbors], dim=1)
-        return neighbors, neighbor_boxes
+    # def _extend_with_in_batch_neighbors(
+    #     self,
+    #     neighbors,
+    #     neighbor_boxes
+    # ):  
+    #     bsz = neighbors.size(0)
+    #     num_in_batch_neighbors = self.config.duck.in_batch_neighbors
+    #     for _ in range(num_in_batch_neighbors):
+    #         num_neighbors = neighbors.size(1)
+    #         perm = torch.randperm(bsz * num_neighbors).to(neighbors.device)
+    #         in_batch_boxes = neighbor_boxes.rearrange("b n d -> (b n) d")[perm] \
+    #             .rearrange("(b n) d -> b n d", b=bsz)[:, :1, :]
+    #         neighbor_boxes = neighbor_boxes.cat(in_batch_boxes, dim=1)
+    #         in_batch_neighbors = rearrange(neighbors, "b n d -> (b n) d")[perm]
+    #         in_batch_neighbors = rearrange(in_batch_neighbors, "(b n) d -> b n d", b=bsz)[:, :1, :]
+    #         neighbors = torch.cat([neighbors, in_batch_neighbors], dim=1)
+    #     return neighbors, neighbor_boxes
 
     def _gather_representations(self, representations, batch):
         entities = representations["entities"]

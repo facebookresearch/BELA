@@ -1,5 +1,5 @@
 input_path: /fsx/matzeni/data/duck/kilt_knowledgesource.jsonl
-kb_path: /fsx/matzeni/data/duck/wikipedia_to_wikidata_en.pkl
+kb_path: null # /fsx/matzeni/data/duck/wikipedia_to_wikidata_en.pkl
 output_tok_ids_path: /fsx/matzeni/data/duck/bert_ent_256_tok_ids.h5
 output_idx_path: /fsx/matzeni/data/duck/ent_idx.txt
 output_repr_path: null

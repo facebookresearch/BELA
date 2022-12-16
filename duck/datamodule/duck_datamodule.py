@@ -431,6 +431,7 @@ class EdDuckDataModule(LightningDataModule):
         batch_size: int = 2,
         num_neighbors_per_entity: int = 1,
         shuffle: bool = True,
+        num_workers: int = 0,
         **kwargs
     ):
         super().__init__()
@@ -445,6 +446,8 @@ class EdDuckDataModule(LightningDataModule):
             rel_catalogue_idx_path, rel_catalogue_data_path
         )
 
+        self.dataset_cache = {}
+
         logger.info(f"Reading mapping from Wikipedia titles to Wikidata IDs: {wikipedia_to_wikidata_path}")
         self.label_to_id = load_pkl(wikipedia_to_wikidata_path)
         self.label_to_id = {k: sorted(list(v))[0] for k, v in self.label_to_id.items()}
@@ -458,12 +461,12 @@ class EdDuckDataModule(LightningDataModule):
                 if e in self.label_to_id
             }
 
-        self.num_workers = 0
+        self.num_workers = num_workers
         self.duck_neighbors = None
         if neighbors_path is not None:
             logger.info(f"Reading neighbors: {neighbors_path}")
             self.duck_neighbors = load_json(neighbors_path)
-            self._map_neighbors_to_id()
+            # self._map_neighbors_to_id()
             
         self.transform.max_num_rels = max(len(rels) for rels in self.ent_to_rel.values())
         self.shuffle = shuffle
@@ -491,7 +494,9 @@ class EdDuckDataModule(LightningDataModule):
         return self.duck_neighbors
     
     def _duck_dataset(self, path, **kwargs):
-        return EdDuckDataset(
+        if path in self.dataset_cache:
+            return self.dataset_cache[path]
+        dataset = EdDuckDataset(
                 path,
                 self.ent_catalogue,
                 self.rel_catalogue,
@@ -503,6 +508,8 @@ class EdDuckDataModule(LightningDataModule):
                 batch_size=self.batch_size,
                 **kwargs
             )
+        self.dataset_cache[path] = dataset
+        return dataset
     
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
@@ -619,7 +626,6 @@ class EdDuckDataModule(LightningDataModule):
         entity_indexes += [0] * pad_length
         relation_ids += [[0] * self.transform.max_num_rels] * pad_length
         
-
         result = self.transform(
             {
                 "left_context": left_context,

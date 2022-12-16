@@ -58,10 +58,9 @@ def main(config: DictConfig):
     trainer = Trainer(
         **config.trainer,
         callbacks=callbacks,
-        logger=logger,
-        resume_from_checkpoint=config.get("resume_path")
+        logger=logger
     )
-    trainer.fit(task, datamodule=datamodule)
+    trainer.fit(task, datamodule=datamodule, ckpt_path=config.get("resume_path"))
 
 
 if __name__ == "__main__":

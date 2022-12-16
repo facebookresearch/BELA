@@ -3,6 +3,7 @@ log_dir: /checkpoints/matzeni/duck/logs
 ckpt_dir: /checkpoints/matzeni/duck/checkpoints
 run_name: duck
 debug: False
+resume_path: null
 
 defaults:
   - optim: adamw
@@ -13,8 +14,8 @@ data:
   _target_: duck.datamodule.EdDuckDataModule
   train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
   val_paths:
-    aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
     blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
+    aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
     aida_dev: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
     ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
@@ -23,7 +24,7 @@ data:
     msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
     wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
   test_paths:
-    aida_test: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
+    aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
     ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
     acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
     clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
@@ -35,11 +36,13 @@ data:
   ent_catalogue_data_path: /fsx/matzeni/data/duck/bert_ent_256_tok_ids.h5
   rel_catalogue_idx_path: /fsx/matzeni/data/duck/rel_idx.txt
   rel_catalogue_data_path: /fsx/matzeni/data/duck/bert_rel_256_repr.h5
-  # neighbors_path: /fsx/matzeni/data/duck/duck_neighbors.json
+  neighbors_path: null
   stop_rels_path: /fsx/matzeni/data/duck/stop_rels.jsonl
-  batch_size: 32
-  num_neighbors_per_entity: 1
+  batch_size: 16
+  num_neighbors_per_entity: 3
+  max_num_neighbors_per_batch: 16
   shuffle: True
+  num_workers: 10
   transform:
     _target_: duck.datamodule.DuckTransform
     model_path: ${language_model}
@@ -51,7 +54,7 @@ task:
   _target_: duck.task.Duck
 
 duck:
-  # rel_to_box_model: ${ckpt_dir}/r2b_wd/r2b_wd_origin_epoch=79_kldiv_train=0.0018_last.ckpt
+  # rel_to_box_model: ${ckpt_dir}/r2b_wd/r2b_wd_origin_epoch=373_kldiv_train=0.0010_last.ckpt
   base_model:
       _target_: bela.models.hf_encoder.HFEncoder
       model_path: ${language_model}
@@ -79,7 +82,7 @@ trainer:
 checkpoint_callback:
   _target_: pytorch_lightning.callbacks.ModelCheckpoint
   monitor: val_f1
-  every_n_train_steps: 10001
+  every_n_train_steps: 5001
   mode: max
   save_last: true
   verbose: true

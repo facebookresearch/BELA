@@ -62,7 +62,7 @@ class EntityCatalogue:
                 self.entities.append(ent_id)
 
     def __len__(self):
-        return len(self.idx)
+        return len(self.entities)
 
     def __getitem__(self, entity_id):
         ent_index = self.idx[entity_id]
