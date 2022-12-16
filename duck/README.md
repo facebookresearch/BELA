@@ -184,3 +184,6 @@ All the code is contained in the ```duck``` directory and structured as follows.
 * The ```modules``` folder contains several neural modules used in the project.
 * The ```preprocessing``` folder contains preprocessing scripts, including the tokenization of entities and relations, computing conditional probabilities of relations, a script for downloading relations of an entity from the Wikidata endpoint, building the entity index and mining negatives.
 * The ```task``` directory contains the implementation of Duck and the Rel2Box model for learning box embeddings of relations.
+
+## Note
+The code logs metrics to Weights&Biases. You can disable this by setting ```wandb``` to ```false``` in ```duck/conf/duck.yaml```

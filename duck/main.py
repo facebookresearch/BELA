@@ -11,6 +11,8 @@ from pathlib import Path
 import torch
 
 def configure_wandb_logger(config):
+    if not config.get("wandb"):
+        return None
     if config.get("debug") or "fast_dev_run" in config.trainer:
         return None 
     run_name = config.run_name if "run_name" in config else None

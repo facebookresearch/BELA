@@ -4,6 +4,7 @@ ckpt_dir: /checkpoints/matzeni/duck/checkpoints
 run_name: duck
 debug: False
 resume_path: null
+wandb: True
 
 defaults:
   - optim: adamw
