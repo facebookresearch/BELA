@@ -198,6 +198,14 @@ class BoxTensor(object):
         return cls((left, right))
 
     @classmethod
+    def spherical_constructor(
+        cls: Type[TBoxTensor], v1: Tensor, v2: Tensor, margin: float = 0.1
+    ):
+        phi_left = torch.sigmoid(v1) * torch.pi
+        phi_right = phi_left + margin + torch.sigmoid(v2) * (torch.pi - phi_left)
+        return cls((phi_left, phi_right))
+
+    @classmethod
     def construct(
         cls: Type[TBoxTensor], parametrization: str, v1: Tensor, v2: Tensor
     ) -> TBoxTensor:

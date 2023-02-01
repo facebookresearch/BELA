@@ -12,6 +12,7 @@ import pickle
 import json
 import copy
 import math
+from einops import rearrange, repeat
 
 
 def tiny_value_of_dtype(dtype: torch.dtype) -> float:
@@ -361,3 +362,17 @@ def tensor_set_difference(t1, t2):
     combined = torch.cat((t1, t2))
     uniques, counts = combined.unique(return_counts=True)
     return uniques[counts == 1]
+
+def cartesian_to_spherical(cartesian):
+    n = cartesian.size(-1)
+    x = repeat(cartesian, "... n1 -> ... n1 n2", n2=n)
+    mask = torch.tril(torch.ones(n, n)) == 1
+    x = x.masked_fill(mask == 0, float(0.0))
+    x = torch.sqrt(torch.sum(x ** 2, dim=-2))
+    angle = torch.acos(cartesian[..., :-1] / x[..., :-1])
+    neg_mask = cartesian[..., -1] < 0
+    angle[neg_mask, -1] = 2 * torch.pi - angle[neg_mask, -1]
+    radius = torch.linalg.vector_norm(cartesian, ord=2, dim=-1)
+    return angle, radius
+    
+

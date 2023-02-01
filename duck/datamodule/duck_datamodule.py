@@ -435,6 +435,7 @@ class EdDuckDataModule(LightningDataModule):
         **kwargs
     ):
         super().__init__()
+        self.debug = False or kwargs.get("debug")
         self.batch_size = batch_size
         self.num_neighbors_per_entity = num_neighbors_per_entity
 
@@ -472,12 +473,19 @@ class EdDuckDataModule(LightningDataModule):
         self.shuffle = shuffle
 
         self.stop_rels = None
-        if stop_rels_path is not None:
+        if stop_rels_path is not None and not self.debug:
             self.stop_rels = set(r["id"] for r in load_jsonl(stop_rels_path))
 
+        val_paths = list(val_paths.values())
+        test_paths = list(test_paths.values())
+
+        if self.debug:
+            val_paths = val_paths[:1]
+            test_paths = test_paths[:1]
+
         self.train_dataset = self._duck_dataset(train_path)
-        self.val_datasets = [self._duck_dataset(val_path) for val_path in val_paths.values()]
-        self.test_datasets = [self._duck_dataset(test_path) for test_path in test_paths.values()]
+        self.val_datasets = [self._duck_dataset(val_path) for val_path in val_paths]
+        self.test_datasets = [self._duck_dataset(test_path) for test_path in test_paths]
         self.count = 0
         self.jump_to_batch = None
         if "jump_to_batch" in kwargs:

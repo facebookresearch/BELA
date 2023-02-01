@@ -95,6 +95,7 @@ ablations:
   blink: False
   relations_as_points: False
   joint_ent_rel_encoding: False
+  polar_coordinates: True
 
 hydra:
   run:

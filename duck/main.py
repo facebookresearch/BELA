@@ -10,6 +10,7 @@ import wandb
 from pathlib import Path
 import torch
 
+
 def configure_wandb_logger(config):
     if not config.get("wandb"):
         return None
@@ -46,7 +47,7 @@ def main(config: DictConfig):
     Path(config.log_dir).mkdir(exist_ok=True, parents=True)
     Path(config.ckpt_dir).mkdir(exist_ok=True, parents=True)
 
-    datamodule = hydra.utils.instantiate(config.data)
+    datamodule = hydra.utils.instantiate(config.data, debug=config.debug)
     task = hydra.utils.instantiate(config.task, config, data=datamodule)     
 
     callbacks = None
