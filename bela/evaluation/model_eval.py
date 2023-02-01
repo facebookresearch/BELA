@@ -57,12 +57,12 @@ def convert_sp_to_char_offsets(
     
 
 class ModelEval:
-    def __init__(self, checkpoint_path):
+    def __init__(self, checkpoint_path, config_name="joint_el_mel"):
         self.device = torch.device("cuda:0")
         
         logger.info("Create task")
         with initialize_config_module("bela/conf"):
-            cfg = compose(config_name="joint_el_mel")
+            cfg = compose(config_name=config_name)
             
         self.transform = hydra.utils.instantiate(cfg.task.transform)
         datamodule = hydra.utils.instantiate(cfg.datamodule, transform=self.transform)
@@ -271,6 +271,7 @@ class ModelEval:
                     "entities": ex_entities,
                     "scores": ex_dis_scores
                 })
+                example_idx+= 1
 
         return predictions
     
