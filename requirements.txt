@@ -8,3 +8,4 @@ transformers
 tqdm
 sentencepiece
 h5py
+protobuf==3.20

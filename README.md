@@ -5,6 +5,7 @@
 First you need to install pytorch with cuda11 support:
 
 ```
+# With python3.8
 conda install "pytorch=1.12.1=aws*" cudatoolkit=11.6 torchvision torchaudio \
 --override-channels \
 -c https://aws-pytorch.s3.us-west-2.amazonaws.com \
