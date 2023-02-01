@@ -1,6 +1,6 @@
 # Bi-encoder Entity Linking Architecture
 
-## Install requirmenets
+## Install package and requirements
 
 First you need to install pytorch with cuda11 support:
 
@@ -18,6 +18,12 @@ Then you can install other packages:
 ```
 pip install -r requirements.txt
 ```
+
+Then install the package (`-e` for dev mode)
+```
+pip install -e .
+```
+
 
 ## Runing tests
 
