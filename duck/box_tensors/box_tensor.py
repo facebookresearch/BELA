@@ -222,6 +222,8 @@ class BoxTensor(object):
             return cls.softplus_constructor
         if parametrization == "relu":
             return cls.relu_constructor
+        if parametrization == "spherical":
+            return cls.spherical_constructor
         raise ValueError(f"Unsupported parametrization {parametrization}")
 
     def __repr__(self) -> str:

@@ -364,15 +364,16 @@ def tensor_set_difference(t1, t2):
     return uniques[counts == 1]
 
 def cartesian_to_spherical(cartesian):
+    eps = 1e-6
     n = cartesian.size(-1)
     x = repeat(cartesian, "... n1 -> ... n1 n2", n2=n)
-    mask = torch.tril(torch.ones(n, n)) == 1
+    mask = torch.tril(torch.ones(n, n, device=cartesian.device)) == 1
     x = x.masked_fill(mask == 0, float(0.0))
-    x = torch.sqrt(torch.sum(x ** 2, dim=-2))
+    x = torch.sqrt(torch.sum(x ** 2, dim=-2)) + eps
     angle = torch.acos(cartesian[..., :-1] / x[..., :-1])
     neg_mask = cartesian[..., -1] < 0
     angle[neg_mask, -1] = 2 * torch.pi - angle[neg_mask, -1]
     radius = torch.linalg.vector_norm(cartesian, ord=2, dim=-1)
-    return angle, radius
+    return radius, angle
     
 

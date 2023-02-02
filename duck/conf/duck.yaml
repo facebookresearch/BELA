@@ -14,11 +14,12 @@ defaults:
 data:
   _target_: duck.datamodule.EdDuckDataModule
   train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
+  # train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_paths:
-    blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
-    aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
+    aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
     aida_dev: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
+    blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
     ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
     acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
     clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
@@ -62,12 +63,13 @@ duck:
   boxes:
     intersection_temperature: 0.0001
     volume_temperature: 0.1
-    parametrization: relu
+    parametrization: spherical
   num_negative_boxes: 30 
   duck_loss:
     _target_: duck.task.duck_entity_disambiguation.DuckMaxMarginRankingLoss
-    margin: 20.0
+    margin: 50.0
     inside_weight: 0.2
+    norm: 1
     # _target_: duck.task.duck_entity_disambiguation.GumbelBoxMembershipNLLLoss
     # intersection_temperature: 0.1
     # _target_: duck.task.duck_entity_disambiguation.DuckNCEMarginLoss
@@ -95,7 +97,6 @@ ablations:
   blink: False
   relations_as_points: False
   joint_ent_rel_encoding: False
-  polar_coordinates: True
 
 hydra:
   run:

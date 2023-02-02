@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from duck.box_tensors.box_tensor import BoxTensor
-from duck.common.utils import list_to_tensor, log1mexp, logexpm1, logsubexp, mean_over_batches, tensor_set_difference, prefix_suffix_keys
+from duck.common.utils import cartesian_to_spherical, list_to_tensor, log1mexp, logexpm1, logsubexp, mean_over_batches, tensor_set_difference, prefix_suffix_keys
 from duck.modules.modules import EmbeddingToBox, JointEntRelsEncoder, TransformerSetEncoder
 from mblink.task.blink_task import ElBiEncoderTask
 from einops import rearrange, repeat
@@ -36,18 +36,20 @@ class NormEntityBoxHardDistance(nn.Module):
     def __init__(
         self,
         inside_weight: float = 0.0,
-        reduction: str = "none"
+        reduction: str = "none",
+        norm: int = 2
     ):
         super(NormEntityBoxHardDistance, self).__init__()
         self.inside_weight = inside_weight
         self.reduction = reduction
+        self.norm = norm
     
     def _dist_outside(self, entities, boxes):
         left_delta = boxes.left - entities
         right_delta = entities - boxes.right
         left_delta = torch.max(left_delta, torch.zeros_like(left_delta))
         right_delta = torch.max(right_delta, torch.zeros_like(right_delta))
-        return torch.linalg.vector_norm(left_delta + right_delta, ord=2, dim=-1)
+        return torch.linalg.vector_norm(left_delta + right_delta, ord=self.norm, dim=-1)
     
     def _dist_inside(self, entities, boxes):
         distance =  boxes.center - torch.min(
@@ -57,7 +59,7 @@ class NormEntityBoxHardDistance(nn.Module):
                 entities
             )
         )
-        return torch.linalg.vector_norm(distance, ord=2, dim=-1)
+        return torch.linalg.vector_norm(distance, ord=self.norm, dim=-1)
     
     def _reduce(self, distance):
         if self.reduction == "mean":
@@ -81,11 +83,12 @@ class DuckMaxMarginRankingLoss(nn.Module):
         distance_function=None,
         margin: float = 1.0,
         inside_weight: float = 0.1,
+        norm: int = 2,
         reduction: str = "mean",
         return_logging_metrics: bool = True
     ):
         super(DuckMaxMarginRankingLoss, self).__init__()
-        self.distance_function = distance_function or NormEntityBoxHardDistance(inside_weight=inside_weight)
+        self.distance_function = distance_function or NormEntityBoxHardDistance(inside_weight=inside_weight, norm=norm)
         self.margin = margin
         self.reduction = reduction
         self.return_logging_metrics = return_logging_metrics
@@ -685,11 +688,12 @@ class Duck(pl.LightningModule):
     
     def encode_with_boxes(self, entity, relations, relation_mask):
         entity_boxes = self.relations_to_box(relations)
-        relation_mask = relation_mask.bool()
-        centers = entity_boxes.center
-        centers[relation_mask] = 0.0
-        center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
-        entity = entity + center
+        # relation_mask = relation_mask.bool()
+        # if self.config.duck.boxes.parametrization != "spherical":
+        #     centers = entity_boxes.center
+        #     centers[relation_mask] = 0.0
+        #     center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
+        #     entity = entity + center
         return entity, entity_boxes
 
     def encode_entity_with_relations(self, entity, relation_ids):
@@ -850,8 +854,13 @@ class Duck(pl.LightningModule):
             negative_boxes = self.sample_negative_boxes(batch["relation_ids"]["data"])
             rel_ids = batch["relation_ids"]
             # rel_ids["attention_mask"] = rel_ids["attention_mask"][mask]
+            entities_ = entities
+            if self.config.duck.boxes.parametrization == "spherical":
+                entity_boxes, negative_boxes, entities_ = self.handle_spherical_coord(
+                    entity_boxes, negative_boxes, entities_
+                )
             duck_loss = self.duck_loss(
-                entities,
+                entities_,
                 entity_boxes,
                 negative_boxes,
                 rel_ids=rel_ids
@@ -894,6 +903,14 @@ class Duck(pl.LightningModule):
         metrics["loss"] = loss
 
         return metrics
+
+    def handle_spherical_coord(self, entity_boxes, negative_boxes, entities_):
+        _, entities_ = cartesian_to_spherical(entities_)
+        entities_ = entities_[..., :-1]  # drop last coord to keep the range [0, pi]
+        # assert ((entities_ - torch.pi) < 1e-2).all()
+        entity_boxes = entity_boxes[..., :entities_.size(-1)]
+        negative_boxes = negative_boxes[..., :entities_.size(-1)]
+        return entity_boxes, negative_boxes, entities_
 
     def training_epoch_end(self, outputs):
         mean_metrics = mean_over_batches(outputs, suffix="epoch")

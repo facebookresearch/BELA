@@ -32,6 +32,8 @@ def configure_wandb_logger(config):
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     seed_prg(ngpus=config.trainer.devices)
+
+    torch.set_float32_matmul_precision("high")
     
     os.environ["NCCL_NSOCKS_PERTHREAD"] = "4"
     os.environ["NCCL_SOCKET_NTHREADS"] = "2"
