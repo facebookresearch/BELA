@@ -63,6 +63,7 @@ class ModelEval:
         logger.info("Create task")
         with initialize_config_module("bela/conf"):
             cfg = compose(config_name=config_name)
+            cfg.task.load_from_checkpoint = checkpoint_path  # Overwrite checkpoint path in config
             
         self.transform = hydra.utils.instantiate(cfg.task.transform)
         datamodule = hydra.utils.instantiate(cfg.datamodule, transform=self.transform)

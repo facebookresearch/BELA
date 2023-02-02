@@ -11,7 +11,7 @@ from .sentencepiece_pb2 import SentencePieceText
 class SPMTransform(nn.Module):
     def __init__(
         self,
-        sp_model_path: Optional[str],
+        sp_model_path: Optional[str] = None,
         max_seq_len: int = 256,
         add_special_tokens: bool = True,
     ):
