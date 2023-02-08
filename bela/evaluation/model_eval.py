@@ -1,3 +1,4 @@
+from pathlib import Path
 import yaml
 from hydra.experimental import compose, initialize_config_module
 import hydra
@@ -7,13 +8,13 @@ import json
 import faiss
 import logging
 
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Union, List, Dict, Any, Tuple
 
 
 logger = logging.getLogger(__name__)
 
 
-def load_file(path):
+def load_file(path: Union[str, Path]) -> List[Dict[str, Any]]:
     all_data = []
     with open(path, 'rt') as fd:
         for line in tqdm(fd):
