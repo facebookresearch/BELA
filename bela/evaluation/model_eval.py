@@ -64,8 +64,10 @@ class ModelEval:
         with initialize_config_module("bela/conf"):
             cfg = compose(config_name=config_name)
             cfg.task.load_from_checkpoint = checkpoint_path  # Overwrite checkpoint path in config
+        self.checkpoint_path = checkpoint_path
             
         self.transform = hydra.utils.instantiate(cfg.task.transform)
+        # TODO: The datamodule instanciation takes 90s due to the memory map in joint_el_datamodule.py: prun output: 91.197   91.197 joint_el_datamodule.py:166(__init__)
         datamodule = hydra.utils.instantiate(cfg.datamodule, transform=self.transform)
         self.task = hydra.utils.instantiate(cfg.task, datamodule=datamodule, _recursive_=False)
         
