@@ -15,7 +15,6 @@ from einops import rearrange
 logger = logging.getLogger()
 
 
-
 from typing import Any, Sequence
 from tqdm import tqdm
 import logging
@@ -36,7 +35,7 @@ logger = logging.getLogger()
 class DuckHardNegativeMiner:
     def __init__(self, config):
         self.config = config
-        self.duck = Duck.load_from_checkpoint(config.resume_path)
+        self.duck = Duck.load_from_checkpoint(config.ckpt_path)
         self.duck.eval()
         with open_dict(self.duck.config):
             self.duck.config.debug = config.debug
@@ -47,6 +46,8 @@ class DuckHardNegativeMiner:
         self.duck = self.duck.cuda().to(self.device)
         self.duck.setup_entity_index_sequential()
         self.index = self.duck.ent_index.detach().to(self.device)
+        if self.config.get("output_index_path"):
+            torch.save(self.index.cpu(), config.output_index_path)
         
     def mine_negatives(self):
         self.duck.eval()
@@ -57,7 +58,6 @@ class DuckHardNegativeMiner:
             index_size = 10000
             logger.info(f"Debug mode: using an index size of {index_size}")
         negative_indices = []
-        torch.set_grad_enabled(False)
         for i in tqdm(range(0, index_size, bsz)):
             batch = self.index[i:i + bsz]
             scores = torch.matmul(
@@ -79,7 +79,8 @@ class DuckHardNegativeMiner:
 def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     miner = DuckHardNegativeMiner(config)
-    miner.mine_negatives()
+    if not config.only_save_index:
+        miner.mine_negatives()
 
 
 if __name__ == "__main__":
@@ -91,7 +92,7 @@ if __name__ == "__main__":
 #     def __init__(self, config):
 #         super(DuckHardNegativeMiner, self).__init__()
 #         self.config = config
-#         self.duck = Duck.load_from_checkpoint(config.resume_path)
+#         self.duck = Duck.load_from_checkpoint(config.ckpt_path)
 #         with open_dict(self.duck.config):
 #             self.duck.config.debug = config.debug
 #             self.duck.config.trainer = config.lightning

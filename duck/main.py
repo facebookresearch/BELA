@@ -9,6 +9,7 @@ from pytorch_lightning.loggers import WandbLogger
 import wandb
 from pathlib import Path
 import torch
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 
 def configure_wandb_logger(config):
@@ -33,7 +34,7 @@ def main(config: DictConfig):
     print(OmegaConf.to_yaml(config))
     seed_prg(ngpus=config.trainer.devices)
 
-    torch.set_float32_matmul_precision("high")
+    # torch.set_float32_matmul_precision("high")
     
     os.environ["NCCL_NSOCKS_PERTHREAD"] = "4"
     os.environ["NCCL_SOCKET_NTHREADS"] = "2"
@@ -52,11 +53,15 @@ def main(config: DictConfig):
     datamodule = hydra.utils.instantiate(config.data, debug=config.debug)
     task = hydra.utils.instantiate(config.task, config, data=datamodule)     
 
-    callbacks = None
+    callbacks = []
     if not config.get("debug") and config.get("checkpoint_callback") is not None:
         checkpoint_callback = hydra.utils.instantiate(config.checkpoint_callback)
         checkpoint_callback.CHECKPOINT_NAME_LAST = config.checkpoint_callback.filename + "_last"
-        callbacks = checkpoint_callback
+        callbacks.append(checkpoint_callback)
+    
+    if config.get("early_stopping") is not None:
+        early_stopping = hydra.utils.instantiate(config.early_stopping)
+        callbacks.append(early_stopping)
 
     logger = configure_wandb_logger(config)
 

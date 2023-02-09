@@ -417,8 +417,8 @@ class Duck(pl.LightningModule):
         self.setup(stage)
         with open_dict(self.config):
             self.config.stage = "loading"
-        if not self.no_box_ablation:
-            self.gather_on_ddp = False
+        # if not self.no_box_ablation:
+        #     self.gather_on_ddp = False
 
         self.datasets = {
             "val": [d.upper() for d in dict(self.config.data.val_paths).keys()],
@@ -457,7 +457,6 @@ class Duck(pl.LightningModule):
         self.free_index()
 
     def setup_entity_index(self) -> None:
-        self.eval()
         torch.cuda.empty_cache()
         num_entities = len(self.data.ent_catalogue.entities)
         world_size = self.config.trainer.devices * self.config.trainer.num_nodes
@@ -488,7 +487,7 @@ class Duck(pl.LightningModule):
                     end_index = min(i + bsz, end)
                     ent_batch = ent_emb_dataset.get_slice(i, end_index)
                     ent_batch = self.data.transform.transform_ent_data(ent_batch)
-                    ent_batch = self.transfer_batch_to_device(ent_batch)
+                    ent_batch = self.batch_to_device(ent_batch)
                     entity_repr = self.encode_entity(ent_batch)
                     local_index[i - start:end_index - start] = entity_repr.half().detach()
             logger.info("Gathering local indices")
@@ -503,7 +502,6 @@ class Duck(pl.LightningModule):
             self.ent_index = ent_index_cpu.detach().to(self.device)
     
     def setup_entity_index_sequential(self) -> None:
-        self.eval()
         num_entities = len(self.data.ent_catalogue.entities)
         ent_emb_dataset = self.data.train_dataset.ent_emb_dataset
 
@@ -530,18 +528,18 @@ class Duck(pl.LightningModule):
                 end_index = min(i + bsz, num_entities)
                 ent_batch = ent_emb_dataset.get_slice(i, end_index)
                 ent_batch = self.data.transform.transform_ent_data(ent_batch)
-                ent_batch = self.transfer_batch_to_device(ent_batch)
+                ent_batch = self.batch_to_device(ent_batch)
                 entity_repr = self.encode_entity(ent_batch)
                 self.ent_index[i:i + bsz] = entity_repr.detach()
     
-    def transfer_batch_to_device(
+    def batch_to_device(
         self,
         batch: Any,
         device: torch.device = None,
         dataloader_idx: int = 0
     ) -> Any:
         device = device or self.device
-        return super().transfer_batch_to_device(batch, device, dataloader_idx)
+        return self.transfer_batch_to_device(batch, device, dataloader_idx)
     
     def encode_entity(self, ent_batch):
         entities = ent_batch["entities"]
@@ -550,15 +548,15 @@ class Duck(pl.LightningModule):
             attention_mask=entities["attention_mask"],
         )
         
-        entity_boxes = None
-        if not self.no_box_ablation:
-            rel_ids = ent_batch["relation_ids"]["data"]
-            entity_boxes = self.relations_to_box(rel_ids)
-            relation_mask = ent_batch["relation_ids"]["attention_mask"].bool()
-            centers = entity_boxes.center
-            centers[relation_mask] = 0.0
-            center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
-            entity_repr = entity_repr + center  
+        # entity_boxes = None
+        # if not self.no_box_ablation:
+        #     rel_ids = ent_batch["relation_ids"]["data"]
+        #     entity_boxes = self.relations_to_box(rel_ids)
+        #     relation_mask = ent_batch["relation_ids"]["attention_mask"].bool()
+        #     centers = entity_boxes.center
+        #     centers[relation_mask] = 0.0
+        #     center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
+        #     entity_repr = entity_repr + center  
         # elif self.joint_ent_rel_encoding:
             #relations = self.rel_encoder(ent_batch["relation_ids"]["data"])
             # entity_repr = self.joint_ent_rel_transformer(
@@ -578,6 +576,7 @@ class Duck(pl.LightningModule):
         if stage == "loading" or self.data is None:
             with open_dict(self.config):
                 self.config.data.val_paths = {}
+                self.config.data.test_paths = {}
                 self.config.data.train_path = "/fsx/matzeni/data/GENRE/aida-train-kilt.jsonl"
             self.data = hydra.utils.instantiate(self.config.data)
         
@@ -588,6 +587,13 @@ class Duck(pl.LightningModule):
         self.mention_encoder = self.biencoder_task.mention_encoder
         self.entity_encoder = self.biencoder_task.entity_encoder
         self.dim = self.entity_encoder.transformer.config.hidden_size
+        self.box_size = self.dim
+        if self.config.duck.boxes.get("dimensions") is not None:
+            dimensions = self.config.duck.boxes.get("dimensions") 
+            if isinstance(dimensions, float):
+                self.box_size = int(dimensions * self.dim)
+            else:
+                self.box_size = dimensions
         self.intersection = Intersection(
             intersection_temperature=self.config.duck.boxes.intersection_temperature,
             dim=0
@@ -631,7 +637,7 @@ class Duck(pl.LightningModule):
         logger.info(f"Setting up box embeddings with {parametrization} parametrization")
         self.rel_encoder = BoxEmbedding(
             len(self.data.rel_catalogue),
-            self.entity_encoder.transformer.config.hidden_size,
+            self.box_size,
             box_parametrizaton=parametrization,
             universe_idx=0
         )
@@ -651,7 +657,8 @@ class Duck(pl.LightningModule):
         self.rel_encoder = EmbeddingToBox(
             embeddings=embeddings,
             box_parametrization=parametrization,
-            padding_idx=0
+            padding_idx=0,
+            output_size=self.box_size
         )
 
     def _setup_rel_to_point_encoder(self):
@@ -854,7 +861,9 @@ class Duck(pl.LightningModule):
             negative_boxes = self.sample_negative_boxes(batch["relation_ids"]["data"])
             rel_ids = batch["relation_ids"]
             # rel_ids["attention_mask"] = rel_ids["attention_mask"][mask]
-            entities_ = entities
+            entities_ = entities[..., :self.box_size]
+            entity_boxes = entity_boxes[..., :self.box_size]
+            negative_boxes = negative_boxes[..., :self.box_size]
             if self.config.duck.boxes.parametrization == "spherical":
                 entity_boxes, negative_boxes, entities_ = self.handle_spherical_coord(
                     entity_boxes, negative_boxes, entities_
@@ -943,28 +952,28 @@ class Duck(pl.LightningModule):
             target = torch.cat([o["target"] for o in dataset_outputs])
             topk = [o["topk"] for o in dataset_outputs]
             micro_f1 = self.micro_f1["val"][dataset](preds, target)
-            logging_metrics[f"{dataset}/Micro-F1"] = self.micro_f1["val"][dataset]
-            value_metrics[f"{dataset}/Micro-F1"] = micro_f1
+            logging_metrics[f"Micro-F1/{dataset}"] = self.micro_f1["val"][dataset]
+            value_metrics[f"Micro-F1/{dataset}"] = micro_f1
             for k in self.recall_steps:
                 recall = self.recall_at_k(topk, target, k, dataset)
-                logging_metrics[f"{dataset}/Recall@{k}"] = self.retrieval_recall["val"][dataset]
-                value_metrics[f"{dataset}/Recall@{k}"] = recall
+                logging_metrics[f"Recall@{k}/{dataset}"] = self.retrieval_recall["val"][dataset]
+                value_metrics[f"Recall@{k}/{dataset}"] = recall
             tqdm.write(f"Micro F1 on {dataset}: \t{micro_f1:.4f}")
         
         avg_metrics = {}
         for dataset_metric in value_metrics:
-            avg_metric_key = dataset_metric.split("/")[-1]
-            dataset_name = dataset_metric.split("/")[0]
+            avg_metric_key = dataset_metric.split("/")[0]
+            dataset_name = dataset_metric.split("/")[-1]
             if dataset_name not in self.datasets["test"]:
                 continue
             avg_metric_value = torch.stack([
                 v for k, v in value_metrics.items()
                 if avg_metric_key in k
             ]).mean()
-            avg_metrics["Average/" + avg_metric_key] = avg_metric_value
+            avg_metrics[ avg_metric_key + "/Average"] = avg_metric_value
         logging_metrics.update(avg_metrics)
-        logging_metrics["avg_micro_f1"] = logging_metrics["Average/Micro-F1"]
-        logging_metrics["val_f1"] = logging_metrics.get("BLINK_DEV/Micro-F1") or logging_metrics["avg_micro_f1"]
+        logging_metrics["avg_micro_f1"] = logging_metrics["Micro-F1/Average"]
+        logging_metrics["val_f1"] = logging_metrics.get("Micro-F1/BLINK_DEV") or logging_metrics["avg_micro_f1"]
         self.log_dict(logging_metrics, sync_dist=True)
     
     def recall_at_k(self, top, target, k, dataset, stage="val"):

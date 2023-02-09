@@ -280,7 +280,8 @@ class JointEntRelsEncoder(nn.Module):
         hidden_dim: int = None,
         num_layers: int = 3,
         attn_heads: int = 8,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        enable_nested_tensor: bool = False
     ):
         super(JointEntRelsEncoder, self).__init__()
         self.dim = dim
@@ -289,7 +290,14 @@ class JointEntRelsEncoder(nn.Module):
             dim, attn_heads, dim_feedforward=hidden_dim, dropout=dropout, batch_first=True
         )
         norm = nn.LayerNorm(dim)
-        self.transformer_encoder = nn.TransformerEncoder(transformer_encoder_layer, num_layers, norm=norm)
+        self.enable_nested_tensor = enable_nested_tensor
+        self.transformer_encoder = nn.TransformerEncoder(
+            transformer_encoder_layer,
+            num_layers,
+            norm=norm,
+            ## remove for compatibility with previous versions of pytorch
+            # enable_nested_tensor=self.enable_nested_tensor
+        )
         transformer_decoder_layer = nn.TransformerDecoderLayer(
             dim, attn_heads, dim_feedforward=hidden_dim, dropout=dropout, batch_first=True
         )
@@ -313,8 +321,11 @@ class JointEntRelsEncoder(nn.Module):
         rels = torch.cat([pad, rels], dim=1)
         attention_mask = torch.cat([pad_mask, attention_mask], dim=1)
         rels = self.transformer_encoder(rels, src_key_padding_mask=~attention_mask)
-        rels[~attention_mask] = 0.
-        result = self.transformer_decoder(entities.unsqueeze(1), rels, memory_key_padding_mask=~attention_mask)
+        if not self.enable_nested_tensor:
+            rels[~attention_mask] = 0.
+            result = self.transformer_decoder(entities.unsqueeze(1), rels, memory_key_padding_mask=~attention_mask)
+        else:
+            result = self.transformer_decoder(entities.unsqueeze(1), rels)
         return result.squeeze(1)
 
     
@@ -445,12 +456,14 @@ class EmbeddingToBox(nn.Module):
         self,
         embeddings: torch.Tensor,
         box_parametrization: str = "softplus",
-        padding_idx: Optional[int] = None
+        padding_idx: Optional[int] = None,
+        output_size: Optional[int] = None
     ):
         super(EmbeddingToBox, self).__init__()
         self.embedding = nn.Embedding.from_pretrained(embeddings, padding_idx=padding_idx)
         self.dim = embeddings.size(-1)
-        self.hidden_dim = 2 * self.dim
+        self.output_size = output_size or self.dim
+        self.hidden_dim = 2 * self.output_size
         self.ffn = nn.Sequential(
             nn.Linear(self.dim, self.hidden_dim),
             nn.ReLU(),

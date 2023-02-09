@@ -633,7 +633,8 @@ class EdDuckDataModule(LightningDataModule):
         ] * pad_length
         entity_indexes += [0] * pad_length
         relation_ids += [[0] * self.transform.max_num_rels] * pad_length
-        
+        # relation_ids, mask = order_relations(relation_ids)
+
         result = self.transform(
             {
                 "left_context": left_context,
@@ -704,3 +705,24 @@ def order_entities(
         filtered_relation_labels,
         targets
     )
+
+
+def order_relations(
+    relation_ids
+):
+    flat_relation_ids = [r for rels in relation_ids for r in rels]
+    rel_id_map = {}
+    for r in flat_relation_ids:
+        if r not in rel_id_map:
+            rel_id_map[r] = len(rel_id_map)
+    
+    filtered_relation_ids = list(rel_id_map.keys())
+    mask = torch.full(
+        (len(relation_ids), len(filtered_relation_ids)),
+        False
+    )
+    for i, rels in enumerate(relation_ids):
+        indexes = [rel_id_map[r] for r in rels]
+        mask[i][indexes] = True
+
+    return filtered_relation_ids, mask

@@ -7,3 +7,6 @@ wandb
 .hydra
 *.log
 .ipynb_checkpoints
+logs/*
+ckpt/*
+*.ckpt

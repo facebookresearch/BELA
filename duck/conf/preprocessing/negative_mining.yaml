@@ -1,8 +1,10 @@
 ckpt_dir: /checkpoints/matzeni/duck/checkpoints/duck
-resume_path: ${ckpt_dir}/duck_joint_epoch=1_avg_micro_f1=0.624.ckpt
-output_path: /fsx/matzeni/data/duck/negatives_duck_joint_epoch=1_avg_micro_f1=0.624.json
+ckpt_path: ${ckpt_dir}/duck_joint_epoch=1_val_f1=0.624.ckpt
+output_path: /fsx/matzeni/data/duck/negatives_duck_joint_epoch=1_val_f1=0.624.json
+output_index_path: /fsx/matzeni/data/duck/embeddings_duck_joint_epoch=1_val_f1=0.624.pt
 debug: False
 batch_size: 32
 num_negatives: 20
 devices: 1
 num_nodes: 1
+only_save_index: False

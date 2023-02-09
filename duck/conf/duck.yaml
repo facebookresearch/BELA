@@ -64,6 +64,7 @@ duck:
     intersection_temperature: 0.0001
     volume_temperature: 0.1
     parametrization: spherical
+    dimensions: 0.5
   num_negative_boxes: 30 
   duck_loss:
     _target_: duck.task.duck_entity_disambiguation.DuckMaxMarginRankingLoss
@@ -92,6 +93,13 @@ checkpoint_callback:
   filename: ${run_name}_{epoch}_{val_f1:.3f}
   save_top_k: 1
   dirpath: ${ckpt_dir}
+
+early_stopping:
+  _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+  monitor: val_f1
+  mode: max
+  patience: 10
+  verbose: true
 
 ablations:
   blink: False

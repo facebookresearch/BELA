@@ -10,11 +10,11 @@
 #SBATCH --ntasks-per-node=8
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=0
-#SBATCH --time=5-00:00:00
+#SBATCH --time=72:00:00
 
 export PYTHONPATH=.:$PYTHONPATH
 ## export NCCL_SOCKET_IFNAME=ens32
 
 module purge
 
-srun python duck/main.py run_name=duck_spherical trainer=1host data.batch_size=32 duck.boxes.parametrization=spherical
+srun python duck/main.py run_name=duck_spherical_bsz4 trainer=1host data.batch_size=4 trainer.val_check_interval=40000 duck.boxes.parametrization=spherical

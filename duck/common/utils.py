@@ -372,7 +372,7 @@ def cartesian_to_spherical(cartesian):
     x = torch.sqrt(torch.sum(x ** 2, dim=-2)) + eps
     angle = torch.acos(cartesian[..., :-1] / x[..., :-1])
     neg_mask = cartesian[..., -1] < 0
-    angle[neg_mask, -1] = 2 * torch.pi - angle[neg_mask, -1]
+    angle[neg_mask, -1] = 2 * math.pi - angle[neg_mask, -1]
     radius = torch.linalg.vector_norm(cartesian, ord=2, dim=-1)
     return radius, angle
     
