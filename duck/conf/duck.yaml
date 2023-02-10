@@ -13,25 +13,25 @@ defaults:
 
 data:
   _target_: duck.datamodule.EdDuckDataModule
-  train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
-  # train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
+  # train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
+  train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
     aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
     aida_dev: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
-    blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
-    ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
-    acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
-    clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
-    msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
-    wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
+    # blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
+    # ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
+    # acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
+    # clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
+    # msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
+    # wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
   test_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
-    ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
-    acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
-    clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
-    msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
-    wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
+    # ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
+    # acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
+    # clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
+    # msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
+    # wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
   ent_to_rel_path: /fsx/matzeni/data/duck/ent_to_rel.json
   wikipedia_to_wikidata_path: /fsx/matzeni/data/duck/wikipedia_to_wikidata_en.pkl
   ent_catalogue_idx_path: /fsx/matzeni/data/duck/ent_idx.txt
@@ -40,7 +40,7 @@ data:
   rel_catalogue_data_path: /fsx/matzeni/data/duck/bert_rel_256_repr.h5
   neighbors_path: null
   stop_rels_path: /fsx/matzeni/data/duck/stop_rels.jsonl
-  batch_size: 16
+  batch_size: 32
   num_neighbors_per_entity: 3
   max_num_neighbors_per_batch: 16
   shuffle: True
@@ -64,18 +64,21 @@ duck:
     intersection_temperature: 0.0001
     volume_temperature: 0.1
     parametrization: spherical
-    dimensions: 0.5
+    # dimensions: 0.5
   num_negative_boxes: 30 
   duck_loss:
-    _target_: duck.task.duck_entity_disambiguation.DuckMaxMarginRankingLoss
-    margin: 50.0
-    inside_weight: 0.2
-    norm: 1
+    # _target_: duck.task.duck_entity_disambiguation.DuckMaxMarginRankingLoss
+    # margin: 50.0
+    # inside_weight: 0.0
+    # norm: 1
     # _target_: duck.task.duck_entity_disambiguation.GumbelBoxMembershipNLLLoss
     # intersection_temperature: 0.1
-    # _target_: duck.task.duck_entity_disambiguation.DuckNCEMarginLoss
-    # margin: 25
-    # inside_weight: 0.2
+    _target_: duck.task.duck_entity_disambiguation.DuckNCEMarginLoss
+    distance_function:
+      _target_: duck.task.duck_entity_disambiguation.Q2BDistance
+      inside_weight: 0.0
+      norm: 1
+    margin: 5
 
 trainer:
   max_epochs: 30

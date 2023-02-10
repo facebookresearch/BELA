@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from duck.box_tensors.box_tensor import BoxTensor
-from duck.common.utils import cartesian_to_spherical, list_to_tensor, log1mexp, logexpm1, logsubexp, mean_over_batches, tensor_set_difference, prefix_suffix_keys
+from duck.common.utils import cartesian_to_spherical, expand_box_with_mask, expand_with_mask, list_to_tensor, log1mexp, logexpm1, logsubexp, mean_over_batches, tensor_set_difference, prefix_suffix_keys
 from duck.modules.modules import EmbeddingToBox, JointEntRelsEncoder, TransformerSetEncoder
 from mblink.task.blink_task import ElBiEncoderTask
 from einops import rearrange, repeat
@@ -32,14 +32,14 @@ transformers.logging.set_verbosity_error()
 logger = logging.getLogger(__name__)
 
 
-class NormEntityBoxHardDistance(nn.Module):
+class Q2BDistance(nn.Module):
     def __init__(
         self,
         inside_weight: float = 0.0,
         reduction: str = "none",
         norm: int = 2
     ):
-        super(NormEntityBoxHardDistance, self).__init__()
+        super(Q2BDistance, self).__init__()
         self.inside_weight = inside_weight
         self.reduction = reduction
         self.norm = norm
@@ -76,19 +76,38 @@ class NormEntityBoxHardDistance(nn.Module):
             inside_distance = self._dist_inside(entities, boxes)
         outside_distance = self._dist_outside(entities, boxes)
         return outside_distance + self.inside_weight * inside_distance
-        
+
+
+# class BoxEDistance(nn.Module):
+#     def __init__(
+#         self,
+#         reduction: str = "none",
+#         norm: int = 2
+#     ):
+#         super(BoxEDistance, self).__init__()
+#         self.reduction = reduction
+#         self.norm = norm
+
+#     def forward(self, entity, box):
+#         width = box.right - box.left
+#         widthp1 = width + 1
+#         dist = torch.abs(entity - box.center) / widthp1
+#         outside_mask = (entity < box.left) | (entity > box.right)
+#         kappa = 0.5 * width * (widthp1 - (1 / widthp1))
+#         dist_outside = torch.abs(entity - box.center) * widthp1 - kappa
+#         dist[outside_mask] = dist_outside[outside_mask]
+#         return torch.linalg.vector_norm(dist, ord=self.norm, dim=-1)
+    
 
 class DuckMaxMarginRankingLoss(nn.Module):
     def __init__(self,
         distance_function=None,
         margin: float = 1.0,
-        inside_weight: float = 0.1,
-        norm: int = 2,
         reduction: str = "mean",
         return_logging_metrics: bool = True
     ):
         super(DuckMaxMarginRankingLoss, self).__init__()
-        self.distance_function = distance_function or NormEntityBoxHardDistance(inside_weight=inside_weight, norm=norm)
+        self.distance_function = distance_function
         self.margin = margin
         self.reduction = reduction
         self.return_logging_metrics = return_logging_metrics
@@ -119,11 +138,11 @@ class DuckMaxMarginRankingLoss(nn.Module):
         negative_dist = self.distance_function(entities, negative_boxes).mean(dim=0)
         
         rel_ids = kwargs.get("rel_ids")
-        mask= torch.full_like(positive_dist, True).bool()
+        mask = torch.full_like(positive_dist, True).bool()
         if rel_ids is not None:
             mask = rel_ids["attention_mask"].bool()
             mask = rearrange(mask, "b n -> n b")
-            mask[0, :] = True  # if the entity has no relations it is placed in the universe
+            # mask[0, :] = True  # if the entity has no relations it is placed in the universe
         positive_dist[~mask] = 0.0
         positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
         delta = positive_dist - negative_dist + self.margin
@@ -143,11 +162,10 @@ class DuckNCEMarginLoss(nn.Module):
     def __init__(self,
         distance_function=None,
         margin: float = 1.0,
-        inside_weight: float = 0.1,
         reduction: str = "mean"
     ):
         super(DuckNCEMarginLoss, self).__init__()
-        self.distance_function = distance_function or NormEntityBoxHardDistance(inside_weight=inside_weight)
+        self.distance_function = distance_function
         self.margin = margin
         self.reduction = reduction
     
@@ -172,8 +190,18 @@ class DuckNCEMarginLoss(nn.Module):
             positive_boxes = positive_boxes.rearrange("b n d -> n b d")
         else:
             positive_boxes = positive_boxes.rearrange("b d -> 1 b d")
+        
         positive_dist = self.distance_function(entities, positive_boxes)
-        negative_dist = self.distance_function(entities, negative_boxes)
+        negative_dist = self.distance_function(entities, negative_boxes).mean(dim=0)
+        
+        rel_ids = kwargs.get("rel_ids")
+        mask = torch.full_like(positive_dist, True).bool()
+        if rel_ids is not None:
+            mask = rel_ids["attention_mask"].bool()
+            mask = rearrange(mask, "b n -> n b")
+            # mask[0, :] = True  # if the entity has no relations it is placed in the universe
+        positive_dist[~mask] = 0.0
+        positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
 
         eps = 1e-6
         positive_term = torch.sigmoid(self.margin - positive_dist) + eps
@@ -181,7 +209,13 @@ class DuckNCEMarginLoss(nn.Module):
         negative_term = torch.sigmoid(negative_dist - self.margin) + eps
         negative_term = negative_term.clamp_max(1.0).log().mean(dim=0)
         loss = -positive_term - negative_term
-        return self._reduce(loss)
+        return {
+            "loss": self._reduce(loss),
+            "positive_distance": wandb.Histogram(positive_dist.detach().cpu().numpy()),
+            "negative_distance": wandb.Histogram(negative_dist.detach().cpu().numpy()),
+            "positive_distance_mean": positive_dist.mean(),
+            "negative_distance_mean": negative_dist.mean()
+        }
 
 
 class GumbelBoxProbabilisticMembership(nn.Module):
@@ -703,11 +737,19 @@ class Duck(pl.LightningModule):
         #     entity = entity + center
         return entity, entity_boxes
 
-    def encode_entity_with_relations(self, entity, relation_ids):
+    def encode_entity_with_relations(
+        self,
+        entity,
+        relation_ids,
+        entity_tensor_mask,
+        ent_rel_mask
+    ):
         entity_repr, _ = self.entity_encoder(
             entity["data"],
             attention_mask=entity["attention_mask"],
         )
+
+        entity_repr = entity_repr[entity_tensor_mask]
         
         entity_boxes = None
         if not self.no_box_ablation:
@@ -720,16 +762,17 @@ class Duck(pl.LightningModule):
         relation_set_embeddings = None
         if self.relations_as_points:
             relations = self.rel_encoder(relation_ids["data"])
+            relations = expand_with_mask(relations, ent_rel_mask)
             if self.joint_ent_rel_encoding:
                 entity_repr = self.joint_ent_rel_transformer(
                     entity_repr,
                     relations,
-                    relation_ids["attention_mask"]
+                    ent_rel_mask
                 )
             else:
                 relation_set_embeddings = self.rel_set_transformer(
                     relations,
-                    relation_ids["attention_mask"]
+                    ent_rel_mask
                 )
         return entity_repr, entity_boxes, relation_set_embeddings
 
@@ -738,6 +781,9 @@ class Duck(pl.LightningModule):
         entities = batch["entities"]
         relation_ids = batch["relation_ids"]
         neighbors = batch["neighbors"]
+        ent_rel_mask = batch["ent_rel_mask"]
+
+        entity_tensor_mask = batch["entity_tensor_mask"].bool()
         # neighbor_relation_ids = batch["neighbor_relation_ids"]
 
         assert mentions["data"].size(-1) <= self.config.data.transform.max_mention_len
@@ -751,7 +797,9 @@ class Duck(pl.LightningModule):
         
         entity_repr, entity_boxes, relation_sets = self.encode_entity_with_relations(
             entities,
-            relation_ids
+            relation_ids,
+            entity_tensor_mask,
+            ent_rel_mask
         )
 
         neighbor_repr = None
@@ -851,6 +899,7 @@ class Duck(pl.LightningModule):
         entity_boxes = representations["entity_boxes"]
         target = batch["targets"]
         relation_set_embeddings = representations["relation_set_embeddings"]
+        ent_rel_mask = batch["ent_rel_mask"]
 
         scores = self.sim_score(mentions, entities)
         ed_loss = self.ed_loss(scores, target)
@@ -858,9 +907,13 @@ class Duck(pl.LightningModule):
         duck_loss = 0.0
         duck_loss_metrics = {}
         if self.duck_loss is not None:
-            negative_boxes = self.sample_negative_boxes(batch["relation_ids"]["data"])
-            rel_ids = batch["relation_ids"]
+            rel_ids = {
+                "data": expand_with_mask(batch["relation_ids"]["data"], ent_rel_mask),
+                "attention_mask": ent_rel_mask
+            }
+            negative_boxes = self.sample_negative_boxes(rel_ids["data"])
             # rel_ids["attention_mask"] = rel_ids["attention_mask"][mask]
+            entity_boxes = expand_box_with_mask(entity_boxes, ent_rel_mask)
             entities_ = entities[..., :self.box_size]
             entity_boxes = entity_boxes[..., :self.box_size]
             negative_boxes = negative_boxes[..., :self.box_size]
@@ -874,10 +927,15 @@ class Duck(pl.LightningModule):
                 negative_boxes,
                 rel_ids=rel_ids
             )
+
+            box_metrics = self.compute_box_metrics(entity_boxes, ent_rel_mask)
+            duck_loss_metrics.update(box_metrics)
+
             if isinstance(duck_loss, dict):
-                duck_loss_metrics = {k: v for k, v in duck_loss.items() if k != "loss"}
-                duck_loss_metrics = prefix_suffix_keys(duck_loss_metrics, prefix="train/")
+                duck_loss_metrics.update({k: v for k, v in duck_loss.items() if k != "loss"})
                 duck_loss = duck_loss["loss"]
+            
+            duck_loss_metrics = prefix_suffix_keys(duck_loss_metrics, prefix="train/")
         
         if self.relations_as_points and not self.joint_ent_rel_encoding:
             ent_to_rel_target = torch.eye(entities.size(0)).to(self.device)
@@ -887,7 +945,8 @@ class Duck(pl.LightningModule):
             )
             duck_loss = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
 
-        loss = duck_loss + ed_loss
+        loss = duck_loss # + ed_loss
+        ed_loss = ed_loss.detach()
 
         metrics = {
             "train/duck_loss": duck_loss,
@@ -912,6 +971,18 @@ class Duck(pl.LightningModule):
         metrics["loss"] = loss
 
         return metrics
+
+    def compute_box_metrics(self, entity_boxes, ent_rel_mask):
+        result = {}
+        entity_boxes = entity_boxes[ent_rel_mask]
+        result["box_left_distribution"] = wandb.Histogram(entity_boxes.left.detach().cpu().numpy())
+        result["box_right_distribution"] = wandb.Histogram(entity_boxes.right.detach().cpu().numpy())
+        result["box_left_mean"] = entity_boxes.left.mean()
+        result["box_right_mean"] = entity_boxes.right.mean()
+        box_size = entity_boxes.right - entity_boxes.left
+        result["box_size_distribution"] = wandb.Histogram(box_size.detach().cpu().numpy())
+        result["box_size_mean"] = box_size.mean()
+        return result
 
     def handle_spherical_coord(self, entity_boxes, negative_boxes, entities_):
         _, entities_ = cartesian_to_spherical(entities_)
@@ -996,7 +1067,7 @@ class Duck(pl.LightningModule):
     
     def sample_negative_boxes(self, relation_ids):
         with torch.no_grad():
-            ids_range = torch.arange(len(self.data.rel_catalogue) + 1).to(self.device)
+            ids_range = torch.arange(len(self.data.rel_catalogue)).to(self.device) + 1
             negative_ids = []
             for rels in relation_ids:
                 negative_pool = tensor_set_difference(ids_range, rels)
@@ -1035,12 +1106,6 @@ class Duck(pl.LightningModule):
         relation_set_embeddings = representations["relation_set_embeddings"]
 
         if not self.gather_on_ddp or not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
-            representations["entities"] = entities[mask]
-            representations["entity_boxes"] = entity_boxes[mask] if entity_boxes is not None else None
-            batch["relation_ids"]["data"] = rel_ids["data"][mask]
-            batch["relation_ids"]["attention_mask"] = rel_ids["attention_mask"][mask]
-            if relation_set_embeddings is not None:
-                representations["relation_set_embeddings"] = relation_set_embeddings[mask]
             return representations, batch
 
         mentions_to_send = mentions.detach()

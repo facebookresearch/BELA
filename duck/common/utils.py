@@ -14,6 +14,8 @@ import copy
 import math
 from einops import rearrange, repeat
 
+from duck.box_tensors.box_tensor import BoxTensor
+
 
 def tiny_value_of_dtype(dtype: torch.dtype) -> float:
     """
@@ -358,10 +360,12 @@ def tensor_set_intersection(t1, t2):
     uniques, counts = combined.unique(return_counts=True)
     return uniques[counts > 1]
 
+
 def tensor_set_difference(t1, t2):
     combined = torch.cat((t1, t2))
     uniques, counts = combined.unique(return_counts=True)
     return uniques[counts == 1]
+
 
 def cartesian_to_spherical(cartesian):
     eps = 1e-6
@@ -375,5 +379,27 @@ def cartesian_to_spherical(cartesian):
     angle[neg_mask, -1] = 2 * math.pi - angle[neg_mask, -1]
     radius = torch.linalg.vector_norm(cartesian, ord=2, dim=-1)
     return radius, angle
-    
+
+
+def expand_with_mask(tensor, mask, pad_value=0.0):
+        bsz = mask.size(0)
+        squeeze = False
+        if tensor.dim() == 1:
+            tensor = tensor.unsqueeze(-1)
+            squeeze = True
+        result = repeat(tensor, "n d -> d b n", b=bsz).masked_fill(~mask, pad_value)
+        result = rearrange(result, "d b n -> b n d")
+        if squeeze:
+            result = result.squeeze(-1)
+        return result
+
+
+def expand_box_with_mask(box, mask, left_pad=-100.0, right_pad=100.0):
+    return BoxTensor(
+        (
+            expand_with_mask(box.left, mask, pad_value=left_pad),
+            expand_with_mask(box.right, mask, pad_value=right_pad)
+        )
+    )
+
 

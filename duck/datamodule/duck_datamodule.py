@@ -382,7 +382,9 @@ class DuckTransform(BlinkTransform):
         batch["token_ids"] = batch["entity_token_ids"]
         mention_tensor, entity_tensor = super().forward(batch)
         relation_data = batch["relation_data"]
-        relations_tensor = self._transform_relations(relation_data)
+        relations_tensor = None
+        if relation_data is not None:
+            relations_tensor = self._transform_relations(relation_data)
         
         neighbors_tensor = None
         neighbor_token_ids = batch["neighbor_token_ids"]
@@ -462,7 +464,7 @@ class EdDuckDataModule(LightningDataModule):
                 if e in self.label_to_id
             }
 
-        self.num_workers = num_workers
+        self.num_workers = num_workers if not self.debug else 0
         self.duck_neighbors = None
         if neighbors_path is not None:
             logger.info(f"Reading neighbors: {neighbors_path}")
@@ -615,6 +617,10 @@ class EdDuckDataModule(LightningDataModule):
         entity_labels = list(entity_labels)
         relation_ids = list(relation_ids)
         relation_labels = list(relation_labels)
+        if relation_data is not None and any(rels is not None for rels in relation_data):
+            relation_data = list(relation_data)
+        else:
+            relation_data = None
 
         if is_train:
             entity_token_ids, entity_indexes, entity_labels, \
@@ -632,8 +638,11 @@ class EdDuckDataModule(LightningDataModule):
             [self.transform.bos_idx, self.transform.eos_idx]
         ] * pad_length
         entity_indexes += [0] * pad_length
-        relation_ids += [[0] * self.transform.max_num_rels] * pad_length
-        # relation_ids, mask = order_relations(relation_ids)
+        # relation_ids += [[0] * self.transform.max_num_rels] * pad_length
+        
+        relation_ids, relation_data, ent_rel_mask, neigh_rel_mask = order_relations(
+            relation_ids, relation_data, neighbor_relation_ids, neighbor_relation_data
+        )
 
         result = self.transform(
             {
@@ -656,7 +665,9 @@ class EdDuckDataModule(LightningDataModule):
         result["neighbor_labels"] = neighbor_labels
         result["neighbor_relation_labels"] = neighbor_relation_labels
         result["targets"] = torch.tensor(targets, dtype=torch.long) if targets is not None else None
-        result["entity_tensor_mask"] = torch.tensor(entity_tensor_mask, dtype=torch.long)
+        result["entity_tensor_mask"] = torch.tensor(entity_tensor_mask, dtype=torch.long).bool()
+        result["ent_rel_mask"] = ent_rel_mask
+        result["neigh_rel_mask"] = neigh_rel_mask
         return result
 
 
@@ -708,21 +719,48 @@ def order_entities(
 
 
 def order_relations(
-    relation_ids
+    relation_ids,
+    relation_data,
+    neighbor_relation_ids,
+    neighbor_relation_data
 ):
     flat_relation_ids = [r for rels in relation_ids for r in rels]
+    if neighbor_relation_ids is not None:
+        flat_relation_ids += [r for rels in neighbor_relation_ids for r in rels]
+    flat_relation_data = []
+    if relation_data is not None:
+        [r for rels in relation_data for r in rels] if relation_data is not None else []
+    if neighbor_relation_data is not None:
+        flat_relation_data += [r for rels in neighbor_relation_data for r in rels]
+    
+    filtered_relation_data = []
     rel_id_map = {}
-    for r in flat_relation_ids:
+    for i, r in enumerate(flat_relation_ids):
         if r not in rel_id_map:
             rel_id_map[r] = len(rel_id_map)
+            if relation_data is not None:
+                filtered_relation_data.append(flat_relation_data[i])
     
     filtered_relation_ids = list(rel_id_map.keys())
-    mask = torch.full(
+    ent_rel_mask = torch.full(
         (len(relation_ids), len(filtered_relation_ids)),
         False
     )
     for i, rels in enumerate(relation_ids):
         indexes = [rel_id_map[r] for r in rels]
-        mask[i][indexes] = True
+        ent_rel_mask[i][indexes] = True
+    
+    neigh_rel_mask = None
+    if neighbor_relation_ids is not None:
+        neigh_rel_mask = torch.full(
+            (len(neighbor_relation_ids), len(filtered_relation_ids)),
+            False
+        )
+        for i, rels in enumerate(neighbor_relation_ids):
+            indexes = [rel_id_map[r] for r in rels]
+            neigh_rel_mask[i][indexes] = True
+        
+    if relation_data is None and neighbor_relation_data is None:
+        filtered_relation_data = None
 
-    return filtered_relation_ids, mask
+    return filtered_relation_ids, filtered_relation_data, ent_rel_mask, neigh_rel_mask

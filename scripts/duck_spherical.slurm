@@ -2,12 +2,12 @@
 
 #SBATCH --job-name=duck_spherical
 ## %j is the job id, %u is the user id
-#SBATCH --output=/checkpoints/%u/duck/logs/duck_spherical_%j.log
-#SBATCH --error=/checkpoints/%u/duck/logs/duck_spherical_%j.log
+#SBATCH --output=/checkpoints/%u/duck/logs/duck_spherical_noed_%j.log
+#SBATCH --error=/checkpoints/%u/duck/logs/duck_spherical_noed_%j.log
 #SBATCH --partition=learnai4p
 #SBATCH --nodes=1
-#SBATCH --gpus-per-node=8 
-#SBATCH --ntasks-per-node=8
+#SBATCH --gpus-per-node=1 
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=0
 #SBATCH --time=72:00:00
@@ -17,4 +17,4 @@ export PYTHONPATH=.:$PYTHONPATH
 
 module purge
 
-srun python duck/main.py run_name=duck_spherical_bsz4 trainer=1host data.batch_size=4 trainer.val_check_interval=40000 duck.boxes.parametrization=spherical
+srun python duck/main.py run_name=duck_spherical_noed_1gpu trainer=1gpu data.batch_size=16 trainer.val_check_interval=500 duck.boxes.parametrization=spherical
