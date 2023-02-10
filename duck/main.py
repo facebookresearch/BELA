@@ -25,7 +25,6 @@ def configure_wandb_logger(config):
         save_dir=config.log_dir,
         config=dict(config)
     )
-    # wandb.watch(model, log="all", log_freq=100)
     return wandb_logger
     
 

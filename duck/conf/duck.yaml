@@ -67,18 +67,15 @@ duck:
     # dimensions: 0.5
   num_negative_boxes: 30 
   duck_loss:
-    # _target_: duck.task.duck_entity_disambiguation.DuckMaxMarginRankingLoss
-    # margin: 50.0
-    # inside_weight: 0.0
-    # norm: 1
-    # _target_: duck.task.duck_entity_disambiguation.GumbelBoxMembershipNLLLoss
-    # intersection_temperature: 0.1
-    _target_: duck.task.duck_entity_disambiguation.DuckNCEMarginLoss
+    rature: 0.1
+    _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
     distance_function:
-      _target_: duck.task.duck_entity_disambiguation.Q2BDistance
-      inside_weight: 0.0
-      norm: 1
-    margin: 5
+      # _target_: duck.task.duck_entity_disambiguation.Q2BDistance
+      # inside_weight: 0.0
+      # norm: 1
+      _target_: duck.task.duck_entity_disambiguation.BoxEDistance
+      norm: 2
+    margin: 2
 
 trainer:
   max_epochs: 30
