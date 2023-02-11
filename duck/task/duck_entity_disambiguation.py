@@ -159,63 +159,6 @@ class DuckDistanceRankingLoss(nn.Module):
         }
 
 
-class DuckMarginLoss(nn.Module):
-    def __init__(self,
-        margin: float = 0.1,
-        reduction: str = "mean"
-    ):
-        super(DuckMarginLoss, self).__init__()
-        self.margin = margin
-        self.reduction = reduction
-    
-    def _reduce(self, loss):
-        if self.reduction == "mean":
-            return loss.mean()
-        elif self.reduction == "sum":
-            return loss.sum()
-        elif self.reduction == "none":
-            return loss
-        raise ValueError(f"Unsupported reduction {self.reduction}")
-
-    def forward(
-        self,
-        entities: Tensor,
-        positive_boxes: BoxTensor,
-        negative_boxes: BoxTensor,
-        **kwargs
-    ):
-        negative_boxes = negative_boxes.rearrange("b n d -> n b d")
-        if positive_boxes.left.dim() == 3:
-            positive_boxes = positive_boxes.rearrange("b n d -> n b d")
-        else:
-            positive_boxes = positive_boxes.rearrange("b d -> 1 b d")
-
-        left_delta_pos = positive_boxes.left - entities + self.margin
-        right_delta_pos = entities - positive_boxes.right + self.margin
-        left_delta_neg = entities - negative_boxes.left + self.margin
-        right_delta_neg = negative_boxes.right - entities + self.margin
-        
-        rel_ids = kwargs.get("rel_ids")
-        mask = torch.full_like(left_delta_pos, True).bool()
-        if rel_ids is not None:
-            mask = rel_ids["attention_mask"].bool()
-            mask = rearrange(mask, "b n -> n b")
-
-        left_delta_pos[~mask] = 0.0
-        right_delta_pos[~mask] = 0.0
-
-        zeros = torch.zeros_like(left_delta_pos)
-
-        loss = torch.max(left_delta_pos, zeros) + \
-               torch.max(right_delta_pos, zeros) + \
-               torch.max(left_delta_neg, zeros) + \
-               torch.max(right_delta_neg, zeros)
-
-        return {
-            "loss": self._reduce(loss)
-        }
-
-
 class DuckNegativeSamplingLoss(nn.Module):
     def __init__(self,
         distance_function=None,
@@ -970,7 +913,7 @@ class Duck(pl.LightningModule):
                 rel_ids=rel_ids
             )
 
-            box_metrics = self.compute_box_metrics(entities_, entity_boxes, ent_rel_mask)
+            box_metrics = self.compute_box_metrics(entities_, entity_boxes, negative_boxes, ent_rel_mask)
             duck_loss_metrics.update(box_metrics)
 
             if isinstance(duck_loss, dict):
@@ -1014,8 +957,20 @@ class Duck(pl.LightningModule):
 
         return metrics
 
-    def compute_box_metrics(self, entities, entity_boxes, ent_rel_mask):
+    def compute_box_metrics(self, entities, entity_boxes, negative_boxes, ent_rel_mask):
         result = {}
+        entities = entities.unsqueeze(1)
+        in_pos = (entities > entity_boxes.left) & (entities < entity_boxes.right)
+        in_pos = in_pos[ent_rel_mask]
+        result["strict_containment_positive_boxes"] = in_pos.all(dim=-1).float().mean()
+        result["dim_wise_containment_positive_boxes"] = wandb.Histogram(
+            in_pos.float().mean(dim=-1).detach().cpu().numpy()
+        )
+        in_neg = (entities > negative_boxes.left) & (entities < negative_boxes.right)
+        result["strict_containment_negative_boxes"] = in_neg.all(dim=-1).float().mean()
+        result["dim_wise_containment_negative_boxes"] = wandb.Histogram(
+            in_neg.float().mean(dim=-1).detach().cpu().numpy()
+        )
         entity_boxes = entity_boxes[ent_rel_mask]
         result["box_left_distribution"] = wandb.Histogram(entity_boxes.left.detach().cpu().numpy())
         result["box_right_distribution"] = wandb.Histogram(entity_boxes.right.detach().cpu().numpy())

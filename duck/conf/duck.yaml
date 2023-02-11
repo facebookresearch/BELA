@@ -67,7 +67,6 @@ duck:
     # dimensions: 0.5
   num_negative_boxes: 30 
   duck_loss:
-    rature: 0.1
     _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
     distance_function:
       # _target_: duck.task.duck_entity_disambiguation.Q2BDistance
