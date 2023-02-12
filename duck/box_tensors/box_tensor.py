@@ -271,6 +271,12 @@ class BoxTensor(object):
         right = torch.stack([self.right] +  [o.right for o in  other], dim=dim)
         return BoxTensor((left, right))
 
+    def masked_fill(self, mask, value):
+        return BoxTensor((
+            self.left.masked_fill(mask, value),
+            self.right.masked_fill(mask, value)
+        ))
+
     def broadcast(self, target_shape: Tuple) -> None:
         """
         Broadcasts the internal data member in-place such that left and right

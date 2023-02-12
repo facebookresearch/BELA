@@ -219,12 +219,14 @@ class DuckNegativeSamplingLoss(nn.Module):
     def __init__(self,
         distance_function=None,
         margin: float = 1.0,
-        reduction: str = "mean"
+        reduction: str = "mean",
+        droput: float = 0.0
     ):
         super(DuckNegativeSamplingLoss, self).__init__()
         self.distance_function = distance_function
         self.margin = margin
         self.reduction = reduction
+        
     
     def _reduce(self, loss):
         if self.reduction == "mean":
@@ -366,54 +368,6 @@ class GumbelBoxMembershipNLLLoss(nn.Module):
         return self.nll(logp, target)
 
 
-class NegativeBoxLoss(nn.Module):
-    def __init__(
-        self,
-        intersection_temperature: float = 1.0,
-        volume_temperature: float = 1.0,
-        reduction="mean"
-    ):  
-        super(NegativeBoxLoss, self).__init__()
-        self.intersection = Intersection(
-            intersection_temperature=intersection_temperature
-        )
-        self.volume = Volume(
-            intersection_temperature=intersection_temperature,
-            volume_temperature=volume_temperature
-        )
-        self.nll_anchor = nn.NLLLoss(reduction=reduction)
-        self.nll_negative = nn.NLLLoss(reduction=reduction)
-    
-    def forward(
-        self,
-        anchor,
-        negative
-    ):
-        anchor = anchor.repeat("b d -> b n d", n=negative.box_shape[1])
-        intersection = self.intersection(anchor, negative)
-        log_intersection_over_anchor = self.volume(intersection) - self.volume(anchor)
-        log_intersection_over_negative = self.volume(intersection) - self.volume(negative)
-        target_anchor = torch.zeros_like(log_intersection_over_anchor).long()
-        target_negative = torch.zeros_like(log_intersection_over_negative).long()
-        log_intersection_over_anchor = torch.stack([
-            log_intersection_over_anchor,
-            log1mexp(log_intersection_over_anchor)
-        ], dim=-1)
-        log_intersection_over_negative = torch.stack([
-            log_intersection_over_negative,
-            log1mexp(log_intersection_over_negative)
-        ], dim=-1)
-        loss_anchor = self.nll_anchor(
-            rearrange(log_intersection_over_anchor, "b n c -> b c n"),
-            target_anchor
-        )
-        loss_negative = self.nll_negative(
-            rearrange(log_intersection_over_negative, "b n c -> b c n"),
-            target_negative
-        )
-        return loss_anchor + loss_negative
-
-
 class AttentionBasedGumbelIntersection(nn.Module):
     def __init__(
         self,
@@ -469,10 +423,6 @@ class Duck(pl.LightningModule):
         self.duck_point_loss = None
         self.ent_index = None
         self.dim = None
-        self.negative_box_loss = NegativeBoxLoss(
-            intersection_temperature=self.config.duck.boxes.intersection_temperature,
-            volume_temperature=self.config.duck.boxes.volume_temperature
-        )
         self.ed_loss = nn.CrossEntropyLoss()
         self.gather_on_ddp = True
         self.data = kwargs.get("data")
@@ -492,8 +442,8 @@ class Duck(pl.LightningModule):
         self.setup(stage)
         with open_dict(self.config):
             self.config.stage = "loading"
-        # if not self.no_box_ablation:
-        #     self.gather_on_ddp = False
+        if not self.no_box_ablation:
+            self.gather_on_ddp = False
 
         self.datasets = {
             "val": [d.upper() for d in dict(self.config.data.val_paths).keys()],
@@ -521,6 +471,15 @@ class Duck(pl.LightningModule):
             f"Mean/{metric_name}": MeanMetric()
             for metric_name in metric_names
         })
+        self.regularizer = None
+        if self.config.duck.boxes.get("regularization") is not None:
+            self.regularizer = hydra.utils.instantiate(
+                self.config.duck.boxes.regularization
+            )
+        self.dropout_dist = None
+        if self.config.duck.get("dropout"):
+            p = self.config.duck.dropout
+            self.dropout_dist = torch.distributions.binomial.Binomial(probs=1 - p)
 
         self.save_hyperparameters(self.config)
 
@@ -947,6 +906,7 @@ class Duck(pl.LightningModule):
         
         duck_loss = 0.0
         duck_loss_metrics = {}
+        regularization = 0.0
         if self.duck_loss is not None:
             rel_ids = {
                 "data": expand_with_mask(batch["relation_ids"]["data"], ent_rel_mask),
@@ -962,12 +922,24 @@ class Duck(pl.LightningModule):
                 entity_boxes, negative_boxes, entities_ = self.handle_spherical_coord(
                     entity_boxes, negative_boxes, entities_
                 )
+            
+            dropout_mask = torch.full_like(entities_, False).bool()
+            if self.dropout_dist is not None:
+                dropout_mask = self.dropout_dist.sample(entities_.size())
+                dropout_mask = ~(dropout_mask.bool())
+            dropout_mask = dropout_mask.to(entities_.device)
+
             duck_loss = self.duck_loss(
-                entities_,
-                entity_boxes,
-                negative_boxes,
+                entities_.masked_fill(dropout_mask, 0.0),
+                entity_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
+                negative_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
                 rel_ids=rel_ids
             )
+
+            if self.regularizer is not None:
+                regularization = self.regularizer(
+                    entity_boxes[ent_rel_mask].cat(negative_boxes.rearrange("b n d -> (b n) d"))
+                )
 
             box_metrics = self.compute_box_metrics(entities_, entity_boxes, negative_boxes, ent_rel_mask)
             duck_loss_metrics.update(box_metrics)
@@ -986,13 +958,14 @@ class Duck(pl.LightningModule):
             )
             duck_loss = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
 
-        loss = duck_loss # + ed_loss
+        loss = duck_loss + regularization # + ed_loss
         ed_loss = ed_loss.detach()
 
         metrics = {
             "train/duck_loss": duck_loss,
             "train/ed_loss": ed_loss,
-            "train/loss": loss
+            "train/loss": loss,
+            "train/regularization": regularization
         }
         metrics.update({
             k: v

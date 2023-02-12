@@ -24,7 +24,7 @@ class L2SideBoxRegularizer(BoxRegularizer):
         self,
         weight: float,
         log_scale: bool = False,
-        reduction: str = 'sum',
+        reduction: str = 'mean',
         min_threshold: float = None,
         max_threshold: float = None
     ) -> None:

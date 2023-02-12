@@ -17,8 +17,8 @@ data:
   train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
-    aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
-    aida_dev: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
+    # aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
+    # aida_dev: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
     # blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
     # ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
     # acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
@@ -64,21 +64,18 @@ duck:
     intersection_temperature: 0.0001
     volume_temperature: 0.1
     parametrization: spherical
+    regularization:
+      _target_: duck.box_tensors.regularization.L2SideBoxRegularizer
+      weight: 0.2
     # dimensions: 0.5
-
-  num_negative_boxes: 512
+  num_negative_boxes: 2048
+  dropout: 0.5
   duck_loss:
     _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
     distance_function:
-      # _target_: duck.task.duck_entity_disambiguation.Q2BDistance
-      # inside_weight: 0.0
-      # norm: 1
       _target_: duck.task.duck_entity_disambiguation.BoxEDistance
       norm: 2
     margin: 2
-  # duck_loss:
-  #   _target_: duck.task.duck_entity_disambiguation.DuckMarginLoss
-  #   margin: 0.1
 
 trainer:
   max_epochs: 30
