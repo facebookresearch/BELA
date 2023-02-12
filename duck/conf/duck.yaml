@@ -65,7 +65,8 @@ duck:
     volume_temperature: 0.1
     parametrization: spherical
     # dimensions: 0.5
-  num_negative_boxes: 30 
+
+  num_negative_boxes: 512
   duck_loss:
     _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
     distance_function:
@@ -75,6 +76,9 @@ duck:
       _target_: duck.task.duck_entity_disambiguation.BoxEDistance
       norm: 2
     margin: 2
+  # duck_loss:
+  #   _target_: duck.task.duck_entity_disambiguation.DuckMarginLoss
+  #   margin: 0.1
 
 trainer:
   max_epochs: 30

@@ -159,6 +159,62 @@ class DuckDistanceRankingLoss(nn.Module):
         }
 
 
+class DuckMarginLoss(nn.Module):
+    def __init__(self,
+        margin: float = 0.1,
+        reduction: str = "mean"
+    ):
+        super(DuckMarginLoss, self).__init__()
+        self.margin = margin
+        self.reduction = reduction
+    
+    def _reduce(self, loss):
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        elif self.reduction == "none":
+            return loss
+        raise ValueError(f"Unsupported reduction {self.reduction}")
+
+    def forward(
+        self,
+        entities: Tensor,
+        positive_boxes: BoxTensor,
+        negative_boxes: BoxTensor,
+        **kwargs
+    ):
+        negative_boxes = negative_boxes.rearrange("b n d -> n b d")
+        if positive_boxes.left.dim() == 3:
+            positive_boxes = positive_boxes.rearrange("b n d -> n b d")
+        else:
+            positive_boxes = positive_boxes.rearrange("b d -> 1 b d")
+
+        left_delta_pos = positive_boxes.left - entities + self.margin
+        right_delta_pos = entities - positive_boxes.right + self.margin
+        
+        rel_ids = kwargs.get("rel_ids")
+        mask = torch.full_like(left_delta_pos, True).bool()
+        if rel_ids is not None:
+            mask = rel_ids["attention_mask"].bool()
+            mask = rearrange(mask, "b n -> n b")
+
+        left_delta_pos[~mask] = 0.0
+        right_delta_pos[~mask] = 0.0
+
+        half_width = (negative_boxes.right - negative_boxes.left) / 2
+        delta_neg = half_width - torch.abs(entities - negative_boxes.center) + self.margin
+        
+        loss_pos = torch.relu(left_delta_pos) + torch.relu(right_delta_pos)
+        loss_neg = torch.relu(delta_neg)
+
+        loss = loss_pos.mean(dim=0) + loss_neg.mean(dim=0)
+
+        return {
+            "loss": self._reduce(loss)
+        }
+
+
 class DuckNegativeSamplingLoss(nn.Module):
     def __init__(self,
         distance_function=None,
