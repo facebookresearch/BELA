@@ -258,7 +258,6 @@ class DuckNegativeSamplingLoss(nn.Module):
         if rel_ids is not None:
             mask = rel_ids["attention_mask"].bool()
             mask = rearrange(mask, "b n -> n b")
-            # mask[0, :] = True  # if the entity has no relations it is placed in the universe
         positive_dist[~mask] = 0.0
         positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
 
@@ -442,6 +441,7 @@ class Duck(pl.LightningModule):
         self.setup(stage)
         with open_dict(self.config):
             self.config.stage = "loading"
+
         if not self.no_box_ablation:
             self.gather_on_ddp = False
 
@@ -479,8 +479,10 @@ class Duck(pl.LightningModule):
         self.dropout_dist = None
         if self.config.duck.get("dropout"):
             p = self.config.duck.dropout
-            self.dropout_dist = torch.distributions.binomial.Binomial(probs=1 - p)
-
+            self.dropout_dist = torch.distributions.binomial.Binomial(probs=p)
+        
+        self.duck_loss_weight = self.config.duck.get("duck_loss_weight") or 1.0
+        
         self.save_hyperparameters(self.config)
 
     def on_validation_start(self) -> None:
@@ -925,8 +927,7 @@ class Duck(pl.LightningModule):
             
             dropout_mask = torch.full_like(entities_, False).bool()
             if self.dropout_dist is not None:
-                dropout_mask = self.dropout_dist.sample(entities_.size())
-                dropout_mask = ~(dropout_mask.bool())
+                dropout_mask = self.dropout_dist.sample(entities_.size()).bool()
             dropout_mask = dropout_mask.to(entities_.device)
 
             duck_loss = self.duck_loss(
@@ -958,9 +959,8 @@ class Duck(pl.LightningModule):
             )
             duck_loss = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
 
-        loss = duck_loss + regularization # + ed_loss
-        ed_loss = ed_loss.detach()
-
+        loss = ed_loss + self.duck_loss_weight * (duck_loss + regularization)
+    
         metrics = {
             "train/duck_loss": duck_loss,
             "train/ed_loss": ed_loss,
