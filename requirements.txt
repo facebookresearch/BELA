@@ -1,4 +1,4 @@
-faiss-gpu==1.7.2
+faiss-gpu
 fairscale
 hydra-core
 hydra-submitit-launcher
@@ -9,3 +9,4 @@ tqdm
 sentencepiece
 h5py
 protobuf==3.20
+ujson
