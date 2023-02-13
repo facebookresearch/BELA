@@ -116,14 +116,14 @@ class TestJointELXlmrTransforms(unittest.TestCase):
         )
 
         expected_model_inputs = {
-            "token_ids": torch.tensor(
+            "input_ids": torch.tensor(
                 [
                     [0, 31384, 8781, 7986, 1672, 5120, 8884, 136, 5755, 2],
                     [0, 47958, 19715, 38, 2, 1, 1, 1, 1, 1],
                     [0, 96085, 43340, 1129, 2765, 22, 21, 65526, 2, 1],
                 ]
             ),
-            "pad_mask": torch.tensor(
+            "attention_mask": torch.tensor(
                 [
                     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                     [1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
