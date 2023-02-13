@@ -157,6 +157,7 @@ class ModelEval:
                 flat_mentions_repr.detach()
             )
 
+            cand_indices = cand_indices.to("cpu")
             entities_repr = self.embeddings[cand_indices].to(self.device)
 
             chosen_mention_limits: List[int] = (

@@ -27,15 +27,16 @@ def get_windows(text, window_length=254, overlap=127):
 
 def convert_predictions_to_dict(example_predictions):
     if len(example_predictions) > 0:
-        offsets, lengths, entities, md_scores, el_scores = zip(*example_predictions)
+        offsets, lengths, entities, md_scores, el_scores, window_idx = zip(*example_predictions)
     else:
-        offsets, lengths, entities, md_scores, el_scores = [], [], [], [], []
+        offsets, lengths, entities, md_scores, el_scores, window_idx = [], [], [], [], [], =1
     return {
         "offsets": offsets,
         "lengths": lengths,
         "entities": entities,
         "md_scores": md_scores,
         "el_scores": el_scores,
+        "window_idx": window_idx,
     }
 
 
@@ -53,14 +54,15 @@ def group_predictions_by_example(all_predictions, extended_examples):
     for document_id, example_prediction_list in grouped_predictions.items():
         example_predictions = []
         for prediction in example_prediction_list:
-            for offset, length, ent, md_score, el_score in zip(
+            for offset, length, ent, md_score, el_score, window_idx in zip(
                 prediction["offsets"],
                 prediction["lengths"],
                 prediction["entities"],
                 prediction["md_scores"],
                 prediction["el_scores"],
+                prediction["window_idx"],  
             ):
-                example_predictions.append((offset, length, ent, md_score, el_score))
+                example_predictions.append((offset, length, ent, md_score, el_score, window_idx))
                 example_predictions = sorted(example_predictions)
         predictions[document_id] = example_predictions
 
@@ -76,8 +78,9 @@ def merge_predictions(example_predictions):
     current_ent_id = None
     current_md_score = None
     current_el_score = None
+    current_window_idx = None
 
-    for offset, length, ent_id, md_score, el_score in example_predictions:
+    for offset, length, ent_id, md_score, el_score, window_idx in example_predictions:
         if current_end is None:
             current_end = offset + length
             current_offset = offset
@@ -85,6 +88,7 @@ def merge_predictions(example_predictions):
             current_ent_id = ent_id
             current_md_score = md_score
             current_el_score = el_score
+            current_window_idx = window_idx
             continue
 
         if offset < current_end:
@@ -95,6 +99,7 @@ def merge_predictions(example_predictions):
                 current_length = length
                 current_md_score = md_score
                 current_el_score = el_score
+                current_window_idx = window_idx
         else:
             filtered_example_predictions.append(
                 (
@@ -103,6 +108,7 @@ def merge_predictions(example_predictions):
                     current_ent_id,
                     current_md_score,
                     current_el_score,
+                    current_window_idx,
                 )
             )
             current_ent_id = ent_id
@@ -110,6 +116,7 @@ def merge_predictions(example_predictions):
             current_length = length
             current_md_score = md_score
             current_el_score = el_score
+            current_window_idx = window_idx
 
         current_end = offset + length
 
@@ -121,6 +128,7 @@ def merge_predictions(example_predictions):
                 current_ent_id,
                 current_md_score,
                 current_el_score,
+                current_window_idx,
             )
         )
 
