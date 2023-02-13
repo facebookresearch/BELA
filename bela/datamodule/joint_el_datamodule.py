@@ -58,6 +58,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         self.augmentation_frequency = augmentation_frequency
 
         logger.info(f"Downloading file {path}")
+        # TODO: Maybe we should lazily load the file to speed up datamodule instanciation (e.g. in model_eval.py)
         self.file = open(path, mode="r")
         self.mm = mmap.mmap(self.file.fileno(), 0, prot=mmap.PROT_READ)
         self.offsets = []
