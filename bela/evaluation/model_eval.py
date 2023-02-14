@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 import yaml
 from hydra.experimental import compose, initialize_config_module
@@ -8,7 +9,7 @@ import json
 import faiss
 import logging
 
-from typing import Union, List, Dict, Any, Tuple
+from typing import Optional, Union, List, Dict, Any, Tuple
 
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,30 @@ def convert_sp_to_char_offsets(
         char_lengths.append(char_end - char_offset)
 
     return char_offsets, char_lengths
-    
+
+
+@dataclass
+class Entity:
+    entity_id: str
+    offset: int
+    length: int
+    text: str
+    md_score: Optional[float] = None
+    el_score: Optional[float] = None
+
+    @property
+    def mention(self):
+        return self.text[self.offset : self.offset + self.length]
+
+    def __repr__(self):
+        str_repr = f"mention=\"{self.mention}\" -> entity_id={self.entity_id}"
+        if self.md_score is not None and self.el_score is not None:
+            str_repr += f" (md_score={self.md_score:.2f}, el_score={self.el_score:.2f})"
+        return str_repr
+
+    def __eq__(self, other):
+        return self.offset == other.offset and self.length == other.length and self.entity_id == other.entity_id
+
 
 class ModelEval:
     def __init__(self, checkpoint_path, config_name="joint_el_mel"):
@@ -309,42 +333,39 @@ class ModelEval:
         predictions_per_example = []
         for example, example_predictions in zip(data, predictions):
 
-            example_targets = {
-                (offset,length):ent_id
-                for _,_,ent_id,_,offset,length in example['gt_entities']
-            }
-
-            example_predictions = {
-                (offset, length):ent_id
-                for offset, length, ent_id, md_score, el_score in zip(
+            ground_truth_entities = [
+                Entity(entity_id=entity_id, offset=offset, length=length, text=example['original_text'])
+                for _, _, entity_id, _, offset, length in example['gt_entities']
+            ]
+            predicted_entities = [
+                Entity(entity_id=entity_id, offset=offset, length=length, md_score=md_score, el_score=el_score, text=example['original_text'])
+                for offset, length, entity_id, md_score, el_score in zip(
                     example_predictions['offsets'],
                     example_predictions['lengths'],
                     example_predictions['entities'],
                     example_predictions['md_scores'],
                     example_predictions['el_scores'],
                 )
-                if (el_score > el_threshold and md_score > md_threshold) 
-            }
+            ]
+            predicted_entities = [entity for entity in predicted_entities if entity.el_score > el_threshold and entity.md_score > md_threshold]
+            predictions_per_example.append((len(ground_truth_entities), len(predicted_entities)))
 
-            predictions_per_example.append((len(example_targets), len(example_predictions)))
-
-            for pos, ent in example_targets.items():
+            for entity in ground_truth_entities:
                 support += 1
-                if pos in example_predictions and example_predictions[pos] == ent:
+                if entity in predicted_entities:
                     tp += 1
-            for pos, ent in example_predictions.items():
-                if pos not in example_targets or example_targets[pos] != ent:
+            for entity in predicted_entities:
+                if entity not in ground_truth_entities:
                     fp += 1
 
-            example_targets_set = set(example_targets.values())
-            example_predictions_set = set(example_predictions.values())
-
-            for ent in example_targets_set:
+            ground_truth_entity_ids = set([entity.entity_id for entity in ground_truth_entities])
+            predicted_entity_ids = set([entity.entity_id for entity in predicted_entities])
+            for entity_id in ground_truth_entity_ids:
                 support_boe += 1
-                if ent in example_predictions_set:
+                if entity_id in predicted_entity_ids:
                     tp_boe += 1
-            for ent in example_predictions_set:
-                if ent not in example_targets_set:
+            for entity_id in predicted_entity_ids:
+                if entity_id not in ground_truth_entity_ids:
                     fp_boe += 1
 
         def safe_division(a, b):
@@ -359,6 +380,7 @@ class ModelEval:
             recall = safe_division(tp, (tp + fn))
             f1 = safe_division(2 * tp, (2 * tp + fp + fn))
             return f1, precision, recall
+
 
         fn = support - tp
         fn_boe = support_boe - tp_boe
