@@ -373,7 +373,7 @@ def cartesian_to_spherical(cartesian):
     x = repeat(cartesian, "... n1 -> ... n1 n2", n2=n)
     mask = torch.tril(torch.ones(n, n, device=cartesian.device)) == 1
     x = x.masked_fill(mask == 0, float(0.0))
-    x = torch.sqrt(torch.sum(x ** 2, dim=-2)) + eps
+    x = torch.sqrt(torch.sum(x ** 2, dim=-2)).clamp_min(eps)
     angle = torch.acos(cartesian[..., :-1] / x[..., :-1])
     neg_mask = cartesian[..., -1] < 0
     angle[neg_mask, -1] = 2 * math.pi - angle[neg_mask, -1]

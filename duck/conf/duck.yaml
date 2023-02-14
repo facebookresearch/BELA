@@ -73,10 +73,10 @@ duck:
   dropout: 0.5
   duck_loss:
     _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
+    margin: 2
     distance_function:
       _target_: duck.task.duck_entity_disambiguation.BoxEDistance
       norm: 2
-    margin: 2
 
 trainer:
   max_epochs: 30

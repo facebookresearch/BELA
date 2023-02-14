@@ -100,15 +100,21 @@ class BoxEDistance(nn.Module):
         return torch.linalg.vector_norm(dist, ord=self.norm, dim=-1).clone()
     
 
-class DuckDistanceRankingLoss(nn.Module):
-    def __init__(self,
+class DuckMaxMarginRankingLoss(nn.Module):
+    def __init__(
+        self,
         distance_function=None,
         margin: float = 1.0,
         reduction: str = "mean",
-        return_logging_metrics: bool = True
+        return_logging_metrics: bool = True,
+        inside_weight=0.2,
+        norm=1
     ):
-        super(DuckDistanceRankingLoss, self).__init__()
-        self.distance_function = distance_function
+        super(DuckMaxMarginRankingLoss, self).__init__()
+        self.distance_function = distance_function or Q2BDistance(
+            inside_weight=inside_weight,
+            norm=norm
+        )
         self.margin = margin
         self.reduction = reduction
         self.return_logging_metrics = return_logging_metrics
@@ -143,7 +149,6 @@ class DuckDistanceRankingLoss(nn.Module):
         if rel_ids is not None:
             mask = rel_ids["attention_mask"].bool()
             mask = rearrange(mask, "b n -> n b")
-            # mask[0, :] = True  # if the entity has no relations it is placed in the universe
         positive_dist[~mask] = 0.0
         positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
         delta = positive_dist - negative_dist + self.margin
@@ -219,15 +224,13 @@ class DuckNegativeSamplingLoss(nn.Module):
     def __init__(self,
         distance_function=None,
         margin: float = 1.0,
-        reduction: str = "mean",
-        droput: float = 0.0
+        reduction: str = "mean"
     ):
         super(DuckNegativeSamplingLoss, self).__init__()
         self.distance_function = distance_function
         self.margin = margin
         self.reduction = reduction
         
-    
     def _reduce(self, loss):
         if self.reduction == "mean":
             return loss.mean()
@@ -262,10 +265,10 @@ class DuckNegativeSamplingLoss(nn.Module):
         positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
 
         eps = 1e-6
-        positive_term = torch.sigmoid(self.margin - positive_dist) + eps
-        positive_term = positive_term.clamp_max(1.0).log().mean(dim=0)
-        negative_term = torch.sigmoid(negative_dist - self.margin) + eps
-        negative_term = negative_term.clamp_max(1.0).log().mean(dim=0)
+        positive_term = torch.sigmoid(self.margin - positive_dist)
+        positive_term = positive_term.clamp_min(eps).log().mean(dim=0)
+        negative_term = torch.sigmoid(negative_dist - self.margin)
+        negative_term = negative_term.clamp_min(eps).log().mean(dim=0)
         loss = -positive_term - negative_term
         return {
             "loss": self._reduce(loss),
@@ -423,7 +426,7 @@ class Duck(pl.LightningModule):
         self.ent_index = None
         self.dim = None
         self.ed_loss = nn.CrossEntropyLoss()
-        self.gather_on_ddp = True
+        self.gather_on_ddp = False
         self.data = kwargs.get("data")
         self.no_box_ablation = False
         self.rel_set_transformer = None
@@ -441,9 +444,6 @@ class Duck(pl.LightningModule):
         self.setup(stage)
         with open_dict(self.config):
             self.config.stage = "loading"
-
-        if not self.no_box_ablation:
-            self.gather_on_ddp = False
 
         self.datasets = {
             "val": [d.upper() for d in dict(self.config.data.val_paths).keys()],
@@ -915,42 +915,17 @@ class Duck(pl.LightningModule):
                 "attention_mask": ent_rel_mask
             }
             negative_boxes = self.sample_negative_boxes(rel_ids["data"])
-            # rel_ids["attention_mask"] = rel_ids["attention_mask"][mask]
-            entity_boxes = expand_box_with_mask(entity_boxes, ent_rel_mask)
-            entities_ = entities[..., :self.box_size]
-            entity_boxes = entity_boxes[..., :self.box_size]
-            negative_boxes = negative_boxes[..., :self.box_size]
-            if self.config.duck.boxes.parametrization == "spherical":
-                entity_boxes, negative_boxes, entities_ = self.handle_spherical_coord(
-                    entity_boxes, negative_boxes, entities_
-                )
-            
-            dropout_mask = torch.full_like(entities_, False).bool()
-            if self.dropout_dist is not None:
-                dropout_mask = self.dropout_dist.sample(entities_.size()).bool()
-            dropout_mask = dropout_mask.to(entities_.device)
-
-            duck_loss = self.duck_loss(
-                entities_.masked_fill(dropout_mask, 0.0),
-                entity_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
-                negative_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
-                rel_ids=rel_ids
+            duck_loss_metrics = self.compute_duck_loss_with_boxes(
+                entities, entity_boxes, negative_boxes, rel_ids
             )
-
-            if self.regularizer is not None:
-                regularization = self.regularizer(
-                    entity_boxes[ent_rel_mask].cat(negative_boxes.rearrange("b n d -> (b n) d"))
-                )
-
-            box_metrics = self.compute_box_metrics(entities_, entity_boxes, negative_boxes, ent_rel_mask)
-            duck_loss_metrics.update(box_metrics)
-
-            if isinstance(duck_loss, dict):
-                duck_loss_metrics.update({k: v for k, v in duck_loss.items() if k != "loss"})
-                duck_loss = duck_loss["loss"]
-            
+            duck_loss = duck_loss_metrics["loss"]
+            regularization = duck_loss_metrics["regularization"]
+            duck_loss_metrics = {
+                k: v for k, v in duck_loss_metrics.items()
+                if k not in ["loss", "regularization"]
+            }
             duck_loss_metrics = prefix_suffix_keys(duck_loss_metrics, prefix="train/")
-        
+            
         if self.relations_as_points and not self.joint_ent_rel_encoding:
             ent_to_rel_target = torch.eye(entities.size(0)).to(self.device)
             ent_to_rel_scores = torch.matmul(
@@ -960,7 +935,7 @@ class Duck(pl.LightningModule):
             duck_loss = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
 
         loss = ed_loss + self.duck_loss_weight * (duck_loss + regularization)
-    
+       
         metrics = {
             "train/duck_loss": duck_loss,
             "train/ed_loss": ed_loss,
@@ -985,6 +960,47 @@ class Duck(pl.LightningModule):
         metrics["loss"] = loss
 
         return metrics
+
+    def compute_duck_loss_with_boxes(self, entities, entity_boxes, negative_boxes, rel_ids):
+        result = {}
+        ent_rel_mask = rel_ids["attention_mask"]
+        # rel_ids["attention_mask"] = rel_ids["attention_mask"][mask]
+        entity_boxes = expand_box_with_mask(entity_boxes, ent_rel_mask)
+        entities_ = entities[..., :self.box_size]
+        entity_boxes = entity_boxes[..., :self.box_size]
+        negative_boxes = negative_boxes[..., :self.box_size]
+        if self.config.duck.boxes.parametrization == "spherical":
+            entity_boxes, negative_boxes, entities_ = self.handle_spherical_coord(
+                entity_boxes, negative_boxes, entities_
+            )
+        
+        dropout_mask = torch.full_like(entities_, False).bool()
+        if self.dropout_dist is not None:
+            dropout_mask = self.dropout_dist.sample(entities_.size()).bool()
+        dropout_mask = dropout_mask.to(entities_.device)
+
+        duck_loss = self.duck_loss(
+            entities_.masked_fill(dropout_mask, 0.0),
+            entity_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
+            negative_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
+            rel_ids=rel_ids
+        )
+        regularization = 0.0
+        if self.regularizer is not None:
+            regularization = self.regularizer(
+                entity_boxes[ent_rel_mask].cat(negative_boxes.rearrange("b n d -> (b n) d"))
+            )
+
+        box_metrics = self.compute_box_metrics(entities_, entity_boxes, negative_boxes, ent_rel_mask)
+        result.update(box_metrics)
+
+        if isinstance(duck_loss, dict):
+            result.update(duck_loss)
+        else:
+            result["loss"] = duck_loss
+        
+        result["regularization"] = regularization
+        return result
 
     def compute_box_metrics(self, entities, entity_boxes, negative_boxes, ent_rel_mask):
         result = {}
@@ -1013,7 +1029,6 @@ class Duck(pl.LightningModule):
     def handle_spherical_coord(self, entity_boxes, negative_boxes, entities_):
         _, entities_ = cartesian_to_spherical(entities_)
         entities_ = entities_[..., :-1]  # drop last coord to keep the range [0, pi]
-        # assert ((entities_ - torch.pi) < 1e-2).all()
         entity_boxes = entity_boxes[..., :entities_.size(-1)]
         negative_boxes = negative_boxes[..., :entities_.size(-1)]
         return entity_boxes, negative_boxes, entities_
@@ -1050,6 +1065,14 @@ class Duck(pl.LightningModule):
             topk = [o["topk"] for o in dataset_outputs]
             micro_f1 = self.micro_f1["val"][dataset](preds, target)
             logging_metrics[f"Micro-F1/{dataset}"] = self.micro_f1["val"][dataset]
+            if self.global_rank == 0:
+                all_preds = self.all_gather(preds)
+                all_targets = self.all_gather(target)
+                all_preds = rearrange(all_preds, "w b -> (w b)")
+                all_targets = rearrange(all_targets, "w b -> (w b)")
+                acc = (all_targets == all_preds).mean()
+                logging_metrics[f"Acc/{dataset}"] = acc
+                value_metrics["Acc/{dataset}"] = acc
             value_metrics[f"Micro-F1/{dataset}"] = micro_f1
             for k in self.recall_steps:
                 recall = self.recall_at_k(topk, target, k, dataset)
@@ -1067,7 +1090,7 @@ class Duck(pl.LightningModule):
                 v for k, v in value_metrics.items()
                 if avg_metric_key in k
             ]).mean()
-            avg_metrics[ avg_metric_key + "/Average"] = avg_metric_value
+            avg_metrics[avg_metric_key + "/Average"] = avg_metric_value
         logging_metrics.update(avg_metrics)
         logging_metrics["avg_micro_f1"] = logging_metrics["Micro-F1/Average"]
         logging_metrics["val_f1"] = logging_metrics.get("Micro-F1/BLINK_DEV") or logging_metrics["avg_micro_f1"]
@@ -1121,6 +1144,18 @@ class Duck(pl.LightningModule):
     #         neighbors = torch.cat([neighbors, in_batch_neighbors], dim=1)
     #     return neighbors, neighbor_boxes
 
+    def masked_gather(self, x, dim=0):
+        max_size = self.all_gather(
+            torch.tensor(x.size(dim))
+        ).max()
+        pad_shape = list(x.size())[:dim] + [max_size.item() - x.size(dim)] + list(x.size())[(dim + 1):]
+        pad = torch.zeros(pad_shape, device=x.device)
+        mask = torch.cat([torch.ones_like(x), pad], dim=dim).bool()
+        x = torch.cat([x, pad], dim=dim)
+        all_x = self.all_gather(x)
+        all_mask = self.all_gather(mask.detach())
+        return all_x, all_mask
+   
     def _gather_representations(self, representations, batch):
         entities = representations["entities"]
         mentions = representations["mentions"]
@@ -1128,7 +1163,8 @@ class Duck(pl.LightningModule):
         entity_ids = batch["entity_ids"]
         rel_ids = batch["relation_ids"]
         entity_boxes = representations["entity_boxes"]
-        mask = batch["entity_tensor_mask"].bool()
+        entity_tensor_mask = batch["entity_tensor_mask"].bool()
+        ent_rel_mask = batch["ent_rel_mask"].bool()
         relation_set_embeddings = representations["relation_set_embeddings"]
 
         if not self.gather_on_ddp or not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
@@ -1163,7 +1199,7 @@ class Duck(pl.LightningModule):
             "data": self.all_gather(rel_ids["data"].detach())[start_rank:end_rank],
             "attention_mask": self.all_gather(rel_ids["attention_mask"].detach())[start_rank:end_rank]
         }
-        all_mask = self.all_gather(mask)[start_rank:end_rank]
+        all_mask = self.all_gather(entity_tensor_mask)[start_rank:end_rank]
 
         # offset = 0
         all_mentions_list = []
@@ -1176,10 +1212,10 @@ class Duck(pl.LightningModule):
 
         # Add current device representations first.
         all_mentions_list.append(mentions)
-        entities = entities[mask]
-        entity_boxes = entity_boxes[mask] if entity_boxes is not None else None
+        entities = entities[entity_tensor_mask]
+        entity_boxes = entity_boxes[entity_tensor_mask] if entity_boxes is not None else None
         all_entities_list.append(entities)
-        all_entity_ids_list.append(entity_ids[mask].tolist())
+        all_entity_ids_list.append(entity_ids[entity_tensor_mask].tolist())
         all_targets_list.append(target)
         all_boxes_list.append(entity_boxes)
         all_rel_ids_list.append(rel_ids)
@@ -1276,7 +1312,7 @@ class Duck(pl.LightningModule):
                 torch.stack([box.left for box in filtered_boxes], dim=0),
                 torch.stack([box.right for box in filtered_boxes], dim=0)
             ))
-        else:
+        else:    
             filtered_boxes = None
         
         if self.relations_as_points and not self.joint_ent_rel_encoding:
