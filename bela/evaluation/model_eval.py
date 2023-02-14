@@ -373,13 +373,10 @@ class ModelEval:
             predictions = self.process_disambiguation_batch(texts, mention_offsets, mention_lengths, entities)
             all_predictions.extend(predictions)
         return all_predictions
-    
-    @staticmethod
-    def compute_scores(data, predictions, md_threshold=0.2, el_threshold=0.05):
-        tp, fp, support = 0, 0, 0
-        tp_boe, fp_boe, support_boe = 0, 0, 0
 
-        predictions_per_example = []
+    @staticmethod
+    def convert_data_and_predictions_to_samples(data, predictions, md_threshold, el_threshold) -> List[Sample]:
+        samples = []
         for example, example_predictions in zip(data, predictions):
 
             ground_truth_entities = [
@@ -397,8 +394,19 @@ class ModelEval:
                 )
             ]
             predicted_entities = [entity for entity in predicted_entities if entity.el_score > el_threshold and entity.md_score > md_threshold]
-            predictions_per_example.append((len(ground_truth_entities), len(predicted_entities)))
             sample = Sample(text=example['original_text'], ground_truth_entities=ground_truth_entities, predicted_entities=predicted_entities)
+            samples.append(sample)
+        return samples
+
+    @staticmethod
+    def compute_scores(data, predictions, md_threshold=0.2, el_threshold=0.05):
+        tp, fp, support = 0, 0, 0
+        tp_boe, fp_boe, support_boe = 0, 0, 0
+
+        predictions_per_example = []
+        samples = ModelEval.convert_data_and_predictions_to_samples(data, predictions, md_threshold, el_threshold)
+        for sample in samples:
+            predictions_per_example.append((len(sample.ground_truth_entities), len(sample.predicted_entities)))
             support += len(sample.ground_truth_entities)
             tp += len(sample.true_positives)
             fp += len(sample.false_positives)
