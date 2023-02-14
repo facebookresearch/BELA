@@ -250,6 +250,7 @@ class ModelEval:
         predictions = []
         cand_idx = 0
         example_idx = 0
+        mention_lengths = (mention_lengths - 1).clamp(0)  # Fix for the +1 in mention_lengths
         for offsets, lengths, md_scores in zip(
             mention_offsets, mention_lengths, mentions_scores
         ):
