@@ -159,13 +159,15 @@ def get_predictions_using_windows(model_eval: ModelEval, test_data, batch_size=1
     extended_examples = []
 
     for example in test_data:
+        assert "document_id" in example or "data_example_id" in example
+        document_id = example.get("document_id") or example["data_example_id"]
         text = example["original_text"]
         windows = get_windows(text, window_length)
         for idx, (start_pos, end_pos) in enumerate(windows):
             new_text = text[start_pos:end_pos]
             extended_examples.append(
                 {
-                    "document_id": example["document_id"],
+                    "document_id": document_id,
                     "original_text": new_text,
                     "gt_entities": example["gt_entities"],
                     "window_idx": idx,
@@ -181,7 +183,8 @@ def get_predictions_using_windows(model_eval: ModelEval, test_data, batch_size=1
 
     predictions = []
     for example in test_data:
-        document_id = example["document_id"]
+        assert "document_id" in example or "data_example_id" in example
+        document_id = example.get("document_id") or example["data_example_id"]
         text = example["original_text"]
         example_predictions = predictions_dict[document_id]
         example_predictions = merge_predictions(example_predictions)
