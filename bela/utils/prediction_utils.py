@@ -129,6 +129,7 @@ def merge_predictions(example_predictions):
 
 
 def correct_mention_offsets(example_predictions, text):
+    # TODO: Won't that break mentions that end with a separator? Double check in evaluations datasets
     TEXT_SEPARATORS = [" ", ".", ",", "!", "?", "-", "\n"]
     corrected_example_predictions = []
     for offset, length, ent_id, md_score, el_score in example_predictions:
@@ -136,6 +137,7 @@ def correct_mention_offsets(example_predictions, text):
             offset != 0
             and offset < len(text)
             and (
+                # Break when the previous character is a separator and the current one is not
                 text[offset - 1] not in TEXT_SEPARATORS
                 or text[offset] in TEXT_SEPARATORS
             )
@@ -143,7 +145,9 @@ def correct_mention_offsets(example_predictions, text):
             offset += 1
             length -= 1
         while (
-            offset + length < len(text) and text[offset + length] not in TEXT_SEPARATORS
+            offset + length < len(text)
+            # Break as soon as the last character is a separator
+            and text[offset + length] not in TEXT_SEPARATORS
         ):
             length += 1
         corrected_example_predictions.append(
