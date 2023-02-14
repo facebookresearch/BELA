@@ -81,6 +81,43 @@ class Entity:
         return self.offset == other.offset and self.length == other.length and self.entity_id == other.entity_id
 
 
+class Sample:
+    text: str
+    ground_truth_entities: List[Entity]
+    predicted_entities: List[Entity]
+
+    def __init__(self, text, ground_truth_entities, predicted_entities):
+        self.text = text
+        self.ground_truth_entities = ground_truth_entities
+        self.predicted_entities = predicted_entities
+        # Compute scores
+        self.true_positives = [predicted_entity for predicted_entity in self.predicted_entities if predicted_entity in self.ground_truth_entities]
+        self.false_positives = [predicted_entity for predicted_entity in self.predicted_entities if predicted_entity not in self.ground_truth_entities]
+        self.false_negatives = [ground_truth_entity for ground_truth_entity in self.ground_truth_entities if ground_truth_entity not in self.predicted_entities]
+        # Bag of entities
+        self.ground_truth_entity_ids = set([ground_truth_entity.entity_id for ground_truth_entity in self.ground_truth_entities])
+        self.predicted_entity_ids = set([predicted_entity.entity_id for predicted_entity in self.predicted_entities])
+        self.true_positives_boe = [predicted_entity_id for predicted_entity_id in self.predicted_entity_ids if predicted_entity_id in self.ground_truth_entity_ids]
+        self.false_positives_boe = [predicted_entity_id for predicted_entity_id in self.predicted_entity_ids if predicted_entity_id not in self.ground_truth_entity_ids]
+        self.false_negatives_boe = [ground_truth_entity_id for ground_truth_entity_id in self.ground_truth_entity_ids if ground_truth_entity_id not in self.predicted_entity_ids]
+
+
+    def print(self, max_display_length=1000):
+        print(f"{self.text[:max_display_length]=}")
+        print("***************** Ground truth entities *****************")
+        print(f"{len(self.ground_truth_entities)=}")
+        for ground_truth_entity in self.ground_truth_entities:
+            if ground_truth_entity.offset + ground_truth_entity.length > max_display_length:
+                continue
+            print(ground_truth_entity)
+        print("***************** Predicted entities *****************")
+        print(f"{len(self.predicted_entities)=}")
+        for predicted_entity in self.predicted_entities:
+            if predicted_entity.offset + predicted_entity.length > max_display_length:
+                continue
+            print(predicted_entity)
+
+
 class ModelEval:
     def __init__(self, checkpoint_path, config_name="joint_el_mel"):
         self.device = torch.device("cuda:0")
@@ -349,24 +386,13 @@ class ModelEval:
             ]
             predicted_entities = [entity for entity in predicted_entities if entity.el_score > el_threshold and entity.md_score > md_threshold]
             predictions_per_example.append((len(ground_truth_entities), len(predicted_entities)))
-
-            for entity in ground_truth_entities:
-                support += 1
-                if entity in predicted_entities:
-                    tp += 1
-            for entity in predicted_entities:
-                if entity not in ground_truth_entities:
-                    fp += 1
-
-            ground_truth_entity_ids = set([entity.entity_id for entity in ground_truth_entities])
-            predicted_entity_ids = set([entity.entity_id for entity in predicted_entities])
-            for entity_id in ground_truth_entity_ids:
-                support_boe += 1
-                if entity_id in predicted_entity_ids:
-                    tp_boe += 1
-            for entity_id in predicted_entity_ids:
-                if entity_id not in ground_truth_entity_ids:
-                    fp_boe += 1
+            sample = Sample(text=example['original_text'], ground_truth_entities=ground_truth_entities, predicted_entities=predicted_entities)
+            support += len(sample.ground_truth_entities)
+            tp += len(sample.true_positives)
+            fp += len(sample.false_positives)
+            support_boe += len(sample.ground_truth_entity_ids)
+            tp_boe += len(sample.true_positives_boe)
+            fp_boe += len(sample.false_positives_boe)
 
         def safe_division(a, b):
             if b == 0:
@@ -374,13 +400,11 @@ class ModelEval:
             else:
                 return a / b
 
-
         def compute_f1_p_r(tp, fp, fn):
             precision = safe_division(tp, (tp + fp))
             recall = safe_division(tp, (tp + fn))
             f1 = safe_division(2 * tp, (2 * tp + fp + fn))
             return f1, precision, recall
-
 
         fn = support - tp
         fn_boe = support_boe - tp_boe
