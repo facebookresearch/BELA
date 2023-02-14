@@ -10,11 +10,10 @@ def get_sp_transform():
     return SPMTransform(max_seq_len=100000)
 
 
-def get_windows(text):
+def get_windows(text, window_length=254):
     sp_transform = get_sp_transform()
     tokens = sp_transform([text])[0]
     tokens = tokens[1:-1]
-    window_length = 254
     windows = []
     for window_start in range(0, len(tokens), window_length // 2):
         start_pos = tokens[window_start][1]
@@ -156,12 +155,12 @@ def correct_mention_offsets(example_predictions, text):
     return corrected_example_predictions
 
 
-def get_predictions_using_windows(model_eval: ModelEval, test_data, batch_size=1024):
+def get_predictions_using_windows(model_eval: ModelEval, test_data, batch_size=1024, window_length=254):
     extended_examples = []
 
     for example in test_data:
         text = example["original_text"]
-        windows = get_windows(text)
+        windows = get_windows(text, window_length)
         for idx, (start_pos, end_pos) in enumerate(windows):
             new_text = text[start_pos:end_pos]
             extended_examples.append(
