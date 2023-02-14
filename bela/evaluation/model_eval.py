@@ -24,38 +24,62 @@ def load_file(path: Union[str, Path]) -> List[Dict[str, Any]]:
     return all_data
 
 
+#def convert_sp_to_char_offsets(
+#    text: str,
+#    sp_offsets: List[int],
+#    sp_lengths: List[int],
+#    sp_tokens_boundaries: List[List[int]],
+#) -> Tuple[List[int], List[int]]:
+#    """
+#    Function convert sentecepiece offsets and lengths to character level
+#    offsets and lengths for a given `text`.
+#    """
+#    char_offsets: List[int] = []
+#    char_lengths: List[int] = []
+#    text_utf8_chars: List[str] = [char for char in text]
+#
+#    for sp_offset, sp_length in zip(sp_offsets, sp_lengths):
+#        # sp_offsets include cls_token, while boundaries doesn't
+#        if sp_offset == 0:
+#            continue
+#
+#        sp_offset = sp_offset - 1
+#        char_offset = sp_tokens_boundaries[sp_offset][0]
+#        char_end = sp_tokens_boundaries[sp_offset + sp_length - 1][1]
+#
+#        # sp token boundaries include whitespaces, so remove them
+#        while text_utf8_chars[char_offset].isspace():
+#            char_offset += 1
+#            assert char_offset < len(text_utf8_chars)
+#
+#        char_offsets.append(char_offset)
+#        char_lengths.append(char_end - char_offset)
+#
+#    return char_offsets, char_lengths
+
+
 def convert_sp_to_char_offsets(
-    text: str,
-    sp_offsets: List[int],
-    sp_lengths: List[int],
-    sp_tokens_boundaries: List[List[int]],
-) -> Tuple[List[int], List[int]]:
-    """
-    Function convert sentecepiece offsets and lengths to character level
-    offsets and lengths for a given `text`.
-    """
-    char_offsets: List[int] = []
-    char_lengths: List[int] = []
-    text_utf8_chars: List[str] = [char for char in text]
-
-    for sp_offset, sp_length in zip(sp_offsets, sp_lengths):
-        # sp_offsets include cls_token, while boundaries doesn't
-        if sp_offset == 0:
-            continue
-
-        sp_offset = sp_offset - 1
-        char_offset = sp_tokens_boundaries[sp_offset][0]
-        char_end = sp_tokens_boundaries[sp_offset + sp_length - 1][1]
-
-        # sp token boundaries include whitespaces, so remove them
-        while text_utf8_chars[char_offset].isspace():
-            char_offset += 1
-            assert char_offset < len(text_utf8_chars)
-
-        char_offsets.append(char_offset)
-        char_lengths.append(char_end - char_offset)
-
-    return char_offsets, char_lengths
+        text: str,
+        sp_offset: int,
+        sp_length: int,
+        spm_processor,
+    ) -> Tuple[int, int]:
+    """Inefficient but simple way to convert sp offsets to char offsets."""
+    # SPM strips whitespaces
+    pieces = spm_processor.encode_as_pieces(text)
+    # Offset
+    char_offset = sum(len(piece) for piece in pieces[:sp_offset])
+    n_starting_whitespaces = len(text) - len(text.lstrip())
+    char_offset += n_starting_whitespaces  # SPM strips whitespaces
+    # Mention length
+    mention_pieces = pieces[sp_offset:sp_offset + sp_length]
+    mention_text = ''.join(mention_pieces).replace('▁', ' ')
+    #n_mention_starting_whitespaces = len(mention_text) - len(mention_text.lstrip())
+    #char_offset -= n_mention_starting_whitespaces  # Include the starting whitespace(s) in the offset rather than in the mention
+    char_length = len(mention_text.strip(" "))
+    print(mention_pieces)
+    print(mention_text[char_offset:char_offset+char_length])
+    return char_offset, char_length
 
 
 @dataclass
@@ -249,32 +273,42 @@ class ModelEval:
 
         predictions = []
         cand_idx = 0
-        example_idx = 0
-        mention_lengths = (mention_lengths - 1).clamp(0)  # Fix for the +1 in mention_lengths
-        for offsets, lengths, md_scores in zip(
-            mention_offsets, mention_lengths, mentions_scores
+
+        # mention_offsets include cls_token, but we don't use it here when converting to char offsets.
+        mention_offsets =  (mention_offsets - 1).clamp(0)
+        # TODO: it is not clear why we need to subtract 1 for the mention lengths.
+        mention_lengths = (mention_lengths - 1).clamp(0)
+        for text, offsets, lengths, md_scores in zip(
+            texts, mention_offsets, mention_lengths, mentions_scores
         ):
-            ex_sp_offsets = []
-            ex_sp_lengths = []
+            char_offsets = []
+            char_lengths = []
             ex_entities = []
             ex_md_scores = []
             ex_el_scores = []
             for offset, length, md_score in zip(offsets, lengths, md_scores):
                 if length != 0:
                     if md_score >= self.task.md_threshold:
-                        ex_sp_offsets.append(offset.detach().cpu().item())
-                        ex_sp_lengths.append(length.detach().cpu().item())
+                        # Convert to char offsets
+                        sp_offset = offset.detach().cpu().item()
+                        sp_length = length.detach().cpu().item()
+                        char_offset, char_length = convert_sp_to_char_offsets(text, sp_offset, sp_length, self.transform.processor)
+                        char_offsets.append(char_offset)
+                        char_lengths.append(char_length)
                         ex_entities.append(self.ent_idx[cand_indices[cand_idx].detach().cpu().item()])
                         ex_md_scores.append(md_score.item())       
                         ex_el_scores.append(el_scores[cand_idx].item())     
                     cand_idx += 1
 
-            char_offsets, char_lengths = convert_sp_to_char_offsets(
-                texts[example_idx],
-                ex_sp_offsets,
-                ex_sp_lengths,
-                sp_tokens_boundaries[example_idx],
-            )
+
+            # Debug
+            #sample_token_ids = token_ids[example_idx]
+            #mention_token_ids = sample_token_ids[ex_sp_offsets[example_idx] : ex_sp_offsets[example_idx] + ex_sp_lengths[example_idx]]
+            #decoded_mention_tokens = [self.transform.processor.decode([token_id - 1]) for token_id in mention_token_ids.tolist()]
+            #mention = text[char_offsets[example_idx] : char_offsets[example_idx] + char_lengths[example_idx]]
+            #print(f"{sample_token_ids=}")
+            #print(f"{list(zip(mention_token_ids.tolist(), decoded_mention_tokens))=}")
+            #print(f"{mention=}")
 
             predictions.append(
                 {
@@ -285,7 +319,6 @@ class ModelEval:
                     "el_scores": ex_el_scores,
                 }
             )
-            example_idx += 1
 
         return predictions
     
