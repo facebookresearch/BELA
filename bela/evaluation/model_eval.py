@@ -220,8 +220,6 @@ class ModelEval:
 
         # mention_offsets include cls_token, but we don't use it here when converting to char offsets.
         mention_offsets =  (mention_offsets - 1).clamp(0)
-        # TODO: it is not clear why we need to subtract 1 for the mention lengths.
-        mention_lengths = (mention_lengths - 1).clamp(0)
         for text, offsets, lengths, md_scores in zip(
             texts, mention_offsets, mention_lengths, mentions_scores
         ):
@@ -237,6 +235,10 @@ class ModelEval:
                         sp_offset = offset.detach().cpu().item()
                         sp_length = length.detach().cpu().item()
                         char_offset, char_length = convert_sp_to_char_offsets(text, sp_offset, sp_length, self.transform.processor)
+                        # Some sentencepiece tokens start with whitespaces
+                        while char_offset < len(text) and text[char_offset] == " ":
+                            char_offset += 1
+                            char_length -= 1
                         char_offsets.append(char_offset)
                         char_lengths.append(char_length)
                         ex_entities.append(self.ent_idx[cand_indices[cand_idx].detach().cpu().item()])
