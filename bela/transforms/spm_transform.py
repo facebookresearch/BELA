@@ -29,6 +29,12 @@ class SPMTransform(nn.Module):
             spt = SentencePieceText()
             spt.ParseFromString(self.processor.encode_as_serialized_proto(text))
             current_offset = 0
+            for char in text:
+                if char.isspace():
+                    current_offset += 1
+                else:
+                    break
+
             token_ids_with_offsets = []
             if self.add_special_tokens:
                 token_ids_with_offsets.append((0,0,0))
