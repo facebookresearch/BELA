@@ -24,11 +24,11 @@ class SPMTransform(nn.Module):
         self.add_special_tokens = add_special_tokens
 
     def forward(self, texts):
+        """Converts a list of strings to a list of lists of token ids along with their character offset (i.e. where they start in the string)."""
         output = []
         for text in texts:
             spt = SentencePieceText()
             spt.ParseFromString(self.processor.encode_as_serialized_proto(text))
-            current_offset = 0
             token_ids_with_offsets = []
             if self.add_special_tokens:
                 token_ids_with_offsets.append((0,0,0))
@@ -37,15 +37,14 @@ class SPMTransform(nn.Module):
                     token_id = piece.id + 1
                 else:
                     token_id = self.unk_token_id
-                token_ids_with_offsets.append((token_id, current_offset, current_offset + len(piece.surface)))
-                current_offset += len(piece.surface)
+                token_ids_with_offsets.append((token_id, piece.begin, piece.end))
 
                 # take into account special tokens
                 if idx == self.max_seq_len - 3:
                     break
 
             if self.add_special_tokens:
-                token_ids_with_offsets.append((2,current_offset,0))
+                token_ids_with_offsets.append((2, piece.end, 0))
 
             output.append(token_ids_with_offsets)
         return output
