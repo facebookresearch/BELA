@@ -60,10 +60,11 @@ def convert_sp_to_char_offsets(
 
 @dataclass
 class Entity:
-    entity_id: str
+    entity_id: str  # E.g. "Q3312129"
     offset: int
     length: int
     text: str
+    entity_type: Optional[str] = None  # E.g. wiki
     md_score: Optional[float] = None
     el_score: Optional[float] = None
 
@@ -72,9 +73,10 @@ class Entity:
         return self.text[self.offset : self.offset + self.length]
 
     def __repr__(self):
-        str_repr = f"mention=\"{self.mention}\" -> entity_id={self.entity_id}"
+        str_repr = f"Entity<mention=\"{self.mention}\", entity_id={self.entity_id}"
         if self.md_score is not None and self.el_score is not None:
-            str_repr += f" (md_score={self.md_score:.2f}, el_score={self.el_score:.2f})"
+            str_repr += f", md_score={self.md_score:.2f}, el_score={self.el_score:.2f}"
+        str_repr += ">"
         return str_repr
 
     def __eq__(self, other):
@@ -84,22 +86,31 @@ class Entity:
 class Sample:
     text: str
     ground_truth_entities: List[Entity]
-    predicted_entities: List[Entity]
+    predicted_entities: Optional[List[Entity]] = None
 
-    def __init__(self, text, ground_truth_entities, predicted_entities):
+    def __init__(self, text, ground_truth_entities, predicted_entities=None):
         self.text = text
         self.ground_truth_entities = ground_truth_entities
         self.predicted_entities = predicted_entities
-        # Compute scores
-        self.true_positives = [predicted_entity for predicted_entity in self.predicted_entities if predicted_entity in self.ground_truth_entities]
-        self.false_positives = [predicted_entity for predicted_entity in self.predicted_entities if predicted_entity not in self.ground_truth_entities]
-        self.false_negatives = [ground_truth_entity for ground_truth_entity in self.ground_truth_entities if ground_truth_entity not in self.predicted_entities]
-        # Bag of entities
-        self.ground_truth_entity_ids = set([ground_truth_entity.entity_id for ground_truth_entity in self.ground_truth_entities])
-        self.predicted_entity_ids = set([predicted_entity.entity_id for predicted_entity in self.predicted_entities])
-        self.true_positives_boe = [predicted_entity_id for predicted_entity_id in self.predicted_entity_ids if predicted_entity_id in self.ground_truth_entity_ids]
-        self.false_positives_boe = [predicted_entity_id for predicted_entity_id in self.predicted_entity_ids if predicted_entity_id not in self.ground_truth_entity_ids]
-        self.false_negatives_boe = [ground_truth_entity_id for ground_truth_entity_id in self.ground_truth_entity_ids if ground_truth_entity_id not in self.predicted_entity_ids]
+        if self.predicted_entities is not None:
+            # Compute scores
+            self.true_positives = [predicted_entity for predicted_entity in self.predicted_entities if predicted_entity in self.ground_truth_entities]
+            self.false_positives = [predicted_entity for predicted_entity in self.predicted_entities if predicted_entity not in self.ground_truth_entities]
+            self.false_negatives = [ground_truth_entity for ground_truth_entity in self.ground_truth_entities if ground_truth_entity not in self.predicted_entities]
+            # Bag of entities
+            self.ground_truth_entity_ids = set([ground_truth_entity.entity_id for ground_truth_entity in self.ground_truth_entities])
+            self.predicted_entity_ids = set([predicted_entity.entity_id for predicted_entity in self.predicted_entities])
+            self.true_positives_boe = [predicted_entity_id for predicted_entity_id in self.predicted_entity_ids if predicted_entity_id in self.ground_truth_entity_ids]
+            self.false_positives_boe = [predicted_entity_id for predicted_entity_id in self.predicted_entity_ids if predicted_entity_id not in self.ground_truth_entity_ids]
+            self.false_negatives_boe = [ground_truth_entity_id for ground_truth_entity_id in self.ground_truth_entity_ids if ground_truth_entity_id not in self.predicted_entity_ids]
+
+
+    def __repr__(self):
+        repr_str = f"Sample(text=\"{self.text[:100]}...\", ground_truth_entities={self.ground_truth_entities[:3]}..."
+        if self.predicted_entities is not None:
+            repr_str += f", predicted_entities={self.predicted_entities[:3]}..."
+        repr_str += ")"
+        return repr_str
 
 
     def print(self, max_display_length=1000):
@@ -110,12 +121,13 @@ class Sample:
             if ground_truth_entity.offset + ground_truth_entity.length > max_display_length:
                 continue
             print(ground_truth_entity)
-        print("***************** Predicted entities *****************")
-        print(f"{len(self.predicted_entities)=}")
-        for predicted_entity in self.predicted_entities:
-            if predicted_entity.offset + predicted_entity.length > max_display_length:
-                continue
-            print(predicted_entity)
+        if self.predicted_entities is None:
+            print("***************** Predicted entities *****************")
+            print(f"{len(self.predicted_entities)=}")
+            for predicted_entity in self.predicted_entities:
+                if predicted_entity.offset + predicted_entity.length > max_display_length:
+                    continue
+                print(predicted_entity)
 
 
 class ModelEval:
