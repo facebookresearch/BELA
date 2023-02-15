@@ -598,6 +598,7 @@ class JointELXlmrRawTextTransform(SPMTransform):
         char_offsets: List[List[int]],
         char_lengths: List[List[int]],
     ) -> Tuple[List[List[int]], List[List[int]]]:
+        # TODO: Doesn't this do something similar to _calculate_token_mapping?
         sp_offsets: List[List[int]] = []
         sp_lengths: List[List[int]] = []
         for example_char_offsets, example_char_lengths, example_token_boundaries in zip(
@@ -606,20 +607,21 @@ class JointELXlmrRawTextTransform(SPMTransform):
             example_sp_offsets: List[int] = []
             example_sp_lengths: List[int] = []
             for offset, length in zip(example_char_offsets, example_char_lengths):
+                # TODO: There might be a bug here, need to write a test and with edge cases
                 token_idx = 0
-                while (
+                while (  # First we find the first token that starts at or after the offset
                     token_idx < len(example_token_boundaries)
                     and example_token_boundaries[token_idx][0] <= offset
                 ):
                     token_idx += 1
-                if (
+                if (  # Then if we overshoot, we decrease by one
                     token_idx == len(example_token_boundaries)
                     or example_token_boundaries[token_idx][0] != offset
                 ):
                     token_idx -= 1
                 example_sp_offsets.append(token_idx)
                 token_start_idx = token_idx
-                while (
+                while (  # Same method for the end token: find the first token that ends before the end of the mention
                     token_idx < len(example_token_boundaries)
                     and example_token_boundaries[token_idx][1] < offset + length
                 ):
