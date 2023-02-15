@@ -1,1 +1,1 @@
-from .l2_side_regularizer import L2SideBoxRegularizer
+from .l2_side_regularizer import L2BoxSideRegularizer

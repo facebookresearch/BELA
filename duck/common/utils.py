@@ -344,6 +344,7 @@ def mean_over_batches(batch_values, prefix=None, suffix=None):
         for metric in metrics
     }
 
+
 def prefix_suffix_keys(dictionary, prefix=None, suffix=None, separator=""):
     prefix = "" if prefix is None else f"{prefix}{separator}"
     suffix = "" if suffix is None else f"{separator}{suffix}"
@@ -351,9 +352,11 @@ def prefix_suffix_keys(dictionary, prefix=None, suffix=None, separator=""):
         f"{prefix}{key}{suffix}": value for key, value in dictionary.items()
     }
 
+
 def metric_dict_to_string(kv_map, separator="\t"):
     lines = [f"{key}: {value:.3f}" for key, value in kv_map.items()]
     return separator.join(lines)
+
 
 def tensor_set_intersection(t1, t2):
     combined = torch.cat((t1, t2))
@@ -373,8 +376,10 @@ def cartesian_to_spherical(cartesian):
     x = repeat(cartesian, "... n1 -> ... n1 n2", n2=n)
     mask = torch.tril(torch.ones(n, n, device=cartesian.device)) == 1
     x = x.masked_fill(mask == 0, float(0.0))
-    x = torch.sqrt(torch.sum(x ** 2, dim=-2)).clamp_min(eps)
-    angle = torch.acos(cartesian[..., :-1] / x[..., :-1])
+    x = torch.sqrt(torch.sum(x ** 2, dim=-2))
+    cos = cartesian[..., :-1] / (x[..., :-1] + eps)
+    cos = cos.clamp(min=-1.0, max=1.0)
+    angle = torch.acos(cos)
     neg_mask = cartesian[..., -1] < 0
     angle[neg_mask, -1] = 2 * math.pi - angle[neg_mask, -1]
     radius = torch.linalg.vector_norm(cartesian, ord=2, dim=-1)
@@ -382,16 +387,16 @@ def cartesian_to_spherical(cartesian):
 
 
 def expand_with_mask(tensor, mask, pad_value=0.0):
-        bsz = mask.size(0)
-        squeeze = False
-        if tensor.dim() == 1:
-            tensor = tensor.unsqueeze(-1)
-            squeeze = True
-        result = repeat(tensor, "n d -> d b n", b=bsz).masked_fill(~mask, pad_value)
-        result = rearrange(result, "d b n -> b n d")
-        if squeeze:
-            result = result.squeeze(-1)
-        return result
+    bsz = mask.size(0)
+    squeeze = False
+    if tensor.dim() == 1:
+        tensor = tensor.unsqueeze(-1)
+        squeeze = True
+    result = repeat(tensor, "n d -> d b n", b=bsz).masked_fill(~mask, pad_value)
+    result = rearrange(result, "d b n -> b n d")
+    if squeeze:
+        result = result.squeeze(-1)
+    return result
 
 
 def expand_box_with_mask(box, mask, left_pad=-100.0, right_pad=100.0):

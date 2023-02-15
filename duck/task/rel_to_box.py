@@ -7,7 +7,7 @@ from omegaconf import open_dict
 from torch import nn
 
 from duck.box_tensors.intersection import Intersection
-from duck.box_tensors.regularization import L2SideBoxRegularizer
+from duck.box_tensors.regularization import L2BoxSideRegularizer
 from duck.box_tensors.volume import Volume
 from duck.common.utils import log1mexp, mean_over_batches, metric_dict_to_string, prefix_suffix_keys, tiny_value_of_dtype
 from duck.modules import BoxEmbedding

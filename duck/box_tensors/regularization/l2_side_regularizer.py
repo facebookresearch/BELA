@@ -19,7 +19,7 @@ def l2_side_regularizer(
         return torch.log(torch.abs(right - left) + eps)
 
 
-class L2SideBoxRegularizer(BoxRegularizer):
+class L2BoxSideRegularizer(BoxRegularizer):
     def __init__(
         self,
         weight: float,

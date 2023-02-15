@@ -65,11 +65,11 @@ duck:
     volume_temperature: 0.1
     parametrization: spherical
     regularization:
-      _target_: duck.box_tensors.regularization.L2SideBoxRegularizer
+      _target_: duck.box_tensors.regularization.L2BoxSideRegularizer
       weight: 0.2
-    dimensions: 0.5
+    # dimensions: 0.5
   num_negative_boxes: 2048
-  duck_loss_weight: 0.1
+  duck_loss_weight: 1.0
   dropout: 0.5
   duck_loss:
     _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss

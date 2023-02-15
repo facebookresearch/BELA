@@ -100,7 +100,7 @@ class BoxEDistance(nn.Module):
         return torch.linalg.vector_norm(dist, ord=self.norm, dim=-1).clone()
     
 
-class DuckMaxMarginRankingLoss(nn.Module):
+class DuckDistanceRankingLoss(nn.Module):
     def __init__(
         self,
         distance_function=None,
@@ -110,7 +110,7 @@ class DuckMaxMarginRankingLoss(nn.Module):
         inside_weight=0.2,
         norm=1
     ):
-        super(DuckMaxMarginRankingLoss, self).__init__()
+        super(DuckDistanceRankingLoss, self).__init__()
         self.distance_function = distance_function or Q2BDistance(
             inside_weight=inside_weight,
             norm=norm
@@ -164,12 +164,12 @@ class DuckMaxMarginRankingLoss(nn.Module):
         }
 
 
-class DuckMarginLoss(nn.Module):
+class DuckBoxMarginLoss(nn.Module):
     def __init__(self,
         margin: float = 0.1,
         reduction: str = "mean"
     ):
-        super(DuckMarginLoss, self).__init__()
+        super(DuckBoxMarginLoss, self).__init__()
         self.margin = margin
         self.reduction = reduction
     
@@ -264,12 +264,11 @@ class DuckNegativeSamplingLoss(nn.Module):
         positive_dist[~mask] = 0.0
         positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
 
-        eps = 1e-6
-        positive_term = torch.sigmoid(self.margin - positive_dist)
-        positive_term = positive_term.clamp_min(eps).log().mean(dim=0)
-        negative_term = torch.sigmoid(negative_dist - self.margin)
-        negative_term = negative_term.clamp_min(eps).log().mean(dim=0)
+        positive_term = torch.nn.functional.logsigmoid(self.margin - positive_dist).mean(dim=0)
+        negative_term = torch.nn.functional.logsigmoid(negative_dist - self.margin).mean(dim=0)
+
         loss = -positive_term - negative_term
+        
         return {
             "loss": self._reduce(loss),
             "positive_distance": wandb.Histogram(positive_dist.detach().cpu().numpy()),
@@ -1065,14 +1064,15 @@ class Duck(pl.LightningModule):
             topk = [o["topk"] for o in dataset_outputs]
             micro_f1 = self.micro_f1["val"][dataset](preds, target)
             logging_metrics[f"Micro-F1/{dataset}"] = self.micro_f1["val"][dataset]
-            if self.global_rank == 0:
-                all_preds = self.all_gather(preds)
-                all_targets = self.all_gather(target)
-                all_preds = rearrange(all_preds, "w b -> (w b)")
-                all_targets = rearrange(all_targets, "w b -> (w b)")
-                acc = (all_targets == all_preds).mean()
-                logging_metrics[f"Acc/{dataset}"] = acc
-                value_metrics["Acc/{dataset}"] = acc
+
+            all_preds = self.all_gather(preds)
+            all_targets = self.all_gather(target)
+            all_preds = rearrange(all_preds, "w b -> (w b)")
+            all_targets = rearrange(all_targets, "w b -> (w b)")
+            acc = (all_targets == all_preds).float().mean()
+            logging_metrics[f"Acc/{dataset}"] = acc
+            value_metrics[f"Acc/{dataset}"] = acc
+
             value_metrics[f"Micro-F1/{dataset}"] = micro_f1
             for k in self.recall_steps:
                 recall = self.recall_at_k(topk, target, k, dataset)
