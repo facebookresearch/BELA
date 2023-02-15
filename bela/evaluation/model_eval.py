@@ -53,14 +53,14 @@ class Entity:
 
 class Sample:
     text: str
-    ground_truth_entities: List[Entity]
+    ground_truth_entities: Optional[List[Entity]] = None
     predicted_entities: Optional[List[Entity]] = None
 
-    def __init__(self, text, ground_truth_entities, predicted_entities=None):
+    def __init__(self, text, ground_truth_entities=None, predicted_entities=None):
         self.text = text
         self.ground_truth_entities = ground_truth_entities
         self.predicted_entities = predicted_entities
-        if self.predicted_entities is not None:
+        if self.ground_truth_entities is not None and self.predicted_entities is not None:
             # Compute scores
             self.true_positives = [predicted_entity for predicted_entity in self.predicted_entities if predicted_entity in self.ground_truth_entities]
             self.false_positives = [predicted_entity for predicted_entity in self.predicted_entities if predicted_entity not in self.ground_truth_entities]
@@ -74,7 +74,9 @@ class Sample:
 
 
     def __repr__(self):
-        repr_str = f"Sample(text=\"{self.text[:100]}...\", ground_truth_entities={self.ground_truth_entities[:3]}..."
+        repr_str = f"Sample(text=\"{self.text[:100]}...\""
+        if self.ground_truth_entities is not None:
+            repr_str += f", ground_truth_entities={self.ground_truth_entities[:3]}..."
         if self.predicted_entities is not None:
             repr_str += f", predicted_entities={self.predicted_entities[:3]}..."
         repr_str += ")"
@@ -83,13 +85,14 @@ class Sample:
 
     def print(self, max_display_length=1000):
         print(f"{self.text[:max_display_length]=}")
-        print("***************** Ground truth entities *****************")
-        print(f"{len(self.ground_truth_entities)=}")
-        for ground_truth_entity in self.ground_truth_entities:
-            if ground_truth_entity.offset + ground_truth_entity.length > max_display_length:
-                continue
-            print(ground_truth_entity)
-        if self.predicted_entities is None:
+        if self.ground_truth_entities is not None:
+            print("***************** Ground truth entities *****************")
+            print(f"{len(self.ground_truth_entities)=}")
+            for ground_truth_entity in self.ground_truth_entities:
+                if ground_truth_entity.offset + ground_truth_entity.length > max_display_length:
+                    continue
+                print(ground_truth_entity)
+        if self.predicted_entities is not None:
             print("***************** Predicted entities *****************")
             print(f"{len(self.predicted_entities)=}")
             for predicted_entity in self.predicted_entities:
@@ -156,7 +159,6 @@ class ModelEval:
         token_ids = model_inputs["input_ids"].to(self.device)
         text_pad_mask = model_inputs["attention_mask"].to(self.device)
         tokens_mapping = model_inputs["tokens_mapping"].to(self.device)
-        sp_tokens_boundaries = model_inputs["sp_tokens_boundaries"].tolist()
 
         with torch.no_grad():
             _, last_layer = self.task.encoder(token_ids)
@@ -245,16 +247,6 @@ class ModelEval:
                         ex_md_scores.append(md_score.item())       
                         ex_el_scores.append(el_scores[cand_idx].item())     
                     cand_idx += 1
-
-
-            # Debug
-            #sample_token_ids = token_ids[example_idx]
-            #mention_token_ids = sample_token_ids[ex_sp_offsets[example_idx] : ex_sp_offsets[example_idx] + ex_sp_lengths[example_idx]]
-            #decoded_mention_tokens = [self.transform.processor.decode([token_id - 1]) for token_id in mention_token_ids.tolist()]
-            #mention = text[char_offsets[example_idx] : char_offsets[example_idx] + char_lengths[example_idx]]
-            #print(f"{sample_token_ids=}")
-            #print(f"{list(zip(mention_token_ids.tolist(), decoded_mention_tokens))=}")
-            #print(f"{mention=}")
 
             predictions.append(
                 {
