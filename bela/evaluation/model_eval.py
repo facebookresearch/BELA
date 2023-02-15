@@ -353,7 +353,6 @@ class ModelEval:
             else:
                 return a / b
 
-
         def compute_f1_p_r(tp, fp, fn):
             precision = safe_division(tp, (tp + fp))
             recall = safe_division(tp, (tp + fn))
