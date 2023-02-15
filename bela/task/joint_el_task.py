@@ -803,13 +803,13 @@ class JointELTask(LightningModule):
         mention_lengths = (
             chosen_mention_bounds[:, :, 1] - chosen_mention_bounds[:, :, 0] + 1
         )
-        mention_lengths[mention_offsets == -1] = 0
-        mention_offsets[mention_offsets == -1] = 0
 
         # get mention representations for predicted mentions
         mentions_repr = self.span_encoder(
             text_encodings, mention_offsets, mention_lengths
         )
+
+        mention_lengths[mention_offsets == 0] = 0
 
         # flat mentions and entities indices (mentions_num x embedding_dim)
         flat_mentions_repr = mentions_repr[mention_lengths != 0]
@@ -1057,12 +1057,12 @@ class JointELTask(LightningModule):
         mention_lengths = (
             chosen_mention_bounds[:, :, 1] - chosen_mention_bounds[:, :, 0] + 1
         )
-        mention_lengths[mention_offsets == -1] = 0
-        mention_offsets[mention_offsets == -1] = 0
 
         mentions_repr = self.span_encoder(
             text_encodings, mention_offsets, mention_lengths
         )
+
+        mention_lengths[mention_offsets == 0] = 0
 
         # flat mentions and entities indices (mentions_num x embedding_dim)
         flat_mentions_repr = mentions_repr[mention_lengths != 0]
