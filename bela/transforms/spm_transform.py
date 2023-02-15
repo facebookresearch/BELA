@@ -29,9 +29,10 @@ class SPMTransform(nn.Module):
             spt = SentencePieceText()
             spt.ParseFromString(self.processor.encode_as_serialized_proto(text))
             current_offset = 0
+            leading_whitespaces_count = 0
             for char in text:
                 if char.isspace():
-                    current_offset += 1
+                    leading_whitespaces_count += 1
                 else:
                     break
 
@@ -43,8 +44,13 @@ class SPMTransform(nn.Module):
                     token_id = piece.id + 1
                 else:
                     token_id = self.unk_token_id
-                token_ids_with_offsets.append((token_id, current_offset, current_offset + len(piece.surface)))
-                current_offset += len(piece.surface)
+                if idx == 0:
+                    # if we process first token, append leading whitespacess count to the sp token length
+                    token_ids_with_offsets.append((token_id, current_offset, current_offset + len(piece.surface) + leading_whitespaces_count))
+                    current_offset += len(piece.surface) + leading_whitespaces_count
+                else:
+                    token_ids_with_offsets.append((token_id, current_offset, current_offset + len(piece.surface)))
+                    current_offset += len(piece.surface)
 
                 # take into account special tokens
                 if idx == self.max_seq_len - 3:
