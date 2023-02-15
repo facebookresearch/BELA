@@ -11,6 +11,8 @@ import logging
 
 from typing import Optional, Union, List, Dict, Any, Tuple
 
+from bela.transforms.spm_transform import convert_sp_to_char_offsets
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,64 +24,6 @@ def load_file(path: Union[str, Path]) -> List[Dict[str, Any]]:
             data = json.loads(line)
             all_data.append(data)
     return all_data
-
-
-#def convert_sp_to_char_offsets(
-#    text: str,
-#    sp_offsets: List[int],
-#    sp_lengths: List[int],
-#    sp_tokens_boundaries: List[List[int]],
-#) -> Tuple[List[int], List[int]]:
-#    """
-#    Function convert sentecepiece offsets and lengths to character level
-#    offsets and lengths for a given `text`.
-#    """
-#    char_offsets: List[int] = []
-#    char_lengths: List[int] = []
-#    text_utf8_chars: List[str] = [char for char in text]
-#
-#    for sp_offset, sp_length in zip(sp_offsets, sp_lengths):
-#        # sp_offsets include cls_token, while boundaries doesn't
-#        if sp_offset == 0:
-#            continue
-#
-#        sp_offset = sp_offset - 1
-#        char_offset = sp_tokens_boundaries[sp_offset][0]
-#        char_end = sp_tokens_boundaries[sp_offset + sp_length - 1][1]
-#
-#        # sp token boundaries include whitespaces, so remove them
-#        while text_utf8_chars[char_offset].isspace():
-#            char_offset += 1
-#            assert char_offset < len(text_utf8_chars)
-#
-#        char_offsets.append(char_offset)
-#        char_lengths.append(char_end - char_offset)
-#
-#    return char_offsets, char_lengths
-
-
-def convert_sp_to_char_offsets(
-        text: str,
-        sp_offset: int,
-        sp_length: int,
-        spm_processor,
-    ) -> Tuple[int, int]:
-    """Inefficient but simple way to convert sp offsets to char offsets."""
-    # SPM strips whitespaces
-    pieces = spm_processor.encode_as_pieces(text)
-    # Offset
-    char_offset = sum(len(piece) for piece in pieces[:sp_offset])
-    n_starting_whitespaces = len(text) - len(text.lstrip())
-    char_offset += n_starting_whitespaces  # SPM strips whitespaces
-    # Mention length
-    mention_pieces = pieces[sp_offset:sp_offset + sp_length]
-    mention_text = ''.join(mention_pieces).replace('▁', ' ')
-    #n_mention_starting_whitespaces = len(mention_text) - len(mention_text.lstrip())
-    #char_offset -= n_mention_starting_whitespaces  # Include the starting whitespace(s) in the offset rather than in the mention
-    char_length = len(mention_text.strip(" "))
-    print(mention_pieces)
-    print(mention_text[char_offset:char_offset+char_length])
-    return char_offset, char_length
 
 
 @dataclass
