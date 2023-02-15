@@ -94,23 +94,27 @@ class TestJointELXlmrTransforms(unittest.TestCase):
             {
                 "texts": [
                     "Some simple text about Real Madrid and Barcelona",
-                    "Hola amigos!",
                     "Cristiano Ronaldo juega en la Juventus",
+                    "Hola amigos!",
+                    "   Hola   amigos!   ",  # test extra spaces
                 ],
                 "mention_offsets": [
                     [23, 39],
-                    [5],
                     [0, 30],
+                    [5],
+                    [10],
                 ],
                 "mention_lengths": [
                     [11, 9],
-                    [6],
                     [17, 8],
+                    [6],
+                    [6],
                 ],
                 "entities": [
                     [1, 2],
-                    [3],
                     [102041, 267832],
+                    [3],
+                    [3],
                 ],
             }
         )
@@ -119,23 +123,35 @@ class TestJointELXlmrTransforms(unittest.TestCase):
             "input_ids": torch.tensor(
                 [
                     [0, 31384, 8781, 7986, 1672, 5120, 8884, 136, 5755, 2],
-                    [0, 47958, 19715, 38, 2, 1, 1, 1, 1, 1],
                     [0, 96085, 43340, 1129, 2765, 22, 21, 65526, 2, 1],
+                    [0, 47958, 19715, 38, 2, 1, 1, 1, 1, 1],
+                    [0, 47958, 19715, 38, 2, 1, 1, 1, 1, 1],  # Whitespaces are ignored
                 ]
             ),
             "attention_mask": torch.tensor(
                 [
                     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                    [1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
                     [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+                    [1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+                    [1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
                 ]
             ),
-            "mention_offsets": torch.tensor([[5, 8], [2, 0], [1, 7]]),
-            "mention_lengths": torch.tensor([[2, 1], [1, 0], [2, 1]]),
-            "entities": torch.tensor([[1, 2], [3, 0], [102041, 267832]]),
+            "mention_offsets": torch.tensor([[5, 8], [1, 7], [2, 0], [2, 0]]),
+            "mention_lengths": torch.tensor([[2, 1], [2, 1], [1, 0], [1, 0]]),
+            "entities": torch.tensor([[1, 2], [102041, 267832], [3, 0], [3, 0]]),
             "tokens_mapping": torch.tensor(
                 [
                     [[1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 9]],
+                    [
+                        [1, 2],
+                        [2, 3],
+                        [3, 4],
+                        [4, 5],
+                        [5, 6],
+                        [6, 7],
+                        [7, 8],
+                        [0, 1],
+                    ],
                     [
                         [1, 2],
                         [2, 3],
@@ -150,10 +166,10 @@ class TestJointELXlmrTransforms(unittest.TestCase):
                         [1, 2],
                         [2, 3],
                         [3, 4],
-                        [4, 5],
-                        [5, 6],
-                        [6, 7],
-                        [7, 8],
+                        [0, 1],
+                        [0, 1],
+                        [0, 1],
+                        [0, 1],
                         [0, 1],
                     ],
                 ]
@@ -170,7 +186,6 @@ class TestJointELXlmrTransforms(unittest.TestCase):
                         [34, 38],
                         [38, 48],
                     ],
-                    [[0, 4], [4, 11], [11, 12], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1]],
                     [
                         [0, 9],
                         [9, 17],
@@ -181,6 +196,8 @@ class TestJointELXlmrTransforms(unittest.TestCase):
                         [29, 38],
                         [0, 1],
                     ],
+                    [[0, 4], [4, 11], [11, 12], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1]],
+                    [[0+3, 4+3], [4+5, 11+5], [11+5, 12+5], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1]],  # Add whitespaces
                 ]
             ),
         }
