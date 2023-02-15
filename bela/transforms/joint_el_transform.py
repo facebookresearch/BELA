@@ -521,7 +521,8 @@ class JointELXlmrRawTextTransform(SPMTransform):
             sp_tokens_boundaries_column=sp_tokens_boundaries_column,
         )
 
-    def _calculate_alpha_num_boundaries(self, texts: List[str]):
+    def _calculate_alpha_num_boundaries(self, texts: List[str]) -> List[List[List[int]]]:
+        """Returns for each text, a list of lists of start and end indices of alpha-numeric substrings (~=words)."""
         alpha_num_boundaries: List[List[List[int]]] = []
         for text in texts:
             example_alpha_num_boundaries: List[List[int]] = []

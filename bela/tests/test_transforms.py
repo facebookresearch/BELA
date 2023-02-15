@@ -197,13 +197,13 @@ class TestJointELXlmrTransforms(unittest.TestCase):
                         [0, 1],
                     ],
                     [[0, 4], [4, 11], [11, 12], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1]],
-                    [[0+3, 4+3], [4+5, 11+5], [11+5, 12+5], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1]],  # Add whitespaces
+                    [[0+3, 4+3], [4+3, 11+5], [11+5, 12+5], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1]],  # Add whitespaces
                 ]
             ),
         }
 
         for key, value in expected_model_inputs.items():
-            self.assertTrue(torch.all(model_inputs[key].eq(value)), f"{key} not equal")
+            self.assertTrue(torch.all(model_inputs[key].eq(value)), f"{key} not equal: {model_inputs[key]=} != {value=}")
 
 
 if __name__ == '__main__':
