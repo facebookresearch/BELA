@@ -25,6 +25,19 @@ def convert_text_to_spm_tokens_with_char_offsets(text: str, spm_processor: spm.S
     return token_ids_with_offsets
 
 
+def convert_sp_to_char_offsets(
+        text: str,
+        sp_offset: int,
+        sp_length: int,
+        spm_processor,
+    ) -> Tuple[int, int]:
+    """Inefficient but simple way to convert sp offsets to char offsets."""
+    token_ids_with_offsets = convert_text_to_spm_tokens_with_char_offsets(text, spm_processor)
+    char_offset = token_ids_with_offsets[sp_offset][1]
+    char_length = token_ids_with_offsets[sp_offset + sp_length - 1][2] - char_offset
+    return char_offset, char_length
+
+
 class SPMTransform(nn.Module):
     def __init__(
         self,

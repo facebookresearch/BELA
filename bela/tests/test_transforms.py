@@ -2,6 +2,8 @@ import unittest
 
 import torch
 from bela.transforms.joint_el_transform import JointELTransform, JointELXlmrRawTextTransform
+from bela.transforms.spm_transform import SPMTransform, convert_sp_to_char_offsets
+
 
 class TestJointELXlmrTransforms(unittest.TestCase):
     def test_blink_mention_xlmr_transform(self):
@@ -204,6 +206,33 @@ class TestJointELXlmrTransforms(unittest.TestCase):
 
         for key, value in expected_model_inputs.items():
             self.assertTrue(torch.all(model_inputs[key].eq(value)), f"{key} not equal: {model_inputs[key]=} != {value=}")
+
+    def test_convert_sp_to_char_offsets_beginning_whitespaces(self):
+        #  Check if the beginning whitespaces are correctly handled
+        spm_processor = SPMTransform().processor
+        text = "   Martina Steuk (née Kämpfert; born 11 November 1959) is a German former track and field athlete who represented East Germany.   "
+        sp_offset = 18
+        sp_length = 3
+        char_offset, char_length = convert_sp_to_char_offsets(text, sp_offset, sp_length, spm_processor)
+        self.assertEqual(
+            text[char_offset: char_offset + char_length],
+            " track and field",  # The first token is "▁track" hence the whitespace
+            f"Expected 'track and field', got '{text[char_offset: char_offset + char_length]}'",
+        )
+
+
+    def test_convert_sp_to_char_offsets_middle_whitespaces(self):
+        # Check if the middle whitespaces are correctly handled
+        spm_processor = SPMTransform().processor
+        text = "   Martina Steuk (née Kämpfert; born 11 November 1959)        is a German former track and field athlete who represented East Germany.   "
+        sp_offset = 18
+        sp_length = 3
+        char_offset, char_length = convert_sp_to_char_offsets(text, sp_offset, sp_length, spm_processor)
+        self.assertEqual(
+            text[char_offset: char_offset + char_length],
+            " track and field",  # The first token is "▁track" hence the whitespace
+            f"Expected 'track and field', got '{text[char_offset: char_offset + char_length]}'",
+        )
 
 
 if __name__ == '__main__':
