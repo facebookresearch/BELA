@@ -1,3 +1,4 @@
+from pathlib import Path
 import yaml
 from hydra.experimental import compose, initialize_config_module
 import hydra
@@ -7,13 +8,13 @@ import json
 import faiss
 import logging
 
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Union, List, Dict, Any, Tuple
 
 
 logger = logging.getLogger(__name__)
 
 
-def load_file(path):
+def load_file(path: Union[str, Path]) -> List[Dict[str, Any]]:
     all_data = []
     with open(path, 'rt') as fd:
         for line in tqdm(fd):
@@ -300,7 +301,8 @@ class ModelEval:
             all_predictions.extend(predictions)
         return all_predictions
     
-    def compute_scores(self, data, predictions, md_threshold=0.2, el_threshold=0.5):
+    @staticmethod
+    def compute_scores(data, predictions, md_threshold=0.2, el_threshold=0.05):
         tp, fp, support = 0, 0, 0
         tp_boe, fp_boe, support_boe = 0, 0, 0
 
@@ -345,11 +347,17 @@ class ModelEval:
                 if ent not in example_targets_set:
                     fp_boe += 1
 
+        def safe_division(a, b):
+            if b == 0:
+                return 0
+            else:
+                return a / b
+
 
         def compute_f1_p_r(tp, fp, fn):
-            precision = tp / (tp + fp)
-            recall = tp / (tp + fn)
-            f1 = 2 * tp / (2 * tp + fp + fn)
+            precision = safe_division(tp, (tp + fp))
+            recall = safe_division(tp, (tp + fn))
+            f1 = safe_division(2 * tp, (2 * tp + fp + fn))
             return f1, precision, recall
 
         fn = support - tp

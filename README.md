@@ -48,7 +48,7 @@ Config is stored in `bela/conf/joint_el.yaml`. To run training (you should be on
 PYTHONPATH=.:$PYTHONPATH python bela/main.py --config-name joint_el
 ```
 
-### Train model using SLUMR
+### Train model using SLURM
 
 ```
 PYTHONPATH=.:$PYTHONPATH python bela/main.py -m --config-name joint_el_disambiguation_only trainer=slurm trainer.num_nodes=1 trainer.gpus=8
@@ -65,13 +65,13 @@ Available configs:
 * blink_xlmr - English, xlmr-base
 * blink_xlmr_large - English, xlmr-large
 
-### Train model using SLUMR
+### Train model using SLURM
 
 ```
 PYTHONPATH=.:$PYTHONPATH python mblink/main.py -m --config-name blink_xlmr trainer=slurm
 ```
 
-## Data
+## Evaluation Data
 ### TAC-KBP and LORELEI
 Create an account on ldc.upenn.edu (your organization needs to have a membership) and download the following files:
 ```
