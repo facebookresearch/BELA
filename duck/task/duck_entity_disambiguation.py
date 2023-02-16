@@ -20,7 +20,8 @@ from abc import ABC, abstractmethod
 import faiss
 import os
 from tqdm import tqdm
-from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall
+import torchmetrics
+from torchmetrics.classification import MulticlassF1Score
 import wandb
 from torchmetrics.retrieval import RetrievalRecall
 from torchmetrics import MeanMetric
@@ -277,7 +278,6 @@ class DuckNegativeSamplingLoss(nn.Module):
             "negative_distance_mean": negative_dist.mean()
         }
 
-
 class GumbelBoxProbabilisticMembership(nn.Module):
     def __init__(
         self,
@@ -425,7 +425,7 @@ class Duck(pl.LightningModule):
         self.ent_index = None
         self.dim = None
         self.ed_loss = nn.CrossEntropyLoss()
-        self.gather_on_ddp = False
+        self.gather_on_ddp = True
         self.data = kwargs.get("data")
         self.no_box_ablation = False
         self.rel_set_transformer = None
@@ -448,28 +448,7 @@ class Duck(pl.LightningModule):
             "val": [d.upper() for d in dict(self.config.data.val_paths).keys()],
             "test": [d.upper() for d in dict(self.config.data.test_paths).keys()]
         }
-        self.micro_f1 = nn.ModuleDict({ 
-            stage: nn.ModuleDict({
-                dataset: MulticlassF1Score(num_classes=len(self.data.ent_catalogue), average='micro')
-                for dataset in self.datasets[stage]
-            })
-            for stage in ["val", "test"]
-        })
-
-        self.retrieval_recall = nn.ModuleDict({
-            stage: nn.ModuleDict({
-                dataset: RetrievalRecall()
-                for dataset in self.datasets[stage]
-            })
-            for stage in ["val", "test"]
-        })
-
-        self.recall_steps = [10, 30, 50, 100]
-        metric_names = ["Micro-F1"] + [f"Recall@{k}" for k in self.recall_steps]
-        self.mean_metrics = nn.ModuleDict({
-            f"Mean/{metric_name}": MeanMetric()
-            for metric_name in metric_names
-        })
+        
         self.regularizer = None
         if self.config.duck.boxes.get("regularization") is not None:
             self.regularizer = hydra.utils.instantiate(
@@ -901,13 +880,11 @@ class Duck(pl.LightningModule):
         target = batch["targets"]
         relation_set_embeddings = representations["relation_set_embeddings"]
         ent_rel_mask = batch["ent_rel_mask"]
-
-        scores = self.sim_score(mentions, entities)
-        ed_loss = self.ed_loss(scores, target)
         
         duck_loss = 0.0
         duck_loss_metrics = {}
         regularization = 0.0
+
         if self.duck_loss is not None:
             rel_ids = {
                 "data": expand_with_mask(batch["relation_ids"]["data"], ent_rel_mask),
@@ -915,7 +892,7 @@ class Duck(pl.LightningModule):
             }
             negative_boxes = self.sample_negative_boxes(rel_ids["data"])
             duck_loss_metrics = self.compute_duck_loss_with_boxes(
-                entities, entity_boxes, negative_boxes, rel_ids
+                entities, mentions, entity_boxes, negative_boxes, rel_ids
             )
             duck_loss = duck_loss_metrics["loss"]
             regularization = duck_loss_metrics["regularization"]
@@ -932,7 +909,9 @@ class Duck(pl.LightningModule):
                 entities.transpose(0, 1)
             )
             duck_loss = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
-
+        
+        scores = self.sim_score(mentions, entities)
+        ed_loss = self.ed_loss(scores, target)
         loss = ed_loss + self.duck_loss_weight * (duck_loss + regularization)
        
         metrics = {
@@ -960,17 +939,17 @@ class Duck(pl.LightningModule):
 
         return metrics
 
-    def compute_duck_loss_with_boxes(self, entities, entity_boxes, negative_boxes, rel_ids):
+    def compute_duck_loss_with_boxes(self, entities, mentions, entity_boxes, negative_boxes, rel_ids):
         result = {}
         ent_rel_mask = rel_ids["attention_mask"]
-        # rel_ids["attention_mask"] = rel_ids["attention_mask"][mask]
         entity_boxes = expand_box_with_mask(entity_boxes, ent_rel_mask)
         entities_ = entities[..., :self.box_size]
+        mentions_ = mentions[..., :self.box_size]
         entity_boxes = entity_boxes[..., :self.box_size]
         negative_boxes = negative_boxes[..., :self.box_size]
         if self.config.duck.boxes.parametrization == "spherical":
             entity_boxes, negative_boxes, entities_ = self.handle_spherical_coord(
-                entity_boxes, negative_boxes, entities_
+                entity_boxes, negative_boxes, entities_, mentions_
             )
         
         dropout_mask = torch.full_like(entities_, False).bool()
@@ -1025,12 +1004,14 @@ class Duck(pl.LightningModule):
         result["box_size_mean"] = box_size.mean()
         return result
 
-    def handle_spherical_coord(self, entity_boxes, negative_boxes, entities_):
-        _, entities_ = cartesian_to_spherical(entities_)
-        entities_ = entities_[..., :-1]  # drop last coord to keep the range [0, pi]
-        entity_boxes = entity_boxes[..., :entities_.size(-1)]
-        negative_boxes = negative_boxes[..., :entities_.size(-1)]
-        return entity_boxes, negative_boxes, entities_
+    def handle_spherical_coord(self, entity_boxes, negative_boxes, entities, mentions):
+        entities[..., -1] = torch.abs(entities[..., -1].clone())
+        mentions[..., -1] = torch.abs(mentions[..., -1].clone())
+        _, entities = cartesian_to_spherical(entities)
+        # entities_ = entities_[..., :-1]  # drop last coord to keep the range [0, pi]
+        entity_boxes = entity_boxes[..., :entities.size(-1)]
+        negative_boxes = negative_boxes[..., :entities.size(-1)]
+        return entity_boxes, negative_boxes, entities
 
     def training_epoch_end(self, outputs):
         mean_metrics = mean_over_batches(outputs, suffix="epoch")
@@ -1048,10 +1029,17 @@ class Duck(pl.LightningModule):
             "target": target,
             "topk": scores.topk(100)
         }
+    
+    def all_gather_flat(self, tensor):
+        shape = tensor.size()
+        all = self.all_gather(tensor)
+        if len(shape) < len(all.size()):
+            grouped_dim = all.size(0) * shape[0]
+            all = all.view(grouped_dim, *shape[1:])
+        return all
 
     def validation_epoch_end(self, outputs):
-        logging_metrics = {}
-        value_metrics = {}
+        metrics = {}
         
         if len(self.trainer.val_dataloaders) == 1:
             outputs = [outputs]
@@ -1062,50 +1050,51 @@ class Duck(pl.LightningModule):
             preds = torch.cat([o["preds"] for o in dataset_outputs])
             target = torch.cat([o["target"] for o in dataset_outputs])
             topk = [o["topk"] for o in dataset_outputs]
-            micro_f1 = self.micro_f1["val"][dataset](preds, target)
-            logging_metrics[f"Micro-F1/{dataset}"] = self.micro_f1["val"][dataset]
 
-            all_preds = self.all_gather(preds)
-            all_targets = self.all_gather(target)
-            all_preds = rearrange(all_preds, "w b -> (w b)")
-            all_targets = rearrange(all_targets, "w b -> (w b)")
-            acc = (all_targets == all_preds).float().mean()
-            logging_metrics[f"Acc/{dataset}"] = acc
-            value_metrics[f"Acc/{dataset}"] = acc
-
-            value_metrics[f"Micro-F1/{dataset}"] = micro_f1
-            for k in self.recall_steps:
-                recall = self.recall_at_k(topk, target, k, dataset)
-                logging_metrics[f"Recall@{k}/{dataset}"] = self.retrieval_recall["val"][dataset]
-                value_metrics[f"Recall@{k}/{dataset}"] = recall
+            preds = self.all_gather_flat(preds)
+            target = self.all_gather_flat(target)
+            
+            micro_f1 = torchmetrics.functional.classification.multiclass_f1_score(
+                preds, target, num_classes=len(self.data.ent_catalogue), average='micro'
+            )
+            metrics[f"Micro-F1/{dataset}"] = micro_f1
             tqdm.write(f"Micro F1 on {dataset}: \t{micro_f1:.4f}")
+
+            recall_steps = [10, 30, 50, 100]
+            for k in recall_steps:
+                recall = self.recall_at_k(topk, target, k)
+                metrics[f"Recall@{k}/{dataset}"] = recall
         
-        avg_metrics = {}
-        for dataset_metric in value_metrics:
-            avg_metric_key = dataset_metric.split("/")[0]
-            dataset_name = dataset_metric.split("/")[-1]
-            if dataset_name not in self.datasets["test"]:
-                continue
-            avg_metric_value = torch.stack([
-                v for k, v in value_metrics.items()
-                if avg_metric_key in k
-            ]).mean()
-            avg_metrics[avg_metric_key + "/Average"] = avg_metric_value
-        logging_metrics.update(avg_metrics)
-        logging_metrics["avg_micro_f1"] = logging_metrics["Micro-F1/Average"]
-        logging_metrics["val_f1"] = logging_metrics.get("Micro-F1/BLINK_DEV") or logging_metrics["avg_micro_f1"]
-        self.log_dict(logging_metrics, sync_dist=True)
+        metric_names = set(k.split("/")[0] for k in metrics)
+        avg_metrics = {m + "/Average": 0 for m in metric_names}
+        for avg_metric_key in metric_names:
+            i = 0
+            for dataset_name in datasets:
+                if dataset_name in self.datasets["test"]:
+                    avg_metric_value = metrics[f"{avg_metric_key}/{dataset_name}"]
+                    avg_metrics[avg_metric_key + "/Average"] += avg_metric_value
+                    i + 1
+            avg_metrics[avg_metric_key + "/Average"] = avg_metrics[avg_metric_key + "/Average"] / i
+        
+        metrics.update(avg_metrics)
+        
+        metrics["avg_micro_f1"] = metrics["Micro-F1/Average"]
+        metrics["val_f1"] = metrics.get("Micro-F1/BLINK_DEV") or metrics["avg_micro_f1"]
+        self.log_dict(metrics, sync_dist=True)
     
-    def recall_at_k(self, top, target, k, dataset, stage="val"):
+    def recall_at_k(self, top, target, k):
         top_scores = torch.cat([t.values for t in top])[:, :k]
         top_indices = torch.cat([t.indices for t in top])[:, :k]
+
+        top_scores = self.all_gather_flat(top_scores)
+        top_indices = self.all_gather_flat(top_indices)
         target = (top_indices.transpose(0, 1) == target).transpose(0, 1)
 
         index = repeat(
             torch.arange(top_scores.size(0), device=self.device),
             "b -> b k", k=top_scores.size(1)
         )
-        return self.retrieval_recall[stage][dataset](
+        return torchmetrics.RetrievalRecall(k=k)(
             top_scores.contiguous().view(-1),
             target.contiguous().view(-1),
             index.contiguous().view(-1),
@@ -1143,28 +1132,14 @@ class Duck(pl.LightningModule):
     #         in_batch_neighbors = rearrange(in_batch_neighbors, "(b n) d -> b n d", b=bsz)[:, :1, :]
     #         neighbors = torch.cat([neighbors, in_batch_neighbors], dim=1)
     #     return neighbors, neighbor_boxes
-
-    def masked_gather(self, x, dim=0):
-        max_size = self.all_gather(
-            torch.tensor(x.size(dim))
-        ).max()
-        pad_shape = list(x.size())[:dim] + [max_size.item() - x.size(dim)] + list(x.size())[(dim + 1):]
-        pad = torch.zeros(pad_shape, device=x.device)
-        mask = torch.cat([torch.ones_like(x), pad], dim=dim).bool()
-        x = torch.cat([x, pad], dim=dim)
-        all_x = self.all_gather(x)
-        all_mask = self.all_gather(mask.detach())
-        return all_x, all_mask
    
     def _gather_representations(self, representations, batch):
         entities = representations["entities"]
         mentions = representations["mentions"]
         target = batch["targets"]
         entity_ids = batch["entity_ids"]
-        rel_ids = batch["relation_ids"]
-        entity_boxes = representations["entity_boxes"]
+        # rel_ids = batch["relation_ids"]
         entity_tensor_mask = batch["entity_tensor_mask"].bool()
-        ent_rel_mask = batch["ent_rel_mask"].bool()
         relation_set_embeddings = representations["relation_set_embeddings"]
 
         if not self.gather_on_ddp or not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
@@ -1172,75 +1147,75 @@ class Duck(pl.LightningModule):
 
         mentions_to_send = mentions.detach()
         entities_to_send = entities.detach()
-        all_boxes = None
+        # all_boxes = None
 
-        num_devs = self.config.trainer.devices
-        start_rank = int(math.floor(self.global_rank / num_devs) * num_devs)
-        end_rank = start_rank + num_devs
+        # num_devs = self.config.trainer.devices
+        # start_rank = int(math.floor(self.global_rank / num_devs) * num_devs)
+        # end_rank = start_rank + num_devs
 
-        if entity_boxes is not None:
-            entity_boxes_to_send = entity_boxes.detach()
-            all_boxes = BoxTensor((
-                self.all_gather(entity_boxes_to_send.left)[start_rank:end_rank],
-                self.all_gather(entity_boxes_to_send.right)[start_rank:end_rank]
-            ))
+        # if entity_boxes is not None:
+        #     entity_boxes_to_send = entity_boxes.detach()
+        #     all_boxes = BoxTensor((
+        #         self.all_gather(entity_boxes_to_send.left),
+        #         self.all_gather(entity_boxes_to_send.right)
+        #     ))
 
-        all_mentions_repr = self.all_gather(mentions_to_send)[start_rank:end_rank]  # num_workers x bs
-        all_entities_repr = self.all_gather(entities_to_send)[start_rank:end_rank]
+        all_mentions_repr = self.all_gather(mentions_to_send)  # num_workers x bs
+        all_entities_repr = self.all_gather(entities_to_send)
 
         all_relation_set_embeddings = None
         if relation_set_embeddings is not None:
-            all_relation_set_embeddings = self.all_gather(relation_set_embeddings.detach())[start_rank:end_rank]
+            all_relation_set_embeddings = self.all_gather(relation_set_embeddings.detach())
 
-        all_targets = self.all_gather(target)[start_rank:end_rank]
+        all_targets = self.all_gather(target)
         # we are not filtering duplicated entities now
-        all_entity_ids = self.all_gather(entity_ids)[start_rank:end_rank]
-        all_rel_ids = {
-            "data": self.all_gather(rel_ids["data"].detach())[start_rank:end_rank],
-            "attention_mask": self.all_gather(rel_ids["attention_mask"].detach())[start_rank:end_rank]
-        }
-        all_mask = self.all_gather(entity_tensor_mask)[start_rank:end_rank]
+        all_entity_ids = self.all_gather(entity_ids)
+        # all_rel_ids = {
+        #     "data": self.all_gather(rel_ids["data"].detach()),
+        #     "attention_mask": self.all_gather(rel_ids["attention_mask"].detach())
+        # }
+        all_mask = self.all_gather(entity_tensor_mask)
 
         # offset = 0
         all_mentions_list = []
         all_entities_list = []
         all_entity_ids_list = []
         all_targets_list = []
-        all_boxes_list = []
-        all_rel_ids_list = []
+        # all_boxes_list = []
+        # all_rel_ids_list = []
         all_relation_set_embeddings_list = []
 
         # Add current device representations first.
         all_mentions_list.append(mentions)
-        entities = entities[entity_tensor_mask]
-        entity_boxes = entity_boxes[entity_tensor_mask] if entity_boxes is not None else None
+        # entities = entities[entity_tensor_mask]
+        # entity_boxes = entity_boxes[entity_tensor_mask] if entity_boxes is not None else None
         all_entities_list.append(entities)
         all_entity_ids_list.append(entity_ids[entity_tensor_mask].tolist())
         all_targets_list.append(target)
-        all_boxes_list.append(entity_boxes)
-        all_rel_ids_list.append(rel_ids)
+        # all_boxes_list.append(entity_boxes)
+        # all_rel_ids_list.append(rel_ids)
         all_relation_set_embeddings_list.append(relation_set_embeddings)
         # offset += entities_repr.size(0)
 
         for i in range(all_targets.size(0)):
             if i != self.local_rank:
                 all_mentions_list.append(all_mentions_repr[i])
-                all_entities_list.append(all_entities_repr[i][all_mask[i]])
+                all_entities_list.append(all_entities_repr[i])
                 all_entity_ids_list.append(
                     all_entity_ids[i][all_mask[i].bool()].tolist()
                 )
                 all_targets_list.append(all_targets[i])
-                if all_boxes is not None:
-                    all_boxes_list.append(all_boxes[i][all_mask[i].bool()])
-                else:
-                    all_boxes_list.append(None)
-                all_rel_ids_list.append({
-                    "data": all_rel_ids["data"][i][all_mask[i].bool()],
-                    "attention_mask": all_rel_ids["attention_mask"][i][all_mask[i].bool()]
-                })
+                # if all_boxes is not None:
+                #     all_boxes_list.append(all_boxes[i][all_mask[i].bool()])
+                # else:
+                #     all_boxes_list.append(None)
+                # all_rel_ids_list.append({
+                #     "data": all_rel_ids["data"][i][all_mask[i].bool()],
+                #     "attention_mask": all_rel_ids["attention_mask"][i][all_mask[i].bool()]
+                # })
                 if all_relation_set_embeddings is not None:
                     all_relation_set_embeddings_list.append(
-                        all_relation_set_embeddings[i][all_mask[i].bool()]
+                        all_relation_set_embeddings[i]  # [all_mask[i].bool()]
                     )
                 else:
                     all_relation_set_embeddings_list.append(None)
@@ -1248,21 +1223,21 @@ class Duck(pl.LightningModule):
         mentions = torch.cat(all_mentions_list, dim=0)  # total_ctx x dim
         # entities_repr = torch.cat(all_entities_list, dim=0)  # total_query x dim
         # targets = torch.cat(all_targets_list, dim=0)
-        entities, boxes, rel_ids, target, relation_set_embeddings = self.filter_representations(
+        entities, target, relation_set_embeddings = self.filter_representations(
             all_entities_list,
             all_entity_ids_list,
-            all_boxes_list,
-            all_rel_ids_list,
+            # all_boxes_list,
+            # all_rel_ids_list,
             all_targets_list,
             all_relation_set_embeddings_list
         )
         
         representations["mentions"] = mentions
         representations["entities"] = entities
-        representations["entity_boxes"] = boxes
+        # representations["entity_boxes"] = boxes
         representations["relation_set_embeddings"] = relation_set_embeddings
         batch["targets"] = target
-        batch["relation_ids"] = rel_ids
+        # batch["relation_ids"] = rel_ids
 
         return representations, batch
     
@@ -1270,60 +1245,60 @@ class Duck(pl.LightningModule):
         self,
         all_entities_list,
         all_entity_ids_list,
-        all_boxes_list,
-        all_rel_ids_list,
+        # all_boxes_list,
+        # all_rel_ids_list,
         all_targets_list,
         all_relation_set_embeddings
     ):
         filtered_entities_repr = []
         filtered_targets = []
-        filtered_boxes = []
-        filtered_rel_ids_data = []
-        filtered_rel_ids_mask = []
+        # filtered_boxes = []
+        # filtered_rel_ids_data = []
+        # filtered_rel_ids_mask = []
         filtered_relation_set_embeddings = []
         ent_indexes_map = {}
 
-        for entities_repr, entity_ids, boxes, rel_ids, targets, relation_set_embeddings in zip(
+        for entities_repr, entity_ids, targets, relation_set_embeddings in zip(
             all_entities_list,
             all_entity_ids_list,
-            all_boxes_list,
-            all_rel_ids_list,
+            # all_boxes_list,
+            # all_rel_ids_list,
             all_targets_list,
             all_relation_set_embeddings
         ):
             for i, entity_repr in enumerate(entities_repr):
                 ent_id = entity_ids[i]
-                box = boxes[i] if boxes is not None else None
+                # box = boxes[i] if boxes is not None else None
                 relation_set_emb = relation_set_embeddings[i] if relation_set_embeddings is not None else None
                 if ent_id not in ent_indexes_map:
                     ent_idx = len(ent_indexes_map)
                     ent_indexes_map[ent_id] = ent_idx
                     filtered_entities_repr.append(entity_repr)
-                    filtered_boxes.append(box)
-                    filtered_rel_ids_data.append(rel_ids["data"][i])
-                    filtered_rel_ids_mask.append(rel_ids["attention_mask"][i])
+                    # filtered_boxes.append(box)
+                    # filtered_rel_ids_data.append(rel_ids["data"][i])
+                    # filtered_rel_ids_mask.append(rel_ids["attention_mask"][i])
                     filtered_relation_set_embeddings.append(relation_set_emb)
             for target in targets.tolist():
                 filtered_targets.append(ent_indexes_map[entity_ids[target]])
 
         filtered_entities_repr = torch.stack(filtered_entities_repr, dim=0)
-        if not self.no_box_ablation:
-            filtered_boxes = BoxTensor((
-                torch.stack([box.left for box in filtered_boxes], dim=0),
-                torch.stack([box.right for box in filtered_boxes], dim=0)
-            ))
-        else:    
-            filtered_boxes = None
+        # if not self.no_box_ablation:
+        #     filtered_boxes = BoxTensor((
+        #         torch.stack([box.left for box in filtered_boxes], dim=0),
+        #         torch.stack([box.right for box in filtered_boxes], dim=0)
+        #     ))
+        # else:    
+        #     filtered_boxes = None
         
         if self.relations_as_points and not self.joint_ent_rel_encoding:
             filtered_relation_set_embeddings = torch.stack(filtered_relation_set_embeddings, dim=0)
         else:
             filtered_relation_set_embeddings = None
 
-        filtered_rel_ids = {
-            "data": torch.stack(filtered_rel_ids_data, dim=0),
-            "attention_mask": torch.stack(filtered_rel_ids_mask, dim=0)
-        }
+        # filtered_rel_ids = {
+        #     "data": torch.stack(filtered_rel_ids_data, dim=0),
+        #     "attention_mask": torch.stack(filtered_rel_ids_mask, dim=0)
+        # }
 
         filtered_targets = torch.tensor(
             filtered_targets,
@@ -1332,7 +1307,5 @@ class Duck(pl.LightningModule):
         )
 
         return filtered_entities_repr, \
-            filtered_boxes, \
-            filtered_rel_ids, \
             filtered_targets, \
             filtered_relation_set_embeddings

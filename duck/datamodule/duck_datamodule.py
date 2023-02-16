@@ -481,9 +481,9 @@ class EdDuckDataModule(LightningDataModule):
         val_paths = list(val_paths.values())
         test_paths = list(test_paths.values())
 
-        if self.debug:
-            val_paths = val_paths[:1]
-            test_paths = test_paths[:1]
+        # if self.debug:
+        #     val_paths = val_paths[:1]
+        #     test_paths = test_paths[:1]
 
         self.train_dataset = self._duck_dataset(train_path)
         self.val_datasets = [self._duck_dataset(val_path) for val_path in val_paths]
@@ -492,6 +492,8 @@ class EdDuckDataModule(LightningDataModule):
         self.jump_to_batch = None
         if "jump_to_batch" in kwargs:
             self.jump_to_batch = kwargs["jump_to_batch"]
+        
+        self.use_all_relations = False
 
     def _map_neighbors_to_id(self):
         if self.label_to_id is None:
@@ -624,7 +626,7 @@ class EdDuckDataModule(LightningDataModule):
 
         if is_train:
             entity_token_ids, entity_indexes, entity_labels, \
-            relation_ids, relation_labels, targets = order_entities(
+            relation_ids, relation_labels, targets = self._order_entities(
                 entity_token_ids,
                 entity_indexes,
                 entity_labels,
@@ -640,7 +642,7 @@ class EdDuckDataModule(LightningDataModule):
         entity_indexes += [0] * pad_length
         # relation_ids += [[0] * self.transform.max_num_rels] * pad_length
         
-        relation_ids, relation_data, ent_rel_mask, neigh_rel_mask = order_relations(
+        relation_ids, relation_data, ent_rel_mask, neigh_rel_mask = self._order_relations(
             relation_ids, relation_data, neighbor_relation_ids, neighbor_relation_data
         )
 
@@ -670,97 +672,103 @@ class EdDuckDataModule(LightningDataModule):
         result["neigh_rel_mask"] = neigh_rel_mask
         return result
 
-
-def order_entities(
-    entity_data,
-    entity_indices,
-    entity_labels,
-    relation_ids,
-    relation_labels
-):
-    ent_index_map = {}
-    targets = []
-    filtered_entity_data = []
-    filtered_entity_idxs = []
-    filtered_entity_labels = []
-    filtered_relation_ids = []
-    filtered_relation_labels = []
-
-    tuples = zip(
+    def _order_entities(
+        self,
         entity_data,
         entity_indices,
         entity_labels,
         relation_ids,
         relation_labels
-    )
+    ):
+        ent_index_map = {}
+        targets = []
+        filtered_entity_data = []
+        filtered_entity_idxs = []
+        filtered_entity_labels = []
+        filtered_relation_ids = []
+        filtered_relation_labels = []
 
-    for tuple in tuples:
-        ent_data, ent_idx, ent_label, rel_ids, rel_labels = tuple
-        if ent_idx in ent_index_map:
-            targets.append(ent_index_map[ent_idx])
+        tuples = zip(
+            entity_data,
+            entity_indices,
+            entity_labels,
+            relation_ids,
+            relation_labels
+        )
+
+        for tuple in tuples:
+            ent_data, ent_idx, ent_label, rel_ids, rel_labels = tuple
+            if ent_idx in ent_index_map:
+                targets.append(ent_index_map[ent_idx])
+            else:
+                target = len(ent_index_map)
+                targets.append(target)
+                ent_index_map[ent_idx] = target
+                filtered_entity_data.append(ent_data)
+                filtered_entity_idxs.append(ent_idx)
+                filtered_entity_labels.append(ent_label)
+                filtered_relation_ids.append(rel_ids)
+                filtered_relation_labels.append(rel_labels)
+
+        return (
+            filtered_entity_data,
+            filtered_entity_idxs,
+            filtered_entity_labels,
+            filtered_relation_ids,
+            filtered_relation_labels,
+            targets
+        )
+
+    def _order_relations(
+        self,
+        relation_ids,
+        relation_data,
+        neighbor_relation_ids,
+        neighbor_relation_data
+    ):
+        if self.use_all_relations:
+            assert relation_data is None
+            flat_relation_ids = list(range(len(self.rel_catalogue))) + [-1]
         else:
-            target = len(ent_index_map)
-            targets.append(target)
-            ent_index_map[ent_idx] = target
-            filtered_entity_data.append(ent_data)
-            filtered_entity_idxs.append(ent_idx)
-            filtered_entity_labels.append(ent_label)
-            filtered_relation_ids.append(rel_ids)
-            filtered_relation_labels.append(rel_labels)
-
-    return (
-        filtered_entity_data,
-        filtered_entity_idxs,
-        filtered_entity_labels,
-        filtered_relation_ids,
-        filtered_relation_labels,
-        targets
-    )
-
-
-def order_relations(
-    relation_ids,
-    relation_data,
-    neighbor_relation_ids,
-    neighbor_relation_data
-):
-    flat_relation_ids = [r for rels in relation_ids for r in rels]
-    if neighbor_relation_ids is not None:
-        flat_relation_ids += [r for rels in neighbor_relation_ids for r in rels]
-    flat_relation_data = []
-    if relation_data is not None:
-        [r for rels in relation_data for r in rels] if relation_data is not None else []
-    if neighbor_relation_data is not None:
-        flat_relation_data += [r for rels in neighbor_relation_data for r in rels]
-    
-    filtered_relation_data = []
-    rel_id_map = {}
-    for i, r in enumerate(flat_relation_ids):
-        if r not in rel_id_map:
-            rel_id_map[r] = len(rel_id_map)
+            flat_relation_ids = [r for rels in relation_ids for r in rels]
+            if neighbor_relation_ids is not None:
+                flat_relation_ids += [r for rels in neighbor_relation_ids for r in rels]
+            flat_relation_data = []
             if relation_data is not None:
-                filtered_relation_data.append(flat_relation_data[i])
-    
-    filtered_relation_ids = list(rel_id_map.keys())
-    ent_rel_mask = torch.full(
-        (len(relation_ids), len(filtered_relation_ids)),
-        False
-    )
-    for i, rels in enumerate(relation_ids):
-        indexes = [rel_id_map[r] for r in rels]
-        ent_rel_mask[i][indexes] = True
-    
-    neigh_rel_mask = None
-    if neighbor_relation_ids is not None:
-        neigh_rel_mask = torch.full(
-            (len(neighbor_relation_ids), len(filtered_relation_ids)),
+                [r for rels in relation_data for r in rels] if relation_data is not None else []
+            if neighbor_relation_data is not None:
+                flat_relation_data += [r for rels in neighbor_relation_data for r in rels]
+        
+        filtered_relation_data = []
+        rel_id_map = {}
+        for i, r in enumerate(flat_relation_ids):
+            if r not in rel_id_map:
+                rel_id_map[r] = len(rel_id_map)
+                if relation_data is not None:
+                    filtered_relation_data.append(flat_relation_data[i])
+        
+        filtered_relation_ids = list(rel_id_map.keys())
+        if self.use_all_relations:
+            assert filtered_relation_ids == flat_relation_ids
+        ent_rel_mask = torch.full(
+            (len(relation_ids), len(filtered_relation_ids)),
             False
         )
-        for i, rels in enumerate(neighbor_relation_ids):
+        for i, rels in enumerate(relation_ids):
             indexes = [rel_id_map[r] for r in rels]
-            neigh_rel_mask[i][indexes] = True
+            ent_rel_mask[i][indexes] = True
         
-    if relation_data is None and neighbor_relation_data is None:
-        filtered_relation_data = None
+        neigh_rel_mask = None
+        if neighbor_relation_ids is not None:
+            neigh_rel_mask = torch.full(
+                (len(neighbor_relation_ids), len(filtered_relation_ids)),
+                False
+            )
+            for i, rels in enumerate(neighbor_relation_ids):
+                indexes = [rel_id_map[r] for r in rels]
+                neigh_rel_mask[i][indexes] = True
+            
+        if relation_data is None and neighbor_relation_data is None:
+            filtered_relation_data = None
 
-    return filtered_relation_ids, filtered_relation_data, ent_rel_mask, neigh_rel_mask
+        return filtered_relation_ids, filtered_relation_data, ent_rel_mask, neigh_rel_mask
