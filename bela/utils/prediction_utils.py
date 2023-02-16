@@ -127,34 +127,6 @@ def merge_predictions(example_predictions):
     return filtered_example_predictions
 
 
-def correct_mention_offsets(example_predictions, text):
-    # TODO: Won't that break mentions that end with a separator? Double check in evaluations datasets
-    TEXT_SEPARATORS = [" ", ".", ",", "!", "?", "-", "\n"]
-    corrected_example_predictions = []
-    for offset, length, ent_id, md_score, el_score in example_predictions:
-        while (
-            offset != 0
-            and offset < len(text)
-            and (
-                # Break when the previous character is a separator and the current one is not
-                text[offset - 1] not in TEXT_SEPARATORS
-                or text[offset] in TEXT_SEPARATORS
-            )
-        ):
-            offset += 1
-            length -= 1
-        while (
-            offset + length < len(text)
-            # Break as soon as the last character is a separator
-            and text[offset + length] not in TEXT_SEPARATORS
-        ):
-            length += 1
-        corrected_example_predictions.append(
-            (offset, length, ent_id, md_score, el_score)
-        )
-    return corrected_example_predictions
-
-
 def get_predictions_using_windows(model_eval: ModelEval, test_data, batch_size=1024, window_length=254):
     extended_examples = []
 
@@ -188,7 +160,6 @@ def get_predictions_using_windows(model_eval: ModelEval, test_data, batch_size=1
         text = example["original_text"]
         example_predictions = predictions_dict[document_id]
         example_predictions = merge_predictions(example_predictions)
-        example_predictions = correct_mention_offsets(example_predictions, text)
         example_predictions = convert_predictions_to_dict(example_predictions)
         predictions.append(example_predictions)
 
