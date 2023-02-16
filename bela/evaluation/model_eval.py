@@ -10,6 +10,8 @@ import logging
 
 from typing import Union, List, Dict, Any, Tuple
 
+from bela.utils.analysis_utils import convert_data_and_predictions_to_samples
+
 
 logger = logging.getLogger(__name__)
 
@@ -300,52 +302,22 @@ class ModelEval:
             predictions = self.process_disambiguation_batch(texts, mention_offsets, mention_lengths, entities)
             all_predictions.extend(predictions)
         return all_predictions
-    
+
     @staticmethod
     def compute_scores(data, predictions, md_threshold=0.2, el_threshold=0.05):
         tp, fp, support = 0, 0, 0
         tp_boe, fp_boe, support_boe = 0, 0, 0
 
         predictions_per_example = []
-        for example, example_predictions in zip(data, predictions):
-
-            example_targets = {
-                (offset,length):ent_id
-                for _,_,ent_id,_,offset,length in example['gt_entities']
-            }
-
-            example_predictions = {
-                (offset, length):ent_id
-                for offset, length, ent_id, md_score, el_score in zip(
-                    example_predictions['offsets'],
-                    example_predictions['lengths'],
-                    example_predictions['entities'],
-                    example_predictions['md_scores'],
-                    example_predictions['el_scores'],
-                )
-                if (el_score > el_threshold and md_score > md_threshold) 
-            }
-
-            predictions_per_example.append((len(example_targets), len(example_predictions)))
-
-            for pos, ent in example_targets.items():
-                support += 1
-                if pos in example_predictions and example_predictions[pos] == ent:
-                    tp += 1
-            for pos, ent in example_predictions.items():
-                if pos not in example_targets or example_targets[pos] != ent:
-                    fp += 1
-
-            example_targets_set = set(example_targets.values())
-            example_predictions_set = set(example_predictions.values())
-
-            for ent in example_targets_set:
-                support_boe += 1
-                if ent in example_predictions_set:
-                    tp_boe += 1
-            for ent in example_predictions_set:
-                if ent not in example_targets_set:
-                    fp_boe += 1
+        samples = convert_data_and_predictions_to_samples(data, predictions, md_threshold, el_threshold)
+        for sample in samples:
+            predictions_per_example.append((len(sample.ground_truth_entities), len(sample.predicted_entities)))
+            support += len(sample.ground_truth_entities)
+            tp += len(sample.true_positives)
+            fp += len(sample.false_positives)
+            support_boe += len(sample.ground_truth_entity_ids)
+            tp_boe += len(sample.true_positives_boe)
+            fp_boe += len(sample.false_positives_boe)
 
         def safe_division(a, b):
             if b == 0:
