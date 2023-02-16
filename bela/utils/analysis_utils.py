@@ -16,8 +16,21 @@ class Entity:
     def mention(self):
         return self.text[self.offset : self.offset + self.length]
 
+    @property
+    def extended_mention(self):
+        """Mentin in surrounding context (10 chars), with the mention in brackets"""
+        left_context = self.text[max(0, self.offset - 10) : self.offset]
+        right_context = self.text[self.offset + self.length : self.offset + self.length + 10]
+        # Add ... if the context is truncated
+        if self.offset - 10 > 0:
+            left_context = "..." + left_context
+        if self.offset + self.length + 10 < len(self.text):
+            right_context = right_context + "..."
+        return f"{left_context}[{self.mention}]{right_context}"
+
+
     def __repr__(self):
-        str_repr = f'Entity<mention="{self.mention}", entity_id={self.entity_id}'
+        str_repr = f'Entity<mention="{self.extended_mention}", entity_id={self.entity_id}'
         if self.md_score is not None and self.el_score is not None:
             str_repr += f", md_score={self.md_score:.2f}, el_score={self.el_score:.2f}"
         str_repr += ">"
@@ -29,11 +42,13 @@ class Entity:
 
 class Sample:
     text: str
+    sample_id: Optional[str] = None
     ground_truth_entities: Optional[List[Entity]] = None
     predicted_entities: Optional[List[Entity]] = None
 
-    def __init__(self, text, ground_truth_entities=None, predicted_entities=None):
+    def __init__(self, text, sample_id=None, ground_truth_entities=None, predicted_entities=None):
         self.text = text
+        self.sample_id = sample_id
         self.ground_truth_entities = ground_truth_entities
         self.predicted_entities = predicted_entities
         if self.ground_truth_entities is not None and self.predicted_entities is not None:
