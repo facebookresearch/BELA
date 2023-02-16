@@ -11,7 +11,7 @@ import logging
 from typing import Union, List, Dict, Any, Tuple
 from bela.transforms.spm_transform import convert_sp_to_char_offsets
 
-from bela.utils.analysis_utils import convert_data_and_predictions_to_samples
+from bela.utils.analysis_utils import convert_jsonl_data_and_predictions_to_samples
 
 
 logger = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ class ModelEval:
         tp_boe, fp_boe, support_boe = 0, 0, 0
 
         predictions_per_example = []
-        samples = convert_data_and_predictions_to_samples(data, predictions, md_threshold, el_threshold)
+        samples = convert_jsonl_data_and_predictions_to_samples(data, predictions, md_threshold, el_threshold)
         for sample in samples:
             predictions_per_example.append((len(sample.ground_truth_entities), len(sample.predicted_entities)))
             support += len(sample.ground_truth_entities)
