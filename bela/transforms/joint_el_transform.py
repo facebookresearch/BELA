@@ -634,6 +634,9 @@ class JointELXlmrRawTextTransform(SPMTransform):
             for offset, length in zip(example_sp_offsets, example_sp_lengths):
                 if 1 + offset + length <= self.max_seq_len - 1:
                     shifted_example_sp_offsets.append(offset + 1)
+                else:
+                    # last mention went off the limit, skip all next mention
+                    break
             example_sp_offsets = shifted_example_sp_offsets
             example_sp_lengths = example_sp_lengths[: len(example_sp_offsets)]
             sp_offsets.append(example_sp_offsets)
