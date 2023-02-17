@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 
 
 @dataclass
@@ -28,7 +28,6 @@ class Entity:
             right_context = right_context + "..."
         return f"{left_context}[{self.mention}]{right_context}"
 
-
     def __repr__(self):
         str_repr = f'Entity<mention="{self.extended_mention}", entity_id={self.entity_id}'
         if self.md_score is not None and self.el_score is not None:
@@ -52,44 +51,46 @@ class Sample:
         self.ground_truth_entities = ground_truth_entities
         self.predicted_entities = predicted_entities
         if self.ground_truth_entities is not None and self.predicted_entities is not None:
-            # Compute scores
-            self.true_positives = [
-                predicted_entity
-                for predicted_entity in self.predicted_entities
-                if predicted_entity in self.ground_truth_entities
-            ]
-            self.false_positives = [
-                predicted_entity
-                for predicted_entity in self.predicted_entities
-                if predicted_entity not in self.ground_truth_entities
-            ]
-            self.false_negatives = [
-                ground_truth_entity
-                for ground_truth_entity in self.ground_truth_entities
-                if ground_truth_entity not in self.predicted_entities
-            ]
-            # Bag of entities
-            self.ground_truth_entity_ids = set(
-                [ground_truth_entity.entity_id for ground_truth_entity in self.ground_truth_entities]
-            )
-            self.predicted_entity_ids = set(
-                [predicted_entity.entity_id for predicted_entity in self.predicted_entities]
-            )
-            self.true_positives_boe = [
-                predicted_entity_id
-                for predicted_entity_id in self.predicted_entity_ids
-                if predicted_entity_id in self.ground_truth_entity_ids
-            ]
-            self.false_positives_boe = [
-                predicted_entity_id
-                for predicted_entity_id in self.predicted_entity_ids
-                if predicted_entity_id not in self.ground_truth_entity_ids
-            ]
-            self.false_negatives_boe = [
-                ground_truth_entity_id
-                for ground_truth_entity_id in self.ground_truth_entity_ids
-                if ground_truth_entity_id not in self.predicted_entity_ids
-            ]
+            self.compute_scores() 
+
+    def compute_scores(self):
+        self.true_positives = [
+            predicted_entity
+            for predicted_entity in self.predicted_entities
+            if predicted_entity in self.ground_truth_entities
+        ]
+        self.false_positives = [
+            predicted_entity
+            for predicted_entity in self.predicted_entities
+            if predicted_entity not in self.ground_truth_entities
+        ]
+        self.false_negatives = [
+            ground_truth_entity
+            for ground_truth_entity in self.ground_truth_entities
+            if ground_truth_entity not in self.predicted_entities
+        ]
+        # Bag of entities
+        self.ground_truth_entity_ids = set(
+            [ground_truth_entity.entity_id for ground_truth_entity in self.ground_truth_entities]
+        )
+        self.predicted_entity_ids = set(
+            [predicted_entity.entity_id for predicted_entity in self.predicted_entities]
+        )
+        self.true_positives_boe = [
+            predicted_entity_id
+            for predicted_entity_id in self.predicted_entity_ids
+            if predicted_entity_id in self.ground_truth_entity_ids
+        ]
+        self.false_positives_boe = [
+            predicted_entity_id
+            for predicted_entity_id in self.predicted_entity_ids
+            if predicted_entity_id not in self.ground_truth_entity_ids
+        ]
+        self.false_negatives_boe = [
+            ground_truth_entity_id
+            for ground_truth_entity_id in self.ground_truth_entity_ids
+            if ground_truth_entity_id not in self.predicted_entity_ids
+        ]
 
     def __repr__(self):
         repr_str = f'Sample(text="{self.text[:100]}..."'
@@ -118,38 +119,44 @@ class Sample:
                 print(predicted_entity)
 
 
-def convert_data_and_predictions_to_samples(data, predictions, md_threshold, el_threshold) -> List[Sample]:
+def convert_jsonl_data_to_samples(jsonl_data: List[Dict[str, Any]]) -> List[Sample]:
+    """Converts the jsonl data to a list of samples."""
     samples = []
-    for example, example_predictions in zip(data, predictions):
-
+    for example in jsonl_data:
         ground_truth_entities = [
             Entity(entity_id=entity_id, offset=offset, length=length, text=example["original_text"])
             for _, _, entity_id, _, offset, length in example["gt_entities"]
         ]
-        predicted_entities = [
-            Entity(
-                entity_id=entity_id,
-                offset=offset,
-                length=length,
-                md_score=md_score,
-                el_score=el_score,
-                text=example["original_text"],
-            )
-            for offset, length, entity_id, md_score, el_score in zip(
-                example_predictions["offsets"],
-                example_predictions["lengths"],
-                example_predictions["entities"],
-                example_predictions["md_scores"],
-                example_predictions["el_scores"],
-            )
-        ]
+        sample = Sample(text=example["original_text"], ground_truth_entities=ground_truth_entities)
+        samples.append(sample)
+    return samples
+
+
+def convert_predictions_to_entities(example_predictions: Dict[str, List], text) -> List[Entity]:
+    """Converts the predictions of a single example to a list of entities."""
+    predicted_entities = [
+        Entity(entity_id=entity_id, offset=offset, length=length, md_score=md_score, el_score=el_score, text=text)
+        for offset, length, entity_id, md_score, el_score in zip(
+            example_predictions["offsets"],
+            example_predictions["lengths"],
+            example_predictions["entities"],
+            example_predictions["md_scores"],
+            example_predictions["el_scores"],
+        )
+    ]
+    return predicted_entities
+
+
+def convert_jsonl_data_and_predictions_to_samples(
+    jsonl_data: List[Dict[str, Any]], predictions: Dict[str, List], md_threshold, el_threshold
+) -> List[Sample]:
+    samples = convert_jsonl_data_to_samples(jsonl_data)
+    for sample, example_predictions in zip(samples, predictions):
+        predicted_entities = convert_predictions_to_entities(example_predictions, sample.text)
         predicted_entities = [
             entity for entity in predicted_entities if entity.el_score > el_threshold and entity.md_score > md_threshold
         ]
-        sample = Sample(
-            text=example["original_text"],
-            ground_truth_entities=ground_truth_entities,
-            predicted_entities=predicted_entities,
-        )
+        sample.predicted_entities = predicted_entities
+        sample.compute_scores()
         samples.append(sample)
     return samples
