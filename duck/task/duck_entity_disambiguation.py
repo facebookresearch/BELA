@@ -454,10 +454,13 @@ class Duck(pl.LightningModule):
             self.regularizer = hydra.utils.instantiate(
                 self.config.duck.boxes.regularization
             )
-        self.dropout_dist = None
-        if self.config.duck.get("dropout"):
+        self.box_dropout_dist = None
+        if self.config.duck.get("box_dropout"):
             p = self.config.duck.dropout
-            self.dropout_dist = torch.distributions.binomial.Binomial(probs=p)
+            self.box_dropout_dist = torch.distributions.binomial.Binomial(probs=p)
+
+        self.entity_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
+        self.mention_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
         
         self.duck_loss_weight = self.config.duck.get("duck_loss_weight") or 1.0
         
@@ -872,7 +875,13 @@ class Duck(pl.LightningModule):
             self.append_neighbors_to_entities(batch)
    
         representations = self(batch)
+        local_entities = representations["entities"][batch["entity_tensor_mask"].bool()]
         representations, batch = self._gather_representations(representations, batch)
+        if self.gather_on_ddp or isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
+            assert local_entities.size(0) < representations["entities"].size(0)
+            diff = representations["entities"][:local_entities.size(0)] - local_entities
+            diff = diff.abs()
+            assert diff.max() < 1e-6, f"{diff.max().item()}"
 
         mentions = representations["mentions"]
         entities = representations["entities"]
@@ -903,6 +912,8 @@ class Duck(pl.LightningModule):
                 if k not in ["loss", "regularization"]
             }
             duck_loss_metrics = prefix_suffix_keys(duck_loss_metrics, prefix="train/")
+            entities = self.entity_dropout(entities)
+            mentions = self.mention_dropout(mentions)
             
         if self.relations_as_points and not self.joint_ent_rel_encoding:
             ent_to_rel_target = torch.eye(entities.size(0)).to(self.device)
@@ -942,23 +953,27 @@ class Duck(pl.LightningModule):
         return metrics
 
     def compute_duck_loss_with_boxes(self, entities, mentions, entity_boxes, negative_boxes, rel_ids):
+        if self.config.duck.get("gaussian_box_regularization") and self.training:
+            std = self.config.duck.gaussian_box_regularization
+            entities.add_(std * torch.rand_like(entities))
+
         result = {}
         ent_rel_mask = rel_ids["attention_mask"]
         entity_boxes = expand_box_with_mask(entity_boxes, ent_rel_mask)
-        entities_ = entities[..., :self.box_size]
-        mentions_ = mentions[..., :self.box_size]
-        entity_boxes = entity_boxes[..., :self.box_size]
-        negative_boxes = negative_boxes[..., :self.box_size]
+        entities_ = entities[..., :self.box_size].clone()
+        mentions_ = mentions[..., :self.box_size].clone()
+        entity_boxes = entity_boxes[..., :self.box_size].clone()
+        negative_boxes = negative_boxes[..., :self.box_size].clone()
         if self.config.duck.boxes.parametrization == "spherical":
             entity_boxes, negative_boxes, entities_ = self.handle_spherical_coord(
                 entity_boxes, negative_boxes, entities_, mentions_
             )
         
-        entities_ = entities_[:entity_boxes.box_shape[0], :]
+        entities_ = entities_[:entity_boxes.box_shape[0], :].clone()
         
         dropout_mask = torch.full_like(entities_, False).bool()
-        if self.dropout_dist is not None:
-            dropout_mask = self.dropout_dist.sample(entities_.size()).bool()
+        if self.box_dropout_dist is not None and self.training:
+            dropout_mask = self.box_dropout_dist.sample(entities_.size()).bool()
         dropout_mask = dropout_mask.to(entities_.device)
 
         duck_loss = self.duck_loss(
@@ -1013,8 +1028,8 @@ class Duck(pl.LightningModule):
         mentions[..., -1] = torch.relu(mentions[..., -1].clone())
         _, entities = cartesian_to_spherical(entities)
         # entities_ = entities_[..., :-1]  # drop last coord to keep the range [0, pi]
-        entity_boxes = entity_boxes[..., :entities.size(-1)]
-        negative_boxes = negative_boxes[..., :entities.size(-1)]
+        entity_boxes = entity_boxes[..., :entities.size(-1)].clone()
+        negative_boxes = negative_boxes[..., :entities.size(-1)].clone()
         return entity_boxes, negative_boxes, entities
 
     def training_epoch_end(self, outputs):
@@ -1070,14 +1085,13 @@ class Duck(pl.LightningModule):
                 metrics[f"Recall@{k}/{dataset}"] = recall
         
         metric_names = set(k.split("/")[0] for k in metrics)
-        avg_metrics = {}
         for avg_metric_key in metric_names:
             value = 0
             for dataset_name in self.datasets["test"]:
                 value += metrics[f"{avg_metric_key}/{dataset_name}"]
-            avg_metrics[avg_metric_key + "/Average"] = value / len(self.datasets["test"])
-        
-        metrics.update(avg_metrics)
+            metrics[avg_metric_key + "/Average"] = value / len(self.datasets["test"])
+
+        tqdm.write(f"Average Micro F1: {metrics['Micro-F1/Average']}")
         
         metrics["avg_micro_f1"] = metrics["Micro-F1/Average"]
         metrics["val_f1"] = metrics.get("Micro-F1/BLINK_DEV") or metrics["avg_micro_f1"]
