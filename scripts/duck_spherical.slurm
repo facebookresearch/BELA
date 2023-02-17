@@ -17,4 +17,4 @@ export PYTHONPATH=.:$PYTHONPATH
 
 module purge
 
-srun python duck/main.py run_name=duck_spherical trainer=1host data.batch_size=32 duck.boxes.parametrization=spherical
+srun python duck/main.py run_name=duck_spherical_gather trainer=1host data.batch_size=32 duck.boxes.parametrization=spherical

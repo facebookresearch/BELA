@@ -6,4 +6,4 @@ trainer:
   log_every_n_steps: 10
   accelerator: gpu
   strategy: ddp_sharded
-  val_check_interval: 50
+  val_check_interval: 5000

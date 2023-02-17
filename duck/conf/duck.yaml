@@ -13,25 +13,25 @@ defaults:
 
 data:
   _target_: duck.datamodule.EdDuckDataModule
-  # train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
-  train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
+  train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
+  # train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
     aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
     aida_dev: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
-    # blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
-    # ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
-    # acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
-    # clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
-    # msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
-    # wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
+    blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
+    ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
+    acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
+    clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
+    msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
+    wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
   test_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
-    # ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
-    # acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
-    # clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
-    # msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
-    # wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
+    ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
+    acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
+    clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
+    msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
+    wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
   ent_to_rel_path: /fsx/matzeni/data/duck/ent_to_rel.json
   wikipedia_to_wikidata_path: /fsx/matzeni/data/duck/wikipedia_to_wikidata_en.pkl
   ent_catalogue_idx_path: /fsx/matzeni/data/duck/ent_idx.txt
@@ -67,7 +67,8 @@ duck:
     parametrization: spherical
     regularization:
       _target_: duck.box_tensors.regularization.L2BoxSideRegularizer
-      weight: 0.2
+      weight: 0.1
+    # dimensions: 0.5
   duck_loss_weight: 0.1
   num_negative_boxes: 2048
   dropout: 0.5

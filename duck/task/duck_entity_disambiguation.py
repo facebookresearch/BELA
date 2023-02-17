@@ -729,7 +729,7 @@ class Duck(pl.LightningModule):
             attention_mask=entity["attention_mask"],
         )
 
-        entity_repr = entity_repr[entity_tensor_mask]
+        # entity_repr = entity_repr[entity_tensor_mask]
         
         entity_boxes = None
         if not self.no_box_ablation:
@@ -880,6 +880,8 @@ class Duck(pl.LightningModule):
         target = batch["targets"]
         relation_set_embeddings = representations["relation_set_embeddings"]
         ent_rel_mask = batch["ent_rel_mask"]
+        # entity_tensor_mask = batch["entity_tensor_mask"].bool()
+        # entities = entities[entity_tensor_mask]
         
         duck_loss = 0.0
         duck_loss_metrics = {}
@@ -952,6 +954,8 @@ class Duck(pl.LightningModule):
                 entity_boxes, negative_boxes, entities_, mentions_
             )
         
+        entities_ = entities_[:entity_boxes.box_shape[0], :]
+        
         dropout_mask = torch.full_like(entities_, False).bool()
         if self.dropout_dist is not None:
             dropout_mask = self.dropout_dist.sample(entities_.size()).bool()
@@ -1005,8 +1009,8 @@ class Duck(pl.LightningModule):
         return result
 
     def handle_spherical_coord(self, entity_boxes, negative_boxes, entities, mentions):
-        entities[..., -1] = torch.abs(entities[..., -1].clone())
-        mentions[..., -1] = torch.abs(mentions[..., -1].clone())
+        entities[..., -1] = torch.relu(entities[..., -1].clone())
+        mentions[..., -1] = torch.relu(mentions[..., -1].clone())
         _, entities = cartesian_to_spherical(entities)
         # entities_ = entities_[..., :-1]  # drop last coord to keep the range [0, pi]
         entity_boxes = entity_boxes[..., :entities.size(-1)]
@@ -1066,15 +1070,12 @@ class Duck(pl.LightningModule):
                 metrics[f"Recall@{k}/{dataset}"] = recall
         
         metric_names = set(k.split("/")[0] for k in metrics)
-        avg_metrics = {m + "/Average": 0 for m in metric_names}
+        avg_metrics = {}
         for avg_metric_key in metric_names:
-            i = 0
-            for dataset_name in datasets:
-                if dataset_name in self.datasets["test"]:
-                    avg_metric_value = metrics[f"{avg_metric_key}/{dataset_name}"]
-                    avg_metrics[avg_metric_key + "/Average"] += avg_metric_value
-                    i + 1
-            avg_metrics[avg_metric_key + "/Average"] = avg_metrics[avg_metric_key + "/Average"] / i
+            value = 0
+            for dataset_name in self.datasets["test"]:
+                value += metrics[f"{avg_metric_key}/{dataset_name}"]
+            avg_metrics[avg_metric_key + "/Average"] = value / len(self.datasets["test"])
         
         metrics.update(avg_metrics)
         
@@ -1143,6 +1144,9 @@ class Duck(pl.LightningModule):
         relation_set_embeddings = representations["relation_set_embeddings"]
 
         if not self.gather_on_ddp or not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
+            representations["entities"] = entities[entity_tensor_mask]
+            if relation_set_embeddings is not None:
+                representations["relation_set_embeddings"] = relation_set_embeddings[entity_tensor_mask]
             return representations, batch
 
         mentions_to_send = mentions.detach()
@@ -1187,7 +1191,7 @@ class Duck(pl.LightningModule):
 
         # Add current device representations first.
         all_mentions_list.append(mentions)
-        # entities = entities[entity_tensor_mask]
+        entities = entities[entity_tensor_mask]
         # entity_boxes = entity_boxes[entity_tensor_mask] if entity_boxes is not None else None
         all_entities_list.append(entities)
         all_entity_ids_list.append(entity_ids[entity_tensor_mask].tolist())
@@ -1200,7 +1204,7 @@ class Duck(pl.LightningModule):
         for i in range(all_targets.size(0)):
             if i != self.local_rank:
                 all_mentions_list.append(all_mentions_repr[i])
-                all_entities_list.append(all_entities_repr[i])
+                all_entities_list.append(all_entities_repr[i][all_mask[i]])
                 all_entity_ids_list.append(
                     all_entity_ids[i][all_mask[i].bool()].tolist()
                 )
