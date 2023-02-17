@@ -69,6 +69,10 @@ class ModelEval:
             
         self.transform = hydra.utils.instantiate(cfg.task.transform)
         # TODO: The datamodule instanciation takes 90s due to the memory map in joint_el_datamodule.py: prun output: 91.197   91.197 joint_el_datamodule.py:166(__init__)
+        # clear datamodule paths
+        cfg.datamodule.train_path = None
+        cfg.datamodule.val_path = None
+        cfg.datamodule.test_path = None
         datamodule = hydra.utils.instantiate(cfg.datamodule, transform=self.transform)
         self.task = hydra.utils.instantiate(cfg.task, datamodule=datamodule, _recursive_=False)
         
@@ -85,10 +89,6 @@ class ModelEval:
         self.ent_idx = []
         for ent in datamodule.ent_catalogue.idx:
             self.ent_idx.append(ent)
-        
-        logger.info("Load checkpoint")
-        checkpoint = torch.load(checkpoint_path, map_location=torch.device("cpu"))
-        self.task.load_state_dict(checkpoint["state_dict"])
         
     def create_gpu_index(self, gpu_id=0):
         flat_config = faiss.GpuIndexFlatConfig()
