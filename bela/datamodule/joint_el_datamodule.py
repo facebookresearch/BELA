@@ -147,6 +147,7 @@ class ElMatchaDataset(torch.utils.data.Dataset):
         md_pred_scores = example.get("md_pred_scores")
 
         result = {
+            "data_example_id": example.get("document_id") or example.get("data_example_id", ""),
             "text": example["original_text"] if self.use_raw_text else example["text"],
             "gt_entities": gt_entities,
             "blink_predicts": blink_predicts,
@@ -268,12 +269,14 @@ class JointELDataModule(LightningDataModule):
                - "md_pred_lengths": List[int] - mention lengths
                - "md_pred_scores": List[float] - MD scores
         """
+        data_example_ids = []
         texts = []
         offsets = []
         lengths = []
         entities = []
 
         for example in batch:
+            data_example_ids.append(example["data_example_id"])
             texts.append(example["text"])
             example_offsets = []
             example_lengths = []
@@ -296,6 +299,7 @@ class JointELDataModule(LightningDataModule):
         )
 
         collate_output = {
+            "data_example_ids": data_example_ids,
             "input_ids": model_inputs["input_ids"],
             "attention_mask": model_inputs["attention_mask"],
             "mention_offsets": model_inputs["mention_offsets"],
