@@ -1046,7 +1046,7 @@ class Duck(pl.LightningModule):
 
         candidate_preds = None
         if batch["candidates"] is not None:
-            candidate_indexes = batch["candidates"]["data"]
+            candidate_indexes = batch["candidates"]["data"].long()
             candidates = self.ent_index[candidate_indexes]
             candidate_scores = torch.bmm(
                 mentions.unsqueeze(1).to(candidates.dtype),
@@ -1057,6 +1057,8 @@ class Duck(pl.LightningModule):
             candidate_preds = candidate_indexes.gather(
                 1, candidate_scores.argmax(dim=-1).unsqueeze(1)
             ).squeeze(dim=1)
+            no_candidates_mask = ~(candidate_mask.any(dim=-1))
+            candidate_preds[no_candidates_mask] = preds[no_candidates_mask]
 
         return {
             "preds": preds,
