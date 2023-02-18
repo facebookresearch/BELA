@@ -145,11 +145,11 @@ class DuckDistanceRankingLoss(nn.Module):
         positive_dist = self.distance_function(entities, positive_boxes)
         negative_dist = self.distance_function(entities, negative_boxes).mean(dim=0)
         
-        rel_ids = kwargs.get("rel_ids")
-        mask = torch.full_like(positive_dist, True).bool()
-        if rel_ids is not None:
-            mask = rel_ids["attention_mask"].bool()
-            mask = rearrange(mask, "b n -> n b")
+        mask = kwargs.get("mask")
+        if mask is None:
+            mask = torch.full_like(positive_dist, True).bool()
+        else:
+            mask = rearrange(mask, "b n -> n b").bool()
         positive_dist[~mask] = 0.0
         positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
         delta = positive_dist - negative_dist + self.margin
@@ -199,11 +199,11 @@ class DuckBoxMarginLoss(nn.Module):
         left_delta_pos = positive_boxes.left - entities + self.margin
         right_delta_pos = entities - positive_boxes.right + self.margin
         
-        rel_ids = kwargs.get("rel_ids")
-        mask = torch.full_like(left_delta_pos, True).bool()
-        if rel_ids is not None:
-            mask = rel_ids["attention_mask"].bool()
-            mask = rearrange(mask, "b n -> n b")
+        mask = kwargs.get("mask")
+        if mask is None:
+            mask = torch.full_like(left_delta_pos, True).bool()
+        else:
+            mask = rearrange(mask, "b n -> n b").bool()
 
         left_delta_pos[~mask] = 0.0
         right_delta_pos[~mask] = 0.0
@@ -257,11 +257,12 @@ class DuckNegativeSamplingLoss(nn.Module):
         positive_dist = self.distance_function(entities, positive_boxes)
         negative_dist = self.distance_function(entities, negative_boxes).mean(dim=0)
         
-        rel_ids = kwargs.get("rel_ids")
-        mask = torch.full_like(positive_dist, True).bool()
-        if rel_ids is not None:
-            mask = rel_ids["attention_mask"].bool()
-            mask = rearrange(mask, "b n -> n b")
+        mask = kwargs.get("mask")
+        if mask is None:
+            mask = torch.full_like(positive_dist, True).bool()
+        else:
+            mask = rearrange(mask, "b n -> n b").bool()
+
         positive_dist[~mask] = 0.0
         positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
 
@@ -875,13 +876,7 @@ class Duck(pl.LightningModule):
             self.append_neighbors_to_entities(batch)
    
         representations = self(batch)
-        local_entities = representations["entities"][batch["entity_tensor_mask"].bool()]
         representations, batch = self._gather_representations(representations, batch)
-        if self.gather_on_ddp and isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
-            assert local_entities.size(0) < representations["entities"].size(0)
-            diff = representations["entities"][:local_entities.size(0)] - local_entities
-            diff = diff.abs()
-            assert diff.max() < 1e-4, f"{diff.max().item()}"
 
         mentions = representations["mentions"]
         entities = representations["entities"]
@@ -892,26 +887,40 @@ class Duck(pl.LightningModule):
         # entity_tensor_mask = batch["entity_tensor_mask"].bool()
         # entities = entities[entity_tensor_mask]
         
-        duck_loss = 0.0
-        duck_loss_metrics = {}
+        duck_loss_entity = 0.0
+        duck_loss_mention = 0.0
+        duck_metrics = {}
         regularization = 0.0
 
         if self.duck_loss is not None:
-            rel_ids = {
-                "data": expand_with_mask(batch["relation_ids"]["data"], ent_rel_mask),
-                "attention_mask": ent_rel_mask
-            }
-            negative_boxes = self.sample_negative_boxes(rel_ids["data"])
-            duck_loss_metrics = self.compute_duck_loss_with_boxes(
-                entities, mentions, entity_boxes, negative_boxes, rel_ids
+            rel_ids = batch["relation_ids"]["data"]
+            duck_metrics = self.compute_box_metrics(entity_boxes, ent_rel_mask)
+            duck_metrics = prefix_suffix_keys(duck_metrics, "Boxes/")
+
+            duck_entity_metrics = self.compute_duck_loss_with_boxes(
+                entities, mentions, entity_boxes, rel_ids, ent_rel_mask
             )
-            duck_loss = duck_loss_metrics["loss"]
-            regularization = duck_loss_metrics["regularization"]
-            duck_loss_metrics = {
-                k: v for k, v in duck_loss_metrics.items()
+            duck_loss_entity = duck_entity_metrics["loss"]
+            regularization = duck_entity_metrics["regularization"]
+            duck_entity_metrics = {
+                k: v for k, v in duck_entity_metrics.items()
                 if k not in ["loss", "regularization"]
             }
-            duck_loss_metrics = prefix_suffix_keys(duck_loss_metrics, prefix="train/")
+            duck_entity_metrics = prefix_suffix_keys(duck_entity_metrics, prefix="Entity/")
+            duck_metrics.update(duck_entity_metrics)
+
+            if self.config.duck.mention_in_box:
+                duck_mention_metrics = self.compute_duck_loss_with_boxes(
+                    mentions, entities, entity_boxes, rel_ids, ent_rel_mask[target].clone().contiguous()
+                )
+                duck_loss_mention = duck_mention_metrics["loss"]
+                duck_mention_metrics = {
+                    k: v for k, v in duck_mention_metrics.items()
+                    if k not in ["loss", "regularization"]
+                }
+                duck_mention_metrics = prefix_suffix_keys(duck_mention_metrics, prefix="Mention/")
+                duck_metrics.update(duck_mention_metrics)
+
             entities = self.entity_dropout(entities)
             mentions = self.mention_dropout(mentions)
             
@@ -921,21 +930,22 @@ class Duck(pl.LightningModule):
                 relation_set_embeddings,
                 entities.transpose(0, 1)
             )
-            duck_loss = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
+            duck_loss_entity = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
         
         scores = self.sim_score(mentions, entities)
         ed_loss = self.ed_loss(scores, target)
-        loss = ed_loss + self.duck_loss_weight * (duck_loss + regularization)
+        loss = ed_loss + self.duck_loss_weight * (duck_loss_entity + duck_loss_mention + regularization)
        
         metrics = {
-            "train/duck_loss": duck_loss,
+            "train/duck_loss_entity": duck_loss_entity,
+            "train/duck_loss_mention": duck_loss_mention,
             "train/ed_loss": ed_loss,
             "train/loss": loss,
             "train/regularization": regularization
         }
         metrics.update({
             k: v
-            for k, v in duck_loss_metrics.items()
+            for k, v in duck_metrics.items()
             if k != "loss" and isinstance(v, torch.Tensor) 
         })
 
@@ -944,7 +954,7 @@ class Duck(pl.LightningModule):
             if not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
                 wandb.log({
                     k: v
-                    for k, v in duck_loss_metrics.items()
+                    for k, v in duck_metrics.items()
                     if k not in metrics
                 })
         
@@ -952,14 +962,16 @@ class Duck(pl.LightningModule):
 
         return metrics
 
-    def compute_duck_loss_with_boxes(self, entities, mentions, entity_boxes, negative_boxes, rel_ids):
+    def compute_duck_loss_with_boxes(self, entities, mentions, entity_boxes, rel_ids, mask):
+        rel_ids = expand_with_mask(rel_ids, mask)
+        negative_boxes = self.sample_negative_boxes(rel_ids)
+
         if self.config.duck.get("gaussian_box_regularization") and self.training:
             std = self.config.duck.gaussian_box_regularization
-            entities.add_(std * torch.rand_like(entities))
+            entities.add_(std * torch.randn_like(entities))
 
         result = {}
-        ent_rel_mask = rel_ids["attention_mask"]
-        entity_boxes = expand_box_with_mask(entity_boxes, ent_rel_mask)
+        entity_boxes = expand_box_with_mask(entity_boxes, mask)
         entities_ = entities[..., :self.box_size].clone()
         mentions_ = mentions[..., :self.box_size].clone()
         entity_boxes = entity_boxes[..., :self.box_size].clone()
@@ -980,15 +992,15 @@ class Duck(pl.LightningModule):
             entities_.masked_fill(dropout_mask, 0.0),
             entity_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
             negative_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
-            rel_ids=rel_ids
+            mask=mask
         )
         regularization = 0.0
         if self.regularizer is not None:
             regularization = self.regularizer(
-                entity_boxes[ent_rel_mask].cat(negative_boxes.rearrange("b n d -> (b n) d"))
+                entity_boxes[mask].cat(negative_boxes.rearrange("b n d -> (b n) d"))
             )
 
-        box_metrics = self.compute_box_metrics(entities_, entity_boxes, negative_boxes, ent_rel_mask)
+        box_metrics = self.compute_box_containment_metrics(entities_, entity_boxes, negative_boxes, mask)
         result.update(box_metrics)
 
         if isinstance(duck_loss, dict):
@@ -999,21 +1011,24 @@ class Duck(pl.LightningModule):
         result["regularization"] = regularization
         return result
 
-    def compute_box_metrics(self, entities, entity_boxes, negative_boxes, ent_rel_mask):
+    def compute_box_containment_metrics(self, entities, entity_boxes, negative_boxes, ent_rel_mask):
         result = {}
         entities = entities.unsqueeze(1)
         in_pos = (entities > entity_boxes.left) & (entities < entity_boxes.right)
         in_pos = in_pos[ent_rel_mask]
-        result["strict_containment_positive_boxes"] = in_pos.all(dim=-1).float().mean()
+        result["containment_positive_boxes"] = in_pos.all(dim=-1).float().mean()
         result["dim_wise_containment_positive_boxes"] = wandb.Histogram(
             in_pos.float().mean(dim=-1).detach().cpu().numpy()
         )
         in_neg = (entities > negative_boxes.left) & (entities < negative_boxes.right)
-        result["strict_containment_negative_boxes"] = in_neg.all(dim=-1).float().mean()
+        result["containment_negative_boxes"] = in_neg.all(dim=-1).float().mean()
         result["dim_wise_containment_negative_boxes"] = wandb.Histogram(
             in_neg.float().mean(dim=-1).detach().cpu().numpy()
         )
-        entity_boxes = entity_boxes[ent_rel_mask]
+        return result
+
+    def compute_box_metrics(self, entity_boxes, ent_rel_mask):
+        result = {}
         result["box_left_distribution"] = wandb.Histogram(entity_boxes.left.detach().cpu().numpy())
         result["box_right_distribution"] = wandb.Histogram(entity_boxes.right.detach().cpu().numpy())
         result["box_left_mean"] = entity_boxes.left.mean()
@@ -1044,7 +1059,7 @@ class Duck(pl.LightningModule):
         scores = self.sim_score(mentions, entities)
         preds = scores.argmax(dim=-1)
 
-        candidate_preds = None
+        candidate_preds = preds
         if batch["candidates"] is not None:
             candidate_indexes = batch["candidates"]["data"].long()
             candidates = self.ent_index[candidate_indexes]
@@ -1084,30 +1099,25 @@ class Duck(pl.LightningModule):
         assert len(datasets) == len(outputs)
         for i, dataset in enumerate(datasets):
             dataset_outputs = outputs[i]
-            has_candidates = any(o["candidate_preds"] is not None for o in dataset_outputs)
             preds = torch.cat([o["preds"] for o in dataset_outputs])
             target = torch.cat([o["target"] for o in dataset_outputs])
             topk = [o["topk"] for o in dataset_outputs]
+            candidate_preds = torch.cat([o["candidate_preds"] for o in dataset_outputs])
 
             preds = self.all_gather_flat(preds)
             target = self.all_gather_flat(target)
-
-            candidate_preds = None
-            if has_candidates:
-                candidate_preds = torch.cat([o["candidate_preds"] for o in dataset_outputs])
-                candidate_preds = self.all_gather_flat(candidate_preds)
+            candidate_preds = self.all_gather_flat(candidate_preds)
             
             micro_f1 = torchmetrics.functional.classification.multiclass_f1_score(
                 preds, target, num_classes=len(self.data.ent_catalogue), average='micro'
-            )
-            if has_candidates:
-                micro_f1_candidate_set = torchmetrics.functional.classification.multiclass_f1_score(
-                    candidate_preds, target, num_classes=len(self.data.ent_catalogue), average='micro'
-                )
-                metrics[f"Micro-F1_candidate_set/{dataset}"] = micro_f1_candidate_set
-                tqdm.write(f"Micro F1 on {dataset} (with candidate set): \t{micro_f1_candidate_set:.4f}")
+            ).item()
+            micro_f1_candidate_set = torchmetrics.functional.classification.multiclass_f1_score(
+                candidate_preds, target, num_classes=len(self.data.ent_catalogue), average='micro'
+            ).item()
             metrics[f"Micro-F1/{dataset}"] = micro_f1
             tqdm.write(f"Micro F1 on {dataset}: \t{micro_f1:.4f}")
+            metrics[f"Micro-F1_candidate_set/{dataset}"] = micro_f1_candidate_set
+            tqdm.write(f"Micro F1 on {dataset} (with candidate set): \t{micro_f1_candidate_set:.4f}")
 
             recall_steps = [10, 30, 50, 100]
             for k in recall_steps:
@@ -1118,7 +1128,7 @@ class Duck(pl.LightningModule):
         for avg_metric_key in metric_names:
             value = 0
             for dataset_name in self.datasets["test"]:
-                value += metrics[f"{avg_metric_key}/{dataset_name}"].item()
+                value += metrics[f"{avg_metric_key}/{dataset_name}"]
             metrics[avg_metric_key + "/Average"] = value / len(self.datasets["test"])
 
         tqdm.write(f"Average Micro F1: {metrics['Micro-F1/Average']:.4f}")
@@ -1143,7 +1153,7 @@ class Duck(pl.LightningModule):
             top_scores.contiguous().view(-1),
             target.contiguous().view(-1),
             index.contiguous().view(-1),
-        )
+        ).item()
 
     def configure_optimizers(self):
         return self.optimizer
