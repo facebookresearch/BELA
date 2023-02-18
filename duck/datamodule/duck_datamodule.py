@@ -226,6 +226,16 @@ class EdGenreDataset(torch.utils.data.Dataset):
         entity_id = self.label_to_id[entity_label]
         entity_index, entity_tokens = self.ent_catalogue[entity_id]
 
+        candidate_indexes = []
+        candidate_labels = []
+        if "candidates" in data:
+            candidate_indexes = [
+                self.ent_catalogue[self.label_to_id[c]][0]
+                for c in data["candidates"]
+                if c in self.label_to_id and self.label_to_id.get(c) in self.ent_catalogue
+            ]
+            candidate_labels = data["candidates"]
+
         return {
             "context_left": data["meta"]["left_context"],
             "mention": data["meta"]["mention"],
@@ -234,6 +244,8 @@ class EdGenreDataset(torch.utils.data.Dataset):
             "entity_label": entity_label,
             "entity_index": entity_index,
             "entity_tokens": entity_tokens,
+            "candidate_indexes": candidate_indexes,
+            "candidate_labels": candidate_labels
         }
 
 
@@ -403,6 +415,10 @@ class DuckTransform(BlinkTransform):
         if neighbor_relation_ids is not None:
             neighbor_relation_ids = self._transform_relation_ids(neighbor_relation_ids)
         
+        candidates = None
+        if "candidates" in batch and any(len(cands) > 0 for cands in batch["candidates"]):
+            candidates = self._list_to_tensor(batch["candidates"])
+        
         return {
             "mentions": mention_tensor,
             "entities": entity_tensor,
@@ -410,7 +426,8 @@ class DuckTransform(BlinkTransform):
             "relation_ids": relation_ids,
             "neighbors": neighbors_tensor,
             "neighbor_relations": neighbor_relation_tensor,
-            "neighbor_relation_ids": neighbor_relation_ids
+            "neighbor_relation_ids": neighbor_relation_ids,
+            "candidates": candidates
         }
 
 
@@ -571,6 +588,7 @@ class EdDuckDataModule(LightningDataModule):
             return None
         left_context, mention, right_context, \
             _, entity_labels, entity_indexes, entity_token_ids, \
+            candidate_indexes, candidate_labels, \
             relation_labels, relation_ids, relation_data, \
             neighbors = zip(
             *[item.values() for item in batch]
@@ -656,7 +674,8 @@ class EdDuckDataModule(LightningDataModule):
                 "relation_data": relation_data,
                 "neighbor_token_ids": neighbor_token_ids,
                 "neighbor_relation_data": neighbor_relation_data,
-                "neighbor_relation_ids": neighbor_relation_ids
+                "neighbor_relation_ids": neighbor_relation_ids,
+                "candidates": candidate_indexes
             }
         )
 
@@ -670,6 +689,7 @@ class EdDuckDataModule(LightningDataModule):
         result["entity_tensor_mask"] = torch.tensor(entity_tensor_mask, dtype=torch.long).bool()
         result["ent_rel_mask"] = ent_rel_mask
         result["neigh_rel_mask"] = neigh_rel_mask
+        result["candidate_labels"] = candidate_labels
         return result
 
     def _order_entities(

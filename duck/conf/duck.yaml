@@ -67,13 +67,13 @@ duck:
     parametrization: spherical
     regularization:
       _target_: duck.box_tensors.regularization.L2BoxSideRegularizer
-      weight: 0.1
+      weight: 0.2
     # dimensions: 0.5
   duck_loss_weight: 0.1
   num_negative_boxes: 2048
   box_dropout: 0.5
-  dropout: 0.1
-  gaussian_box_regularization: 0.1
+  # dropout: 0.2
+  # gaussian_box_regularization: 0.1
   duck_loss:
     _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
     margin: 2

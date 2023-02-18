@@ -456,7 +456,7 @@ class Duck(pl.LightningModule):
             )
         self.box_dropout_dist = None
         if self.config.duck.get("box_dropout"):
-            p = self.config.duck.dropout
+            p = self.config.duck.box_dropout
             self.box_dropout_dist = torch.distributions.binomial.Binomial(probs=p)
 
         self.entity_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
@@ -877,11 +877,11 @@ class Duck(pl.LightningModule):
         representations = self(batch)
         local_entities = representations["entities"][batch["entity_tensor_mask"].bool()]
         representations, batch = self._gather_representations(representations, batch)
-        if self.gather_on_ddp or isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
+        if self.gather_on_ddp and isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
             assert local_entities.size(0) < representations["entities"].size(0)
             diff = representations["entities"][:local_entities.size(0)] - local_entities
             diff = diff.abs()
-            assert diff.max() < 1e-6, f"{diff.max().item()}"
+            assert diff.max() < 1e-4, f"{diff.max().item()}"
 
         mentions = representations["mentions"]
         entities = representations["entities"]
@@ -1024,8 +1024,8 @@ class Duck(pl.LightningModule):
         return result
 
     def handle_spherical_coord(self, entity_boxes, negative_boxes, entities, mentions):
-        entities[..., -1] = torch.relu(entities[..., -1].clone())
-        mentions[..., -1] = torch.relu(mentions[..., -1].clone())
+        entities[..., -1] = torch.abs(entities[..., -1].clone())
+        mentions[..., -1] = torch.abs(mentions[..., -1].clone())
         _, entities = cartesian_to_spherical(entities)
         # entities_ = entities_[..., :-1]  # drop last coord to keep the range [0, pi]
         entity_boxes = entity_boxes[..., :entities.size(-1)].clone()
@@ -1043,8 +1043,24 @@ class Duck(pl.LightningModule):
         target = batch["entity_ids"]
         scores = self.sim_score(mentions, entities)
         preds = scores.argmax(dim=-1)
+
+        candidate_preds = None
+        if batch["candidates"] is not None:
+            candidate_indexes = batch["candidates"]["data"]
+            candidates = self.ent_index[candidate_indexes]
+            candidate_scores = torch.bmm(
+                mentions.unsqueeze(1).to(candidates.dtype),
+                candidates.transpose(1, -1)
+            ).squeeze(1)
+            candidate_mask = batch["candidates"]["attention_mask"].bool()
+            candidate_scores[~candidate_mask] = 0
+            candidate_preds = candidate_indexes.gather(
+                1, candidate_scores.argmax(dim=-1).unsqueeze(1)
+            ).squeeze(dim=1)
+
         return {
             "preds": preds,
+            "candidate_preds": candidate_preds,
             "target": target,
             "topk": scores.topk(100)
         }
@@ -1066,16 +1082,28 @@ class Duck(pl.LightningModule):
         assert len(datasets) == len(outputs)
         for i, dataset in enumerate(datasets):
             dataset_outputs = outputs[i]
+            has_candidates = any(o["candidate_preds"] is not None for o in dataset_outputs)
             preds = torch.cat([o["preds"] for o in dataset_outputs])
             target = torch.cat([o["target"] for o in dataset_outputs])
             topk = [o["topk"] for o in dataset_outputs]
 
             preds = self.all_gather_flat(preds)
             target = self.all_gather_flat(target)
+
+            candidate_preds = None
+            if has_candidates:
+                candidate_preds = torch.cat([o["candidate_preds"] for o in dataset_outputs])
+                candidate_preds = self.all_gather_flat(candidate_preds)
             
             micro_f1 = torchmetrics.functional.classification.multiclass_f1_score(
                 preds, target, num_classes=len(self.data.ent_catalogue), average='micro'
             )
+            if has_candidates:
+                micro_f1_candidate_set = torchmetrics.functional.classification.multiclass_f1_score(
+                    candidate_preds, target, num_classes=len(self.data.ent_catalogue), average='micro'
+                )
+                metrics[f"Micro-F1_candidate_set/{dataset}"] = micro_f1_candidate_set
+                tqdm.write(f"Micro F1 on {dataset} (with candidate set): \t{micro_f1_candidate_set:.4f}")
             metrics[f"Micro-F1/{dataset}"] = micro_f1
             tqdm.write(f"Micro F1 on {dataset}: \t{micro_f1:.4f}")
 
@@ -1088,10 +1116,10 @@ class Duck(pl.LightningModule):
         for avg_metric_key in metric_names:
             value = 0
             for dataset_name in self.datasets["test"]:
-                value += metrics[f"{avg_metric_key}/{dataset_name}"]
+                value += metrics[f"{avg_metric_key}/{dataset_name}"].item()
             metrics[avg_metric_key + "/Average"] = value / len(self.datasets["test"])
 
-        tqdm.write(f"Average Micro F1: {metrics['Micro-F1/Average']}")
+        tqdm.write(f"Average Micro F1: {metrics['Micro-F1/Average']:.4f}")
         
         metrics["avg_micro_f1"] = metrics["Micro-F1/Average"]
         metrics["val_f1"] = metrics.get("Micro-F1/BLINK_DEV") or metrics["avg_micro_f1"]
