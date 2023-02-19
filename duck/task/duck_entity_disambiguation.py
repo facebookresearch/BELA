@@ -876,6 +876,7 @@ class Duck(pl.LightningModule):
             self.append_neighbors_to_entities(batch)
    
         representations = self(batch)
+        bsz = representations["mentions"].size(0)
         representations, batch = self._gather_representations(representations, batch)
 
         mentions = representations["mentions"]
@@ -910,8 +911,9 @@ class Duck(pl.LightningModule):
             duck_metrics.update(duck_entity_metrics)
 
             if self.config.duck.mention_in_box:
+                mention_rel_mask = ent_rel_mask[target[:bsz].clone()]
                 duck_mention_metrics = self.compute_duck_loss_with_boxes(
-                    mentions, entities, entity_boxes, rel_ids, ent_rel_mask[target].clone().contiguous()
+                    mentions, entities, entity_boxes, rel_ids, mention_rel_mask.clone().contiguous()
                 )
                 duck_loss_mention = duck_mention_metrics["loss"]
                 duck_mention_metrics = {
@@ -1124,7 +1126,7 @@ class Duck(pl.LightningModule):
                 recall = self.recall_at_k(topk, target, k)
                 metrics[f"Recall@{k}/{dataset}"] = recall
         
-        metric_names = set(k.split("/")[0] for k in metrics)
+        metric_names = list(dict.fromkeys([k.split("/")[0] for k in metrics]))
         for avg_metric_key in metric_names:
             value = 0
             for dataset_name in self.datasets["test"]:
@@ -1133,9 +1135,9 @@ class Duck(pl.LightningModule):
 
         tqdm.write(f"Average Micro F1: {metrics['Micro-F1/Average']:.4f}")
         
-        metrics["avg_micro_f1"] = metrics["Micro-F1/Average"]
+        metrics["avg_micro_f1"] = metrics["Micro-F1_candidate_set/Average"]
         metrics["val_f1"] = metrics.get("Micro-F1/BLINK_DEV") or metrics["avg_micro_f1"]
-        self.log_dict(metrics, sync_dist=True)
+        self.log_dict(metrics)
     
     def recall_at_k(self, top, target, k):
         top_scores = torch.cat([t.values for t in top])[:, :k]
@@ -1160,7 +1162,7 @@ class Duck(pl.LightningModule):
     
     def sample_negative_boxes(self, relation_ids):
         with torch.no_grad():
-            ids_range = torch.arange(len(self.data.rel_catalogue)).to(self.device) + 1
+            ids_range = torch.arange(len(self.data.rel_catalogue), device=self.device) + 1
             negative_ids = []
             for rels in relation_ids:
                 negative_pool = tensor_set_difference(ids_range, rels)
