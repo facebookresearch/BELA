@@ -45,7 +45,6 @@ data:
   max_num_neighbors_per_batch: 16
   shuffle: True
   num_workers: 10
-  num_negative_relations: all
   transform:
     _target_: duck.datamodule.DuckTransform
     model_path: ${language_model}
@@ -74,7 +73,7 @@ duck:
   box_dropout: 0.5
   mention_in_box: True
   dropout: 0.0
-  gaussian_box_regularization: 1.0
+  gaussian_box_regularization: 0.0
   duck_loss:
     _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
     margin: 2

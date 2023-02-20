@@ -1,9 +1,9 @@
 #!/bin/bash
 
-#SBATCH --job-name=duck_spherical
+#SBATCH --job-name=duck_box
 ## %j is the job id, %u is the user id
-#SBATCH --output=/checkpoints/%u/duck/logs/duck_spherical_%j.log
-#SBATCH --error=/checkpoints/%u/duck/logs/duck_spherical_%j.log
+#SBATCH --output=/checkpoints/%u/duck/logs/duck_box_%j.log
+#SBATCH --error=/checkpoints/%u/duck/logs/duck_box_%j.log
 #SBATCH --partition=learnai4p
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=8 
@@ -17,5 +17,4 @@ export PYTHONPATH=.:$PYTHONPATH
 
 module purge
 
-srun python duck/main.py run_name=duck_spherical trainer=1host data.batch_size=32 duck.boxes.parametrization=spherical &
-wait
+srun python duck/main.py run_name=duck_box trainer=1host data.batch_size=32 duck.boxes.parametrization=relu

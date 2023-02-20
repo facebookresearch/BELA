@@ -764,7 +764,6 @@ class Duck(pl.LightningModule):
         mentions = batch["mentions"] 
         entities = batch["entities"]
         relation_ids = batch["relation_ids"]
-        neighbors = batch["neighbors"]
         ent_rel_mask = batch["ent_rel_mask"]
 
         entity_tensor_mask = batch["entity_tensor_mask"].bool()
@@ -772,8 +771,6 @@ class Duck(pl.LightningModule):
 
         assert mentions["data"].size(-1) <= self.config.data.transform.max_mention_len
         assert entities["data"].size(-1) <= self.config.data.transform.max_entity_len
-        if neighbors is not None:
-            assert neighbors["data"].size(-1) <= self.config.data.transform.max_entity_len
 
         mention_repr, _ = self.mention_encoder(
             mentions["data"], attention_mask=mentions["attention_mask"]
@@ -814,66 +811,67 @@ class Duck(pl.LightningModule):
         # return boxes.rearrange("r b d -> b r d")
         # return self.intersection(boxes)
 
-    def append_neighbors_to_entities(self, batch):
-        neighbors = batch["neighbors"]
-        entities = batch["entities"]
-        relation_ids = batch["relation_ids"]
-        neighbor_relation_ids = batch["neighbor_relation_ids"]
+    # def append_neighbors_to_entities(self, batch):
+    #     neighbors = batch["neighbors"]
+    #     entities = batch["entities"]
+    #     relation_ids = batch["relation_ids"]
+    #     neighbor_relation_ids = batch["neighbor_relation_ids"]
 
-        entities["data"] = torch.cat(
-            [entities["data"], neighbors["data"]]
-        )
-        entities["attention_mask"] = torch.cat(
-            [entities["attention_mask"], neighbors["attention_mask"]]
-        )
-        relation_ids["data"] = torch.cat(
-            [relation_ids["data"], neighbor_relation_ids["data"]]
-        )
-        relation_ids["attention_mask"] = torch.cat(
-            [relation_ids["attention_mask"], neighbor_relation_ids["attention_mask"]]
-        )
-        mask = batch["entity_tensor_mask"].bool()
-        mask = torch.cat(
-            [mask, torch.full((neighbors["data"].size(0), ), True, device=self.device)]
-        )
-        batch["entity_tensor_mask"] = mask
-        batch["entity_ids"] = torch.cat([
-            batch["entity_ids"],
-            batch["neighbor_ids"]
-        ])
+    #     entities["data"] = torch.cat(
+    #         [entities["data"], neighbors["data"]]
+    #     )
+    #     entities["attention_mask"] = torch.cat(
+    #         [entities["attention_mask"], neighbors["attention_mask"]]
+    #     )
+    #     relation_ids["data"] = torch.cat(
+    #         [relation_ids["data"], neighbor_relation_ids["data"]]
+    #     )
+    #     relation_ids["attention_mask"] = torch.cat(
+    #         [relation_ids["attention_mask"], neighbor_relation_ids["attention_mask"]]
+    #     )
+    #     mask = batch["entity_tensor_mask"].bool()
+    #     mask = torch.cat(
+    #         [mask, torch.full((neighbors["data"].size(0), ), True, device=self.device)]
+    #     )
+    #     batch["entity_tensor_mask"] = mask
+    #     batch["entity_ids"] = torch.cat([
+    #         batch["entity_ids"],
+    #         batch["neighbor_ids"]
+    #     ])
 
-    def limit_neighbors(self, batch):
-        neighbors = batch["neighbors"]
-        max_neighbors = self.config.data.get("max_num_neighbors_per_batch")
-        neighbor_relation_ids = batch["neighbor_relation_ids"]
+    # def limit_neighbors(self, batch):
+    #     neighbors = batch["neighbors"]
+    #     max_neighbors = self.config.data.get("max_num_neighbors_per_batch")
+    #     neighbor_relation_ids = batch["neighbor_relation_ids"]
+    #     neighbor_ids = batch["neighbor_ids"]
 
-        neighbors["data"] = rearrange(
-            neighbors["data"], "b n l -> (b n) l"
-        )
-        neighbors["attention_mask"] = rearrange(
-            neighbors["attention_mask"], "b n l -> (b n) l"
-        )
-        neighbor_relation_ids["data"] = rearrange(
-            neighbor_relation_ids["data"], "b n l -> (b n) l"
-        )
-        neighbor_relation_ids["attention_mask"] = rearrange(
-            neighbor_relation_ids["attention_mask"], "b n l -> (b n) l"
-        )
-        neighbor_ids = rearrange(batch["neighbor_ids"], "b n -> (b n)")
-        if max_neighbors is not None:
-            neighbors["data"] = neighbors["data"][:max_neighbors]
-            neighbors["attention_mask"] = neighbors["attention_mask"][:max_neighbors]
-            neighbor_relation_ids["data"] = neighbor_relation_ids["data"][:max_neighbors]
-            neighbor_relation_ids["attention_mask"] = neighbor_relation_ids["attention_mask"][:max_neighbors]
-            batch["neighbor_ids"] = neighbor_ids[:max_neighbors]
+    #     # neighbors["data"] = rearrange(
+    #     #     neighbors["data"], "b n l -> (b n) l"
+    #     # )
+    #     # neighbors["attention_mask"] = rearrange(
+    #     #     neighbors["attention_mask"], "b n l -> (b n) l"
+    #     # )
+    #     # neighbor_relation_ids["data"] = rearrange(
+    #     #     neighbor_relation_ids["data"], "b n l -> (b n) l"
+    #     # )
+    #     # neighbor_relation_ids["attention_mask"] = rearrange(
+    #     #     neighbor_relation_ids["attention_mask"], "b n l -> (b n) l"
+    #     # )
+    #     # neighbor_ids = rearrange(batch["neighbor_ids"], "b n -> (b n)")
+    #     if max_neighbors is not None:
+    #         neighbors["data"] = neighbors["data"][:max_neighbors]
+    #         neighbors["attention_mask"] = neighbors["attention_mask"][:max_neighbors]
+    #         neighbor_relation_ids["data"] = neighbor_relation_ids["data"][:max_neighbors]
+    #         neighbor_relation_ids["attention_mask"] = neighbor_relation_ids["attention_mask"][:max_neighbors]
+    #         batch["neighbor_ids"] = neighbor_ids[:max_neighbors]
 
     def training_step(self, batch, batch_idx):
         if batch is None:
             return None  # for debug
             
-        if batch["neighbors"] is not None:
-            self.limit_neighbors(batch)
-            self.append_neighbors_to_entities(batch)
+        # if batch["neighbors"] is not None:
+        #     self.limit_neighbors(batch)
+        #     self.append_neighbors_to_entities(batch)
    
         representations = self(batch)
         bsz = representations["mentions"].size(0)
@@ -1137,7 +1135,7 @@ class Duck(pl.LightningModule):
         
         metrics["avg_micro_f1"] = metrics["Micro-F1_candidate_set/Average"]
         metrics["val_f1"] = metrics.get("Micro-F1/BLINK_DEV") or metrics["avg_micro_f1"]
-        self.log_dict(metrics)
+        self.log_dict(metrics, sync_dist=True)
     
     def recall_at_k(self, top, target, k):
         top_scores = torch.cat([t.values for t in top])[:, :k]
