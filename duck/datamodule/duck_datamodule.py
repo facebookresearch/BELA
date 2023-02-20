@@ -658,6 +658,7 @@ class EdDuckDataModule(LightningDataModule):
         else:
             relation_data = None
 
+        max_length = len(entity_indexes)
         if is_train:
             entity_token_ids, entity_indexes, entity_labels, \
             relation_ids, relation_labels, targets = self._order_entities(
@@ -669,7 +670,7 @@ class EdDuckDataModule(LightningDataModule):
             )
             targets = targets[:bsz]
 
-        pad_length = len(batch) - len(entity_token_ids)
+        pad_length = max_length - len(entity_token_ids)
         entity_tensor_mask = [1] * len(entity_token_ids) + [0] * pad_length
         entity_token_ids += [
             [self.transform.bos_idx, self.transform.eos_idx]

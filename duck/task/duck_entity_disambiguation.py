@@ -638,7 +638,11 @@ class Duck(pl.LightningModule):
         if self.relations_as_points:
             self.duck_point_loss = nn.BCEWithLogitsLoss()
 
-        
+        if self.config.get("ckpt_path") is not None:
+            with open(self.config.ckpt_path, "rb") as f:
+                checkpoint = torch.load(f, map_location=torch.device("cpu"))
+            self.load_state_dict(checkpoint["state_dict"])
+
     def _setup_pretrained_box_embeddings(self):
         logger.info(f"Setting up pretrained box embeddings")
         with torch.no_grad():

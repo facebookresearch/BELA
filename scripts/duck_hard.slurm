@@ -20,13 +20,13 @@ module purge
 ## srun python duck/main.py run_name=duck_hard \
 ##      trainer=1host data.batch_size=16 \
 ##      duck.boxes.parametrization=spherical \
-##      "resume_path=/checkpoints/matzeni/duck/checkpoints/duck/duck_spherical_mention_epoch\=0_val_f1\=0.752.ckpt" \
+##      "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/duck_spherical_mention_epoch\=0_val_f1\=0.752.ckpt" \
 ##      "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_spherical_val_f1\=0.752.json" &
 ## wait
 
 srun python duck/main.py run_name=duck_hard \
-     trainer=1host data.batch_size=16 \
+    trainer=1host data.batch_size=16 \
      duck.boxes.parametrization=spherical \
-     "resume_path=/checkpoints/matzeni/duck/checkpoints/duck/duck_spherical_mention_epoch\=0_val_f1\=0.745.ckpt" \
+     "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/duck_spherical_mention_epoch\=0_val_f1\=0.745.ckpt" \
      "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_spherical_val_f1\=0.745.json" &
 wait

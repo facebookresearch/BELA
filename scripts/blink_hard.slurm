@@ -20,6 +20,6 @@ module purge
 srun python duck/main.py run_name=blink_hard \
      trainer=1host data.batch_size=16 \
      ablations.blink=True \
-     "resume_path=/checkpoints/matzeni/duck/checkpoints/duck/blink_epoch\=0_val_f1\=0.692.ckpt" \
+     "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/blink_epoch\=0_val_f1\=0.692.ckpt" \
      "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_blink_val_f1\=0.692.json" &
 wait
