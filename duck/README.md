@@ -67,7 +67,7 @@ For duck we need both entities and relations. The file ```/fsx/matzeni/data/duck
 python duck/preprocessing/build_catalogue.py \ 
     label_key=label \ 
     text_key=description \ 
-    input_path=/fsx/matzeni/data/duck/kilt_knowledgesource.jsonl \
+    input_path=/fsx/matzeni/data/duck/properties.json \
     output_tok_ids_path=/fsx/matzeni/data/duck/bert_rel_256_tok_ids.h5 \
     output_repr_path=/fsx/matzeni/data/duck/bert_rel_256_repr.h5
     output_idx_path=/fsx/matzeni/data/duck/rel_idx.txt \
