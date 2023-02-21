@@ -900,8 +900,11 @@ class Duck(pl.LightningModule):
             duck_metrics = self.compute_box_metrics(entity_boxes, ent_rel_mask)
             duck_metrics = prefix_suffix_keys(duck_metrics, "Boxes/")
 
+            rel_ids = expand_with_mask(rel_ids, ent_rel_mask)
+            negative_boxes = self.sample_negative_boxes(rel_ids)
+
             duck_entity_metrics = self.compute_duck_loss_with_boxes(
-                entities, mentions, entity_boxes, rel_ids, ent_rel_mask
+                entities, mentions, entity_boxes, negative_boxes, ent_rel_mask
             )
             duck_loss_entity = duck_entity_metrics["loss"]
             regularization = duck_entity_metrics["regularization"]
@@ -914,8 +917,9 @@ class Duck(pl.LightningModule):
 
             if self.config.duck.mention_in_box:
                 mention_rel_mask = ent_rel_mask[target[:bsz].clone()]
+                negative_boxes = negative_boxes[target[:bsz].clone()]
                 duck_mention_metrics = self.compute_duck_loss_with_boxes(
-                    mentions, entities, entity_boxes, rel_ids, mention_rel_mask.clone().contiguous()
+                    mentions, entities, entity_boxes, negative_boxes, mention_rel_mask.clone()
                 )
                 duck_loss_mention = duck_mention_metrics["loss"]
                 duck_mention_metrics = {
@@ -938,7 +942,7 @@ class Duck(pl.LightningModule):
         
         scores = self.sim_score(mentions, entities)
         ed_loss = self.ed_loss(scores, target)
-        loss = ed_loss + self.duck_loss_weight * (duck_loss_entity + duck_loss_mention + regularization)
+        loss = ed_loss + self.duck_loss_weight * (duck_loss_entity + duck_loss_mention + 2 * regularization)
        
         metrics = {
             "train/duck_loss_entity": duck_loss_entity,
@@ -966,10 +970,7 @@ class Duck(pl.LightningModule):
 
         return metrics
 
-    def compute_duck_loss_with_boxes(self, entities, mentions, entity_boxes, rel_ids, mask):
-        rel_ids = expand_with_mask(rel_ids, mask)
-        negative_boxes = self.sample_negative_boxes(rel_ids)
-
+    def compute_duck_loss_with_boxes(self, entities, mentions, entity_boxes, negative_boxes, mask):
         if self.config.duck.get("gaussian_box_regularization") and self.training:
             std = self.config.duck.gaussian_box_regularization
             entities.add_(std * torch.randn_like(entities))

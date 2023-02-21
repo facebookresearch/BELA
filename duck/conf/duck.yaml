@@ -1,4 +1,4 @@
-language_model: bert-large-uncased
+language_model: roberta-large
 log_dir: /checkpoints/matzeni/duck/logs
 ckpt_dir: /checkpoints/matzeni/duck/checkpoints
 run_name: duck

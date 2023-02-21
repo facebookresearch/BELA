@@ -31,6 +31,7 @@ from einops import rearrange
 
 logger = logging.getLogger()
 
+
 ### SEQUENTIAL
 class DuckHardNegativeMiner:
     def __init__(self, config):
