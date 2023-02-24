@@ -9,7 +9,6 @@
 #SBATCH --gpus-per-node=8 
 #SBATCH --ntasks-per-node=8
 #SBATCH --cpus-per-task=10
-#SBATCH --mem=0
 #SBATCH --time=72:00:00
 
 export PYTHONPATH=.:$PYTHONPATH

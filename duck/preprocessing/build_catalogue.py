@@ -30,8 +30,8 @@ class CatalogueBuilder:
         self.input_path = Path(input_path)
         self.output_tok_ids_path = Path(output_tok_ids_path)
         self.output_repr_path = Path(output_repr_path) if output_repr_path else None
-        self.output_idx_path = Path(output_idx_path) if kb_path else None
-        self.kb_path = Path(kb_path)
+        self.output_idx_path = Path(output_idx_path)
+        self.kb_path = Path(kb_path) if kb_path else None
         self.label_key = label_key
         self.text_key = text_key
         self.batch_size = batch_size
@@ -74,10 +74,12 @@ class CatalogueBuilder:
         representations = []
         index = []
         data = list(self.input_data.values())
+        data_keys = list(self.input_data.keys())
         for i in tqdm(range(0, len(data), self.batch_size)):
             batch_raw = data[i:i + self.batch_size]
+            batch_keys = data_keys[i: i + self.batch_size]
             batch = []
-            for entry in batch_raw:
+            for j, entry in enumerate(batch_raw):
                 label = entry[self.label_key]
                 if self.kb is None or label in self.kb:
                     text = entry[self.text_key]
@@ -85,7 +87,7 @@ class CatalogueBuilder:
                         text = "".join(entry["text"][:10])
                     description = f"{label} {self.tokenizer.sep_token} {text}"
                     batch.append(description)
-                    index_id = label if self.kb is None else self.kb[label]
+                    index_id = batch_keys[j] if self.kb is None else self.kb[label]
                     index.append(index_id)
             tokens = self.tokenizer(
                 batch,

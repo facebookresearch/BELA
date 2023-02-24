@@ -1,6 +1,6 @@
 import os
 import hydra
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf, DictConfig, open_dict
 
 from pytorch_lightning.trainer import Trainer
 from duck.common.utils import seed_prg
@@ -10,6 +10,7 @@ import wandb
 from pathlib import Path
 import torch
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.plugins.environments import SLURMEnvironment
 
 
 def configure_wandb_logger(config):
@@ -37,6 +38,13 @@ def main(config: DictConfig):
     
     os.environ["NCCL_NSOCKS_PERTHREAD"] = "4"
     os.environ["NCCL_SOCKET_NTHREADS"] = "2"
+
+    plugins = []
+
+    if os.environ.get("SLURM_JOB_ID"):
+        plugins = [SLURMEnvironment(auto_requeue=False)]
+        with open_dict(config):
+            config.slurm_job_id = os.environ.get("SLURM_JOB_ID")  
 
     if config.get("debug"):
         torch.autograd.set_detect_anomaly(True)
@@ -67,7 +75,8 @@ def main(config: DictConfig):
     trainer = Trainer(
         **config.trainer,
         callbacks=callbacks,
-        logger=logger
+        logger=logger,
+        plugins=plugins
     )
     trainer.fit(task, datamodule=datamodule, ckpt_path=config.get("resume_path"))
 

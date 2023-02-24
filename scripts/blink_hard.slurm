@@ -9,7 +9,6 @@
 #SBATCH --gpus-per-node=8 
 #SBATCH --ntasks-per-node=8
 #SBATCH --cpus-per-task=10
-#SBATCH --mem=0
 #SBATCH --time=72:00:00
 
 export PYTHONPATH=.:$PYTHONPATH
@@ -17,9 +16,16 @@ export PYTHONPATH=.:$PYTHONPATH
 
 module purge
 
-srun python duck/main.py run_name=blink_hard \
+## srun python duck/main.py run_name=blink_hard \
+##      trainer=1host data.batch_size=16 \
+##      ablations.blink=True \
+##      "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/blink_epoch\=0_val_f1\=0.692.ckpt" \
+##      "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_blink_val_f1\=0.692.json" &
+## wait
+
+srun python duck/main.py run_name=blink_hard_roberta \
      trainer=1host data.batch_size=16 \
      ablations.blink=True \
-     "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/blink_epoch\=0_val_f1\=0.692.ckpt" \
-     "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_blink_val_f1\=0.692.json" &
+     "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/blink_roberta_epoch\=0_val_f1\=0.617.ckpt" \
+     "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_blink_roberta_val_f1\=0.617.json" &
 wait

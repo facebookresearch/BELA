@@ -9,7 +9,6 @@
 #SBATCH --gpus-per-node=8 
 #SBATCH --ntasks-per-node=8
 #SBATCH --cpus-per-task=10
-#SBATCH --mem=0
 #SBATCH --time=72:00:00
 
 export PYTHONPATH=.:$PYTHONPATH
@@ -24,9 +23,16 @@ module purge
 ##      "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_spherical_val_f1\=0.752.json" &
 ## wait
 
-srun python duck/main.py run_name=duck_hard \
+## srun python duck/main.py run_name=duck_hard_roberta \
+##     trainer=1host data.batch_size=16 \
+##      duck.boxes.parametrization=spherical \
+##      "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/duck_roberta_epoch\=0_val_f1\=0.755.ckpt" \
+##      "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_duck_roberta_val_f1\=0.755.json" &
+## wait
+
+srun python duck/main.py run_name=duck_hard_roberta \
     trainer=1host data.batch_size=16 \
-     duck.boxes.parametrization=spherical \
-     "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/duck_spherical_mention_epoch\=0_val_f1\=0.745.ckpt" \
-     "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_spherical_val_f1\=0.745.json" &
+    duck.boxes.parametrization=spherical \
+    "resume_path=/checkpoints/matzeni/duck/checkpoints/duck/duck_hard_roberta_epoch\=0_val_f1\=0.864_last.ckpt" \
+    "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_duck_roberta_val_f1\=0.755.json" &
 wait

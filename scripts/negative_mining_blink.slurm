@@ -9,7 +9,6 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=10
-#SBATCH --mem=0
 #SBATCH --time=12:00:00
 
 export PYTHONPATH=.:$PYTHONPATH
@@ -18,6 +17,6 @@ export PYTHONPATH=.:$PYTHONPATH
 module purge
 
 srun python duck/preprocessing/negative_mining.py \
-    "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/blink_epoch\=0_val_f1\=0.692.ckpt" \
-    "output_path=/fsx/matzeni/data/duck/negatives_blink_val_f1\=0.692.json" \
-    "output_index_path=/fsx/matzeni/data/duck/embeddings_blink_val_f1\=0.692.pt"
+    "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/blink_roberta_epoch\=0_val_f1\=0.617.ckpt" \
+    "output_path=/fsx/matzeni/data/duck/negatives/negatives_blink_roberta_val_f1\=0.617.json" \
+    "output_index_path=/fsx/matzeni/data/duck/embeddings/embeddings_blink_roberta_val_f1\=0.617.pt"

@@ -13,7 +13,7 @@ import json
 import copy
 import math
 from einops import rearrange, repeat
-
+import pytorch_lightning as pl
 from duck.box_tensors.box_tensor import BoxTensor
 
 
@@ -49,6 +49,7 @@ def seed_prg(seed=42, ngpus=1):
     np.random.seed(seed)
     if ngpus > 0:
         torch.cuda.manual_seed_all(seed)
+    pl.seed_everything(seed)
 
 
 def dict_to_yaml(config, path='config.yaml'):
