@@ -357,6 +357,11 @@ class BoxTensor(object):
             (self.left.clone(), self.right.clone())
         )
 
+    def half(self):
+        return BoxTensor(
+            (self.left.half(), self.right.half())
+        )
+
 def _box_shape_ok(t: Tensor) -> bool:
     if len(t.shape) < 2:
         return False

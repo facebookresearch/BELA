@@ -1,5 +1,5 @@
 import math
-from typing import Any, List
+from typing import Any, List, Optional
 import pytorch_lightning as pl
 import hydra
 import logging
@@ -221,16 +221,23 @@ class DuckBoxMarginLoss(nn.Module):
         }
 
 
-class DuckNegativeSamplingLoss(nn.Module):
+class DuckNCELoss(nn.Module):
     def __init__(self,
         distance_function=None,
-        margin: float = 1.0,
-        reduction: str = "mean"
+        margin_pos: float = 1.0,
+        margin_neg: float = 1.0,
+        reduction: str = "mean",
+        intersect_positive_boxes: bool = False,
+        **kwargs
     ):
-        super(DuckNegativeSamplingLoss, self).__init__()
+        super(DuckNCELoss, self).__init__()
         self.distance_function = distance_function
-        self.margin = margin
+        self.margin_pos = margin_pos
+        self.margin_neg = margin_neg
         self.reduction = reduction
+        self.criterion = nn.CrossEntropyLoss(reduction="none")
+        self.intersect_positive_boxes = intersect_positive_boxes
+        self.intersection = Intersection(intersection_temperature=0.0001)
         
     def _reduce(self, loss):
         if self.reduction == "mean":
@@ -257,11 +264,74 @@ class DuckNegativeSamplingLoss(nn.Module):
         positive_dist = self.distance_function(entities, positive_boxes)
         negative_dist = self.distance_function(entities, negative_boxes)
 
-        weights = kwargs.get("negative_weights")
-        if weights is None:
-            negative_dist = negative_dist.mean(dim=0)
+        distances = torch.cat([
+            positive_dist - self.margin_pos,
+            negative_dist - self.margin_neg
+        ], dim=0)
+        # margin_dist = self.margin - distances
+        logits = torch.stack([distances, -distances])
+        logits = rearrange(logits, "c n b -> b c n")
+        target = torch.zeros_like(logits[:, 0, :]).long()
+        target[:, :positive_dist.size(0)] = 1
+        loss = self.criterion(logits, target.long())
+        
+        mask = kwargs.get("mask")
+        if mask is None:
+            mask = torch.full_like(positive_dist, True).bool().t()
+        mask = torch.cat([
+            mask, torch.ones_like(negative_dist.t()).bool()
+        ], dim=1)
+        
+        loss.masked_fill_(~mask, 0.0)
+
+        return {
+            "loss": self._reduce(loss),
+            "positive_distance": wandb.Histogram(positive_dist.detach().cpu().numpy()),
+            "negative_distance": wandb.Histogram(negative_dist.detach().cpu().numpy()),
+            "positive_distance_mean": positive_dist.mean(),
+            "negative_distance_mean": negative_dist.mean()
+        }
+
+
+class DuckNegativeSamplingLoss(nn.Module):
+    def __init__(self,
+        distance_function=None,
+        margin_pos: float = 1.0,
+        margin_neg: float = 1.0,
+        sampling_temperature: Optional[float] = None,
+        reduction: str = "mean",
+        intersect_positive_boxes: bool = False
+    ):
+        super(DuckNegativeSamplingLoss, self).__init__()
+        self.distance_function = distance_function
+        self.margin_pos = margin_pos
+        self.margin_neg = margin_neg
+        self.reduction = reduction
+        self.intersect_positive_boxes = intersect_positive_boxes
+        self.intersection = Intersection(intersection_temperature=0.0001)
+        self.sampling_temperature = sampling_temperature
+        
+    def _reduce(self, loss):
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        elif self.reduction == "none":
+            return loss
+        raise ValueError(f"Unsupported reduction {self.reduction}")
+
+    def forward(
+        self,
+        entities: Tensor,
+        positive_boxes: BoxTensor,
+        negative_boxes: BoxTensor,
+        **kwargs
+    ):
+        negative_boxes = negative_boxes.rearrange("b n d -> n b d")
+        if positive_boxes.left.dim() == 3:
+            positive_boxes = positive_boxes.rearrange("b n d -> n b d")
         else:
-            negative_dist = (negative_dist * weights.t()).sum(dim=0)
+            positive_boxes = positive_boxes.rearrange("b d -> 1 b d")
         
         mask = kwargs.get("mask")
         if mask is None:
@@ -269,11 +339,27 @@ class DuckNegativeSamplingLoss(nn.Module):
         else:
             mask = rearrange(mask, "b n -> n b").bool()
 
-        positive_dist[~mask] = 0.0
-        positive_dist = positive_dist.sum(dim=0) / mask.sum(dim=0)
+        if self.intersect_positive_boxes:
+            positive_boxes.left[~mask] = float("-inf")
+            positive_boxes.right[~mask] = float("inf")
+            positive_boxes = self.intersection(positive_boxes).rearrange("b d -> 1 b d")
 
-        positive_term = torch.nn.functional.logsigmoid(self.margin - positive_dist).mean(dim=0)
-        negative_term = torch.nn.functional.logsigmoid(negative_dist - self.margin).mean(dim=0)
+        positive_dist = self.distance_function(entities, positive_boxes)
+        negative_dist = self.distance_function(entities, negative_boxes)
+        
+        positive_term = torch.nn.functional.logsigmoid(self.margin_pos - positive_dist)
+        negative_term = torch.nn.functional.logsigmoid(negative_dist - self.margin_neg)
+
+        if not self.intersect_positive_boxes:
+            positive_term[~mask] = 0.0
+            positive_dist[~mask] = 0.0
+
+        positive_term = positive_term.sum(dim=0) / mask.sum(dim=0)
+        if self.sampling_temperature is not None:
+            weights = torch.nn.functional.softmax(-self.sampling_temperature * negative_dist, dim=0)
+            negative_term = (negative_term * weights).sum(dim=0)
+        else:
+            negative_term = negative_term.mean(dim=0)
 
         loss = -positive_term - negative_term
         
@@ -686,7 +772,8 @@ class Duck(pl.LightningModule):
             embeddings=embeddings,
             box_parametrization=parametrization,
             padding_idx=0,
-            output_size=self.box_size
+            output_size=self.box_size,
+            freeze=True
         )
 
     def _setup_rel_to_point_encoder(self):
@@ -723,12 +810,6 @@ class Duck(pl.LightningModule):
     
     def encode_with_boxes(self, entity, relations, relation_mask):
         entity_boxes = self.relations_to_box(relations)
-        # relation_mask = relation_mask.bool()
-        # if self.config.duck.boxes.parametrization != "spherical":
-        #     centers = entity_boxes.center
-        #     centers[relation_mask] = 0.0
-        #     center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
-        #     entity = entity + center
         return entity, entity_boxes
 
     def encode_entity_with_relations(
@@ -827,14 +908,13 @@ class Duck(pl.LightningModule):
 
         if self.duck_loss is not None:
             rel_ids = batch["relation_ids"]["data"]
-            duck_metrics = self.compute_box_metrics(entity_boxes, ent_rel_mask)
+            duck_metrics = self.compute_box_metrics(entity_boxes)
             duck_metrics = prefix_suffix_keys(duck_metrics, "Boxes/")
 
             rel_ids = expand_with_mask(rel_ids, ent_rel_mask)
-            negative_boxes, negative_weights = self.self_adversarial_negative_box_sampling(entities, rel_ids)
 
-            duck_entity_metrics = self.compute_duck_loss_with_boxes(
-                entities, mentions, entity_boxes, negative_boxes, ent_rel_mask, negative_weights
+            duck_entity_metrics, negative_boxes = self.compute_duck_loss_with_boxes(
+                entities, mentions, entity_boxes, rel_ids, ent_rel_mask
             )
             duck_loss_entity = duck_entity_metrics["loss"]
             regularization = duck_entity_metrics["regularization"]
@@ -848,8 +928,10 @@ class Duck(pl.LightningModule):
             if self.config.duck.mention_in_box:
                 mention_rel_mask = ent_rel_mask[target[:bsz].clone()]
                 negative_boxes = negative_boxes[target[:bsz].clone()]
-                duck_mention_metrics = self.compute_duck_loss_with_boxes(
-                    mentions, entities, entity_boxes, negative_boxes, mention_rel_mask.clone()
+                duck_mention_metrics, _ = self.compute_duck_loss_with_boxes(
+                    mentions, entities, entity_boxes,
+                    rel_ids[target[:bsz].clone()], mention_rel_mask.clone(),
+                    negative_boxes=negative_boxes
                 )
                 duck_loss_mention = duck_mention_metrics["loss"]
                 duck_mention_metrics = {
@@ -896,19 +978,17 @@ class Duck(pl.LightningModule):
                     for k, v in duck_metrics.items()
                     if k not in metrics
                 })
-        
-        metrics["loss"] = loss
 
-        return metrics
+        return loss
 
     def compute_duck_loss_with_boxes(
             self,
             entities,
             mentions,
             entity_boxes,
-            negative_boxes,
+            rel_ids,
             mask,
-            negative_weights=None
+            negative_boxes=None
         ):
         if self.config.duck.get("gaussian_box_regularization") and self.training:
             std = self.config.duck.gaussian_box_regularization
@@ -919,13 +999,20 @@ class Duck(pl.LightningModule):
         entities_ = entities[..., :self.box_size].clone()
         mentions_ = mentions[..., :self.box_size].clone()
         entity_boxes = entity_boxes[..., :self.box_size].clone()
-        negative_boxes = negative_boxes[..., :self.box_size].clone()
         if self.config.duck.boxes.parametrization == "spherical":
-            entity_boxes, negative_boxes, entities_ = self.handle_spherical_coord(
-                entity_boxes, negative_boxes, entities_, mentions_
+            entity_boxes, entities_ = self.handle_spherical_coord(
+                entity_boxes, entities_, mentions_
             )
         
         entities_ = entities_[:entity_boxes.box_shape[0], :].clone()
+
+        if negative_boxes is None:
+            if self.config.duck.negative_box_sampling == "uniform":
+                negative_boxes = self.uniform_negative_box_sampling(rel_ids)
+            else:
+                negative_boxes = self.self_adversarial_negative_box_sampling(entities_, rel_ids)
+            negative_boxes = negative_boxes[..., :self.box_size].clone()
+            negative_boxes = negative_boxes[..., :entities_.size(-1)].clone()
         
         dropout_mask = torch.full_like(entities_, False).bool()
         if self.box_dropout_dist is not None and self.training:
@@ -936,8 +1023,7 @@ class Duck(pl.LightningModule):
             entities_.masked_fill(dropout_mask, 0.0),
             entity_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
             negative_boxes.masked_fill(dropout_mask.unsqueeze(1), 0.0),
-            mask=mask,
-            negative_weights=negative_weights
+            mask=mask
         )
         regularization = 0.0
         if self.regularizer is not None:
@@ -945,8 +1031,10 @@ class Duck(pl.LightningModule):
                 entity_boxes[mask].cat(negative_boxes.rearrange("b n d -> (b n) d"))
             )
 
-        box_metrics = self.compute_box_containment_metrics(entities_, entity_boxes, negative_boxes, mask)
+        box_metrics = self.compute_box_containment_metrics(entities_, entity_boxes, rel_ids, mask)
         result.update(box_metrics)
+        f1_metrics = self.compute_box_f1(entities_, rel_ids)
+        result.update(f1_metrics)
 
         if isinstance(duck_loss, dict):
             result.update(duck_loss)
@@ -954,11 +1042,13 @@ class Duck(pl.LightningModule):
             result["loss"] = duck_loss
         
         result["regularization"] = regularization
-        return result
+        return result, negative_boxes
 
-    def compute_box_containment_metrics(self, entities, entity_boxes, negative_boxes, ent_rel_mask):
+    def compute_box_containment_metrics(self, entities, entity_boxes, relation_ids, ent_rel_mask):
         result = {}
-        entities = entities.unsqueeze(1)
+        entities = entities.unsqueeze(1).half()
+        entity_boxes = entity_boxes.half()
+        negative_boxes = self.uniform_negative_box_sampling(relation_ids)[..., :entities.size(-1)].half()
         in_pos = (entities > entity_boxes.left) & (entities < entity_boxes.right)
         in_pos = in_pos[ent_rel_mask]
         result["containment_positive_boxes"] = in_pos.all(dim=-1).float().mean()
@@ -971,8 +1061,33 @@ class Duck(pl.LightningModule):
             in_neg.float().mean(dim=-1).detach().cpu().numpy()
         )
         return result
+    
+    def compute_box_f1(self, entities, relation_ids):
+        result = {}
+        entities = entities.unsqueeze(1).half()
+        ids_range = torch.arange(0, len(self.data.rel_catalogue) + 1, device=self.device)
+        all_boxes = self.rel_encoder(ids_range).half()
+        all_boxes = all_boxes[:, :entities.size(-1)]
+        predicted_mask = ((all_boxes.left < entities) & (entities < all_boxes.right)).all(dim=-1)
+        gold_mask = torch.full_like(predicted_mask, False).scatter_(1, relation_ids, True)
+        dist = hydra.utils.instantiate(self.config.duck.duck_loss.distance_function)
+        distances = dist(entities, all_boxes)
+        sort_perm = torch.argsort(distances, dim=-1)
+        predicted_mask = predicted_mask.gather(-1, sort_perm)
+        gold_mask = gold_mask.gather(-1, sort_perm)
+        matches = (predicted_mask & gold_mask)
+        precision = torch.nan_to_num((matches.sum(dim=-1) / predicted_mask.sum(dim=-1)))
+        recall =  matches.sum(dim=-1) / gold_mask.sum(dim=-1)
+        f1 = torch.nan_to_num(2 * precision * recall / (precision + recall))
+        result["box_precision"] = precision.mean()
+        result["box_recall"] = recall.mean()
+        result["box_f1"] = f1.mean()
+        result["box_p@10"] = torch.nan_to_num(
+            (matches[:, :10].sum(dim=-1) / predicted_mask[:, :10].sum(dim=-1))
+        ).mean()
+        return result
 
-    def compute_box_metrics(self, entity_boxes, ent_rel_mask):
+    def compute_box_metrics(self, entity_boxes):
         result = {}
         result["box_left_distribution"] = wandb.Histogram(entity_boxes.left.detach().cpu().numpy())
         result["box_right_distribution"] = wandb.Histogram(entity_boxes.right.detach().cpu().numpy())
@@ -983,19 +1098,14 @@ class Duck(pl.LightningModule):
         result["box_size_mean"] = box_size.mean()
         return result
 
-    def handle_spherical_coord(self, entity_boxes, negative_boxes, entities, mentions):
+    def handle_spherical_coord(self, entity_boxes, entities, mentions):
         # abs on last coord to keep range [0, pi]
         entities[..., -1] = torch.abs(entities[..., -1].clone()) 
         mentions[..., -1] = torch.abs(mentions[..., -1].clone())
         _, entities = cartesian_to_spherical(entities)
         # entities_ = entities_[..., :-1]  # drop last coord to keep the range [0, pi]
         entity_boxes = entity_boxes[..., :entities.size(-1)].clone()
-        negative_boxes = negative_boxes[..., :entities.size(-1)].clone()
-        return entity_boxes, negative_boxes, entities
-
-    def training_epoch_end(self, outputs):
-        mean_metrics = mean_over_batches(outputs, suffix="epoch")
-        self.log_dict(mean_metrics, sync_dist=True)
+        return entity_boxes, entities
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         representations = self(batch)
@@ -1117,28 +1227,39 @@ class Duck(pl.LightningModule):
     def configure_optimizers(self):
         return self.optimizer
     
-    def self_adversarial_negative_box_sampling(self, entities, relation_ids):
+    def self_adversarial_negative_box_sampling(self, entities, relation_ids, sampling_temperature=0.5):
+        sampling_temperature = self.config.duck.duck_loss.sampling_temperature or sampling_temperature
         with torch.no_grad():
             ids_range = torch.arange(0, len(self.data.rel_catalogue) + 1, device=self.device)
-            all_boxes = self.rel_encoder(ids_range)
+            all_boxes = self.rel_encoder(ids_range).half()[..., :entities.size(-1)]
             dist = hydra.utils.instantiate(self.config.duck.duck_loss.distance_function)
-            distances = dist(entities.unsqueeze(1), all_boxes)
-            distances.scatter_(1, relation_ids, distances.max().item())
-            topk = distances.topk(self.config.duck.num_negative_boxes, dim=-1, largest=False)
-            negative_ids = topk.indices
-            weights = torch.nn.functional.softmax(-topk.values, dim=-1)
-        return self.rel_encoder(negative_ids), weights
+            distances = dist(entities.unsqueeze(1).half(), all_boxes)
+            distances.scatter_(1, relation_ids, float("inf"))
+            if self.config.duck.negative_box_sampling == "topk":
+                topk = distances.topk(self.config.duck.num_negative_boxes, dim=-1, largest=False)
+                negative_ids = topk.indices
+            else:
+                distribution = torch.nn.functional.softmax(-sampling_temperature * distances, dim=-1)
+                negative_ids = torch.multinomial(distribution, num_samples=self.config.duck.num_negative_boxes) 
+            if self.config.debug:
+                for i, row in enumerate(negative_ids):
+                    set_pos = set(rid.item() for rid in relation_ids[i]) 
+                    set_neg = set(rid.item() for rid in row)
+                    assert len(set_pos & set_neg) == 0
+        return self.rel_encoder(negative_ids.detach())
 
     def uniform_negative_box_sampling(self, relation_ids):
         with torch.no_grad():
-            ids_range = torch.arange(len(self.data.rel_catalogue), device=self.device) + 1
-            negative_ids = []
-            for rels in relation_ids:
-                negative_pool = tensor_set_difference(ids_range, rels)
-                sample_indices = torch.multinomial(torch.ones_like(negative_pool).float(), num_samples=self.config.duck.num_negative_boxes)
-                sample = negative_pool[sample_indices]
-                negative_ids.append(sample)
-            negative_ids = torch.stack(negative_ids).detach()
+            ids_range = torch.arange(0, len(self.data.rel_catalogue) + 1, device=self.device)
+            weights = torch.ones((relation_ids.size(0), ids_range.size(0)), device=self.device)
+            weights.scatter_(1, relation_ids, float("-inf"))
+            distribution = torch.nn.functional.softmax(weights, dim=-1)
+            negative_ids = torch.multinomial(distribution, num_samples=self.config.duck.num_negative_boxes).detach()
+            if self.config.debug:
+                for i, row in enumerate(negative_ids):
+                    set_pos = set(rid.item() for rid in relation_ids[i]) 
+                    set_neg = set(rid.item() for rid in row)
+                    assert len(set_pos & set_neg) == 0
         return self.rel_encoder(negative_ids)
    
     def _gather_representations(self, representations, batch):

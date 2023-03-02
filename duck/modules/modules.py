@@ -457,10 +457,11 @@ class EmbeddingToBox(nn.Module):
         embeddings: torch.Tensor,
         box_parametrization: str = "softplus",
         padding_idx: Optional[int] = None,
-        output_size: Optional[int] = None
+        output_size: Optional[int] = None,
+        freeze: bool = True
     ):
         super(EmbeddingToBox, self).__init__()
-        self.embedding = nn.Embedding.from_pretrained(embeddings, padding_idx=padding_idx)
+        self.embedding = nn.Embedding.from_pretrained(embeddings, padding_idx=padding_idx, freeze=freeze)
         self.dim = embeddings.size(-1)
         self.output_size = output_size or self.dim
         self.hidden_dim = 2 * self.output_size

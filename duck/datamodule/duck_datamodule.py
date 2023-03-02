@@ -7,6 +7,8 @@ from unittest.mock import NonCallableMagicMock
 import torch
 import h5py
 from pytorch_lightning import LightningDataModule
+from transformers import AutoTokenizer
+from duck.common.lmdb_wrapper import LmdbImmutableDict
 from duck.common.utils import list_to_tensor, load_json, load_jsonl, any_none, load_pkl
 
 from mblink.utils.utils import EntityCatalogue
@@ -253,14 +255,17 @@ class DuckTransform(BlinkTransform):
     def __init__(
         self,
         model_path: str = "bert-large-uncased",
-        mention_start_token: int = 1,
-        mention_end_token: int = 2,
-        max_mention_len: int = 128,
-        max_entity_len: int = 128,
+        mention_start_token: Optional[int] = None,
+        mention_end_token: Optional[int] = None,
+        max_mention_len: int = 256,
+        max_entity_len: int = 256,
         max_relation_len: int = 64,
         add_eos_bos: bool = False,
         max_num_rels = None
     ):
+        sep_token_id = AutoTokenizer.from_pretrained(model_path).sep_token_id
+        mention_start_token = mention_start_token or sep_token_id
+        mention_end_token = mention_end_token or sep_token_id
         super().__init__(
             model_path=model_path,
             mention_start_token=mention_start_token,
@@ -272,6 +277,7 @@ class DuckTransform(BlinkTransform):
         self.max_relation_len = max_relation_len
         self.add_eos_bos = add_eos_bos
         self.max_num_rels = max_num_rels
+
     
     def _transform_relation_token_ids(
         self,
@@ -441,6 +447,7 @@ class EdDuckDataModule(LightningDataModule):
         ent_catalogue_data_path: str,
         rel_catalogue_idx_path: str,
         rel_catalogue_data_path: Optional[str] = None,
+        entity_priors_path: Optional[str] = None,
         neighbors_path: Optional[str] = None,
         stop_rels_path: Optional[str] = None,
         pretrained_relations: bool = True,
@@ -500,6 +507,10 @@ class EdDuckDataModule(LightningDataModule):
         #     val_paths = val_paths[:1]
         #     test_paths = test_paths[:1]
 
+        self.entity_priors = {}
+        if entity_priors_path is not None:
+            self.entity_priors = LmdbImmutableDict(entity_priors_path)
+
         self.train_dataset = self._duck_dataset(train_path)
         self.val_datasets = [self._duck_dataset(val_path) for val_path in val_paths]
         self.test_datasets = [self._duck_dataset(test_path) for test_path in test_paths]
@@ -510,7 +521,7 @@ class EdDuckDataModule(LightningDataModule):
         
         self.use_all_relations = False
         self.max_num_neighbors_per_batch = max_num_neighbors_per_batch
-
+    
     def _map_neighbors_to_id(self):
         if self.label_to_id is None:
             return
@@ -569,7 +580,7 @@ class EdDuckDataModule(LightningDataModule):
                 num_workers=self.num_workers,
                 collate_fn=self.collate_eval,
             )
-            for test_dataset in self.val_datasets
+            for test_dataset in self.test_datasets
         ]
 
     def collate_eval(self, batch):
@@ -692,7 +703,7 @@ class EdDuckDataModule(LightningDataModule):
                 "candidates": candidate_indexes
             }
         )
-
+        result["mention_text"] = list(mention)
         result["entity_labels"] = entity_labels
         result["entity_ids"] = torch.tensor(entity_indexes, dtype=torch.long)
         result["relation_labels"] = relation_labels
