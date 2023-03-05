@@ -555,7 +555,7 @@ class Duck(pl.LightningModule):
 
         self.entity_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
         self.mention_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
-        
+        self.prior_projection = nn.Linear(2, 1)
         self.duck_loss_weight = self.config.duck.get("duck_loss_weight") or 1.0
         
         self.save_hyperparameters(self.config)
@@ -730,8 +730,6 @@ class Duck(pl.LightningModule):
         
         if self.relations_as_points:
             self.duck_point_loss = nn.BCEWithLogitsLoss()
-        
-        self.prior_projection = nn.Linear(2, 1)
 
         if self.config.get("ckpt_path") is not None:
             with open(self.config.ckpt_path, "rb") as f:
@@ -1059,7 +1057,7 @@ class Duck(pl.LightningModule):
     def compute_prior_loss(
             self, scores, prior_probabilities, target
         ):
-            scores = torch.nn.functional.softmax(scores)
+            scores = torch.nn.functional.softmax(scores, dim=-1)
             scores = torch.stack([scores, prior_probabilities])
             scores = rearrange(scores, "s b e -> b e s")
             scores = self.prior_projection(scores).squeeze(-1)
@@ -1246,7 +1244,17 @@ class Duck(pl.LightningModule):
         ).item()
 
     def configure_optimizers(self):
-        return self.optimizer
+        if self.config.get("lr_scheduler") is None:
+            return self.optimizer
+        return {
+            "optimizer": self.optimizer,
+            "lr_scheduler": {
+                "scheduler": hydra.utils.instantiate(
+                    self.config.lr_scheduler, optimizer=self.optimizer
+                ),
+                "interval": "step"
+            }
+        }
     
     def self_adversarial_negative_box_sampling(self, entities, relation_ids, sampling_temperature=0.5):
         sampling_temperature = self.config.duck.duck_loss.sampling_temperature or sampling_temperature
@@ -1292,11 +1300,13 @@ class Duck(pl.LightningModule):
         # rel_ids = batch["relation_ids"]
         entity_tensor_mask = batch["entity_tensor_mask"].bool()
         relation_set_embeddings = representations["relation_set_embeddings"]
+        prior_probabilities = batch["prior_probabilities"]
 
         if not self.gather_on_ddp or not isinstance(self.trainer.strategy, (DDPStrategy, DDPShardedStrategy)):
             representations["entities"] = entities[entity_tensor_mask]
             if relation_set_embeddings is not None:
                 representations["relation_set_embeddings"] = relation_set_embeddings[entity_tensor_mask]
+            batch["prior_probabilities"] = prior_probabilities[:, entity_tensor_mask]
             return representations, batch
 
         mentions_to_send = mentions.detach()
@@ -1312,6 +1322,7 @@ class Duck(pl.LightningModule):
         all_targets = self.all_gather(target)
         all_entity_ids = self.all_gather(entity_ids)
         all_mask = self.all_gather(entity_tensor_mask)
+        all_prior_probabilities = self.all_gather(prior_probabilities.detach())
 
         # offset = 0
         all_mentions_list = []
@@ -1321,6 +1332,7 @@ class Duck(pl.LightningModule):
         # all_boxes_list = []
         # all_rel_ids_list = []
         all_relation_set_embeddings_list = []
+        all_prior_probabilities_list = []
 
         # Add current device representations first.
         all_mentions_list.append(mentions)
@@ -1332,6 +1344,7 @@ class Duck(pl.LightningModule):
         # all_boxes_list.append(entity_boxes)
         # all_rel_ids_list.append(rel_ids)
         all_relation_set_embeddings_list.append(relation_set_embeddings)
+        all_prior_probabilities_list.append(prior_probabilities[:, entity_tensor_mask])
         # offset += entities_repr.size(0)
 
         for i in range(all_targets.size(0)):
@@ -1342,6 +1355,7 @@ class Duck(pl.LightningModule):
                     all_entity_ids[i][all_mask[i].bool()].tolist()
                 )
                 all_targets_list.append(all_targets[i])
+                all_prior_probabilities_list.append(all_prior_probabilities[i][:, all_mask[i]])
                 # if all_boxes is not None:
                 #     all_boxes_list.append(all_boxes[i][all_mask[i].bool()])
                 # else:
@@ -1360,13 +1374,14 @@ class Duck(pl.LightningModule):
         mentions = torch.cat(all_mentions_list, dim=0)  # total_ctx x dim
         # entities_repr = torch.cat(all_entities_list, dim=0)  # total_query x dim
         # targets = torch.cat(all_targets_list, dim=0)
-        entities, target, relation_set_embeddings = self.filter_representations(
+        entities, target, relation_set_embeddings, prior_probabilities = self.filter_representations(
             all_entities_list,
             all_entity_ids_list,
             # all_boxes_list,
             # all_rel_ids_list,
             all_targets_list,
-            all_relation_set_embeddings_list
+            all_relation_set_embeddings_list,
+            all_prior_probabilities_list
         )
         
         representations["mentions"] = mentions
@@ -1374,6 +1389,7 @@ class Duck(pl.LightningModule):
         # representations["entity_boxes"] = boxes
         representations["relation_set_embeddings"] = relation_set_embeddings
         batch["targets"] = target
+        batch["prior_probabilities"] = prior_probabilities
         # batch["relation_ids"] = rel_ids
 
         return representations, batch
@@ -1382,10 +1398,9 @@ class Duck(pl.LightningModule):
         self,
         all_entities_list,
         all_entity_ids_list,
-        # all_boxes_list,
-        # all_rel_ids_list,
         all_targets_list,
-        all_relation_set_embeddings
+        all_relation_set_embeddings,
+        all_prior_probabilities_list
     ):
         filtered_entities_repr = []
         filtered_targets = []
@@ -1442,7 +1457,20 @@ class Duck(pl.LightningModule):
             dtype=torch.long,
             device=filtered_entities_repr.get_device(),
         )
+        
+        with torch.no_grad():
+            filtered_prior_probabilities = torch.zeros((
+                sum(p.size(0) for p in all_prior_probabilities_list),
+                filtered_entities_repr.size(0)
+            ), device=filtered_entities_repr.get_device())
+
+            low = 0
+            for prior_probabilities in all_prior_probabilities_list:
+                high = low + prior_probabilities.size(0)
+                filtered_prior_probabilities[low:high, :prior_probabilities.size(1)] = prior_probabilities
+                low += prior_probabilities.size(0)
 
         return filtered_entities_repr, \
             filtered_targets, \
-            filtered_relation_set_embeddings
+            filtered_relation_set_embeddings, \
+            filtered_prior_probabilities.clone().detach()

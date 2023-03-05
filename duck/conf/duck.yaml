@@ -14,25 +14,25 @@ defaults:
 
 data:
   _target_: duck.datamodule.EdDuckDataModule
-  # train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
-  train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
+  train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
+  # train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
-    # aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
-    # aida_dev: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
-    # blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
-    # ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
-    # acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
-    # clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
-    # msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
-    # wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
+    aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
+    aida_dev: /fsx/matzeni/data/GENRE/aida-dev-kilt.jsonl
+    blink_dev: /fsx/matzeni/data/GENRE/blink-dev-kilt.jsonl
+    ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
+    acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
+    clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
+    msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
+    wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
   test_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
-    # ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
-    # acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
-    # clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
-    # msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
-    # wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
+    ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
+    acquaint: /fsx/matzeni/data/GENRE/aquaint-test-kilt.jsonl
+    clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
+    msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
+    wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
   ent_to_rel_path: /fsx/matzeni/data/duck/ent_to_rel.json
   wikipedia_to_wikidata_path: /fsx/matzeni/data/duck/wikipedia_to_wikidata_en.pkl
   ent_catalogue_idx_path: /fsx/matzeni/data/duck/roberta_ent_idx.txt
@@ -44,9 +44,9 @@ data:
   stop_rels_path: /fsx/matzeni/data/duck/stop_rels.jsonl
   batch_size: 16
   num_neighbors_per_entity: 3
-  num_priors_per_mention: 3
+  num_priors_per_mention: 2
   max_num_entities_per_batch: 32
-  relation_threshold: 4
+  relation_threshold: 0
   shuffle: True
   num_workers: 10
   transform:
@@ -80,7 +80,7 @@ duck:
   gaussian_box_regularization: 0.0
   negative_box_sampling: hard
   duck_loss:
-    _target_: duck.task.duck_entity_disambiguation.DuckNCELoss
+    _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
     intersect_positive_boxes: false
     margin_pos: 1.0
     margin_neg: 1.0
@@ -116,8 +116,8 @@ early_stopping:
 lr_scheduler:
   _target_: torch.optim.lr_scheduler.MultiStepLR
   milestones:
-    - 10
-  gamma: 0.1
+    - 1000
+  gamma: 0.2
 
 ablations:
   blink: False

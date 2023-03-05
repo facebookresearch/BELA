@@ -9,6 +9,7 @@ from pytorch_lightning.loggers import WandbLogger
 import wandb
 from pathlib import Path
 import torch
+import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.plugins.environments import SLURMEnvironment
 
@@ -62,6 +63,9 @@ def main(config: DictConfig):
 
     callbacks = []
     if not config.get("debug") and config.get("checkpoint_callback") is not None:
+        if config.get("slurm_job_id"):
+            with open_dict(config):
+                config.checkpoint_callback.filename = f"{config.checkpoint_callback.filename}_{config.slurm_job_id}"
         checkpoint_callback = hydra.utils.instantiate(config.checkpoint_callback)
         checkpoint_callback.CHECKPOINT_NAME_LAST = config.checkpoint_callback.filename + "_last"
         callbacks.append(checkpoint_callback)
@@ -71,6 +75,11 @@ def main(config: DictConfig):
         callbacks.append(early_stopping)
 
     logger = configure_wandb_logger(config)
+    
+    if not config.debug:
+        callbacks.append(
+            pl.callbacks.LearningRateMonitor(logging_interval="step")
+        )
 
     trainer = Trainer(
         **config.trainer,
