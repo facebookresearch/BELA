@@ -73,10 +73,18 @@ class EdDuckDataset(torch.utils.data.Dataset):
         stop_rels: Optional[Set[str]] = None,
         entity_priors=None,
         num_priors_per_mention: int = 3,
+        relation_threshold: int = 0,
         **kwargs
     ) -> None:
         super().__init__()
-        self.data = EdGenreDataset(path, ent_catalogue, label_to_id=label_to_id)
+        self.data = EdGenreDataset(
+            path,
+            ent_catalogue,
+            label_to_id=label_to_id,
+            relation_threshold=relation_threshold,
+            ent_to_rel=ent_to_rel,
+            stop_rels=stop_rels
+        )
         self.rel_catalogue = rel_catalogue
         self.ent_to_rel = ent_to_rel
         self.label_to_id = label_to_id
@@ -260,7 +268,13 @@ class EdGenreDataset(torch.utils.data.Dataset):
     Each example in this dataset contains one mention.
     """
     def __init__(
-        self, path, ent_catalogue, label_to_id
+        self,
+        path,
+        ent_catalogue,
+        label_to_id,
+        relation_threshold=0,
+        ent_to_rel=None,
+        stop_rels=None
     ):
         self.ent_catalogue = ent_catalogue
         self.label_to_id = label_to_id
@@ -268,6 +282,7 @@ class EdGenreDataset(torch.utils.data.Dataset):
         self.mm = mmap.mmap(self.file.fileno(), 0, prot=mmap.PROT_READ)
         self.offsets = []
         self.count = 0
+        stop_rels = stop_rels or set()
 
         logger.info(f"Build mmap index for {path}")
         line = self.mm.readline()
@@ -277,8 +292,12 @@ class EdGenreDataset(torch.utils.data.Dataset):
             data = json.loads(line)
             assert len(data["output"]) == 1
             label = data["output"][0]["answer"]
-            if label in self.label_to_id:
-                if self.label_to_id[label] in self.ent_catalogue:
+            if label in self.label_to_id and self.label_to_id[label] in self.ent_catalogue:
+                qcode = self.label_to_id[label]
+                if ent_to_rel is None or (
+                    qcode in ent_to_rel and \
+                    len(set(ent_to_rel[qcode]) - stop_rels) >= relation_threshold
+                ):
                     self.offsets.append(offset)
                     self.count += 1
             offset = self.mm.tell()
@@ -527,6 +546,7 @@ class EdDuckDataModule(LightningDataModule):
         num_neighbors_per_entity: int = 1,
         num_priors_per_mention: int = 1,
         max_num_entities_per_batch: int = 32,
+        relation_threshold: int = 0,
         shuffle: bool = True,
         num_workers: int = 0,
         **kwargs
@@ -585,7 +605,7 @@ class EdDuckDataModule(LightningDataModule):
             self.entity_priors = LmdbImmutableDict(entity_priors_path)
         self.num_priors_per_mention = num_priors_per_mention
 
-        self.train_dataset = self._duck_dataset(train_path)
+        self.train_dataset = self._duck_dataset(train_path, relation_threshold=relation_threshold)
         self.val_datasets = [self._duck_dataset(val_path) for val_path in val_paths]
         self.test_datasets = [self._duck_dataset(test_path) for test_path in test_paths]
         self.count = 0

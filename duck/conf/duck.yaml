@@ -14,7 +14,7 @@ defaults:
 
 data:
   _target_: duck.datamodule.EdDuckDataModule
-  #  train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
+  # train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
   train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
@@ -46,6 +46,7 @@ data:
   num_neighbors_per_entity: 3
   num_priors_per_mention: 3
   max_num_entities_per_batch: 32
+  relation_threshold: 4
   shuffle: True
   num_workers: 10
   transform:
@@ -111,6 +112,12 @@ early_stopping:
   mode: max
   patience: 10
   verbose: true
+
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.MultiStepLR
+  milestones:
+    - 10
+  gamma: 0.1
 
 ablations:
   blink: False
