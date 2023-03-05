@@ -409,3 +409,19 @@ def expand_box_with_mask(box, mask, left_pad=-100.0, right_pad=100.0):
     )
 
 
+def flatten_dict_of_lists(dictionary):
+    return {
+        k: flatten_list(v) for k, v in dictionary.items()
+    }
+
+
+def flatten_list(lst):
+    if lst is None:
+        return None
+    return [item for nested in lst for item in nested]
+
+
+def concatenate_dicts_of_lists(dict1, dict2):
+    return {
+        k: v + dict2[k] for k, v in dict1.items() if k in dict2
+    }

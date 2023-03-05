@@ -9,7 +9,7 @@ import h5py
 from pytorch_lightning import LightningDataModule
 from transformers import AutoTokenizer
 from duck.common.lmdb_wrapper import LmdbImmutableDict
-from duck.common.utils import list_to_tensor, load_json, load_jsonl, any_none, load_pkl
+from duck.common.utils import concatenate_dicts_of_lists, flatten_dict_of_lists, list_to_tensor, load_json, load_jsonl, any_none, load_pkl
 
 from mblink.utils.utils import EntityCatalogue
 from mblink.transforms.blink_transform import BlinkTransform
@@ -69,8 +69,10 @@ class EdDuckDataset(torch.utils.data.Dataset):
         label_to_id: Dict[str, str],
         ent_to_rel: Dict[str, List[str]],
         neighbors: Dict[str, List[str]],
-        num_neighbors_per_entity=1,
+        num_neighbors_per_entity: int = 3,
         stop_rels: Optional[Set[str]] = None,
+        entity_priors=None,
+        num_priors_per_mention: int = 3,
         **kwargs
     ) -> None:
         super().__init__()
@@ -78,15 +80,23 @@ class EdDuckDataset(torch.utils.data.Dataset):
         self.rel_catalogue = rel_catalogue
         self.ent_to_rel = ent_to_rel
         self.label_to_id = label_to_id
-        self.ent_emb_dataset = EntEmbDuckDataset(
+        self.neighbors_dataset = NeighborsDataset(
             neighbors,
             ent_catalogue,
             rel_catalogue,
             ent_to_rel,
             label_to_id,
             stop_rels=stop_rels,
-            relation_threshold=0,
             num_neighbors_per_entity=num_neighbors_per_entity
+        )
+        self.priors_dataset = EntityPriorsDataset(
+            entity_priors,
+            ent_catalogue,
+            rel_catalogue,
+            ent_to_rel,
+            label_to_id=label_to_id,
+            stop_rels=stop_rels,
+            num_priors_per_mention=num_priors_per_mention
         )
         self.count = 0
         self.batch_size = None
@@ -106,13 +116,75 @@ class EdDuckDataset(torch.utils.data.Dataset):
         item = self.data[index]
         entity_id = item["entity_id"]
         entity_label = item["entity_label"]
-        additional_attributes = self.ent_emb_dataset.get_by_entity(entity_id)
+        additional_attributes = self.neighbors_dataset.get_by_entity(entity_id)
         item.update(additional_attributes)
+        additional_attributes = self.priors_dataset.get_by_mention(item["mention"])
+        item.update(additional_attributes)
+        prior_indexes = [p["entity_index"] for p in item["priors"][:2]]
+        for index in prior_indexes:
+            if index not in item["candidate_indexes"]:
+                item["candidate_indexes"].append(index)
         item["entity_label"] = entity_label
         return item
 
 
-class EntEmbDuckDataset(torch.utils.data.Dataset):
+class EntityPriorsDataset():
+    def __init__(self,
+        priors,
+        ent_catalogue: EntityCatalogue,
+        rel_catalogue: RelationCatalogue,
+        ent_to_rel: Dict[str, List[str]],
+        label_to_id: Dict[str, str],
+        stop_rels: Optional[Set[str]] = None,
+        num_priors_per_mention=1
+    ):
+        super().__init__()
+        self.label_to_id = label_to_id
+        self.priors = priors
+        self.ent_catalogue = ent_catalogue
+        self.rel_catalogue = rel_catalogue
+        self.ent_to_rel = ent_to_rel
+        if stop_rels is not None:
+            self.ent_to_rel = {
+                e: list(set(rels) - stop_rels) for e, rels in self.ent_to_rel.items()
+            }
+        self.num_priors_per_mention = num_priors_per_mention
+        self.stop_rels = stop_rels or set()
+        self.id_to_label = {eid: label for label, eid in label_to_id.items()}
+
+    def _get_entity_dict(self, entity_id, prob):
+        entity_label = self.id_to_label[entity_id]
+        entity_index, entity_tokens = self.ent_catalogue[entity_id]
+        rels = self.ent_to_rel[entity_id]
+        relation_indices, relation_data = self.rel_catalogue[rels]
+
+        return {
+            "entity_id": entity_id,
+            'entity_label': entity_label,
+            "entity_index": entity_index,
+            "entity_tokens": entity_tokens,
+            "relation_labels": rels,
+            "relation_indexes": relation_indices,
+            "relation_data": relation_data,
+            "probability": prob
+        }
+
+    def get_by_mention(self, mention):
+        result = {"priors": []}
+        if self.priors is not None and mention.lower() in self.priors:
+            priors = self.priors[mention.lower()][:self.num_priors_per_mention]
+            result["priors"] = [
+                self._get_entity_dict(prior[0], prior[1])
+                for prior in priors
+                if prior[0] in self.ent_catalogue
+            ]
+        return result
+
+    def __len__(self):
+        return len(self.priors)
+
+
+class NeighborsDataset(torch.utils.data.Dataset):
     def __init__(self,
         duck_neighbors: Dict[str, List[str]],
         ent_catalogue: EntityCatalogue,
@@ -451,9 +523,10 @@ class EdDuckDataModule(LightningDataModule):
         neighbors_path: Optional[str] = None,
         stop_rels_path: Optional[str] = None,
         pretrained_relations: bool = True,
-        batch_size: int = 2,
-        max_num_neighbors_per_batch: int = 16,
+        batch_size: int = 16,
         num_neighbors_per_entity: int = 1,
+        num_priors_per_mention: int = 1,
+        max_num_entities_per_batch: int = 32,
         shuffle: bool = True,
         num_workers: int = 0,
         **kwargs
@@ -510,6 +583,7 @@ class EdDuckDataModule(LightningDataModule):
         self.entity_priors = {}
         if entity_priors_path is not None:
             self.entity_priors = LmdbImmutableDict(entity_priors_path)
+        self.num_priors_per_mention = num_priors_per_mention
 
         self.train_dataset = self._duck_dataset(train_path)
         self.val_datasets = [self._duck_dataset(val_path) for val_path in val_paths]
@@ -520,7 +594,7 @@ class EdDuckDataModule(LightningDataModule):
             self.jump_to_batch = kwargs["jump_to_batch"]
         
         self.use_all_relations = False
-        self.max_num_neighbors_per_batch = max_num_neighbors_per_batch
+        self.max_num_entities_per_batch = max_num_entities_per_batch
     
     def _map_neighbors_to_id(self):
         if self.label_to_id is None:
@@ -545,6 +619,8 @@ class EdDuckDataModule(LightningDataModule):
                 num_neighbors_per_entity=self.num_neighbors_per_entity,
                 stop_rels=self.stop_rels,
                 batch_size=self.batch_size,
+                entity_priors=self.entity_priors,
+                num_priors_per_mention=self.num_priors_per_mention,
                 **kwargs
             )
         self.dataset_cache[path] = dataset
@@ -600,54 +676,19 @@ class EdDuckDataModule(LightningDataModule):
             _, entity_labels, entity_indexes, entity_token_ids, \
             candidate_indexes, candidate_labels, \
             relation_labels, relation_ids, relation_data, \
-            neighbors = zip(
+            neighbors, priors = zip(
             *[item.values() for item in batch]
         )
-        neighbor_indexes = None
-        neighbor_relation_data = None
-        neighbor_token_ids = None
-        neighbor_labels = None
-        neighbor_relation_labels = None
-        neighbor_relation_ids = None
-        if is_train and any(n is not None for n in neighbors):
-            all_neighbors = [n for ent_neigh in neighbors for n in ent_neigh]
-            for ent_neigh in neighbors:
-                if len(ent_neigh) < self.num_neighbors_per_entity:
-                    difference = self.num_neighbors_per_entity - len(ent_neigh)
-                    sample = random.sample(all_neighbors, difference)
-                    ent_neigh.extend(sample)
-            neighbor_indexes = [
-                n["entity_index"]
-                for ent_neigh in neighbors
-                for n in ent_neigh[1:(self.num_neighbors_per_entity + 1)]
-            ]
-            neighbor_labels = [
-                n["entity_label"]
-                for ent_neigh in neighbors
-                for n in ent_neigh[1:(self.num_neighbors_per_entity + 1)]
-            ]
-            neighbor_token_ids = [
-                n["entity_tokens"]
-                for ent_neigh in neighbors
-                for n in ent_neigh[1:(self.num_neighbors_per_entity + 1)]
-            ]
-            neighbor_relation_data = [
-                n["relation_data"]
-                for ent_neigh in neighbors
-                for n in ent_neigh[1:(self.num_neighbors_per_entity + 1)]
-            ]
-            neighbor_relation_ids = [
-                n["relation_indexes"]
-                for ent_neigh in neighbors
-                for n in ent_neigh[1:(self.num_neighbors_per_entity + 1)]
-            ]
-            neighbor_relation_labels = [
-                n["relation_labels"]
-                for ent_neigh in neighbors
-                for n in ent_neigh[1:(self.num_neighbors_per_entity + 1)]
-            ]
-            if all(rels is None for rels in neighbor_relation_data):
-                neighbor_relation_data = None
+        neighbors = self._process_entity_lists(
+            neighbors, low=1, high=(self.num_neighbors_per_entity + 1)
+        )
+        priors = self._process_entity_lists(
+            priors, low=0, high=(self.num_priors_per_mention)
+        )
+
+        additional_entities = concatenate_dicts_of_lists(priors, neighbors)
+        additional_entities = flatten_dict_of_lists(additional_entities)
+        prior_probabilities = priors["probabilities"]
 
         targets = None
         entity_token_ids = list(entity_token_ids)
@@ -657,18 +698,18 @@ class EdDuckDataModule(LightningDataModule):
         relation_labels = list(relation_labels)
         bsz = len(entity_indexes)
 
-        if is_train and neighbor_indexes is not None:
-            entity_token_ids += neighbor_token_ids[:self.max_num_neighbors_per_batch]
-            entity_indexes += neighbor_indexes[:self.max_num_neighbors_per_batch]
-            entity_labels += neighbor_labels[:self.max_num_neighbors_per_batch]
-            relation_ids += neighbor_relation_ids[:self.max_num_neighbors_per_batch]
-            relation_labels += neighbor_relation_labels[:self.max_num_neighbors_per_batch]
-
+        if is_train:
+            entity_token_ids += additional_entities["token_ids"]
+            entity_indexes += additional_entities["indexes"]
+            entity_labels += additional_entities["labels"]
+            relation_ids += additional_entities["relation_ids"]
+            relation_labels += additional_entities["relation_labels"]
+            
         if relation_data is not None and any(rels is not None for rels in relation_data):
-            relation_data = list(relation_data) + neighbor_relation_data[:self.max_num_neighbors_per_batch]
+            relation_data = list(relation_data) + additional_entities["relation_data"]
         else:
             relation_data = None
-
+        
         max_length = len(entity_indexes)
         if is_train:
             entity_token_ids, entity_indexes, entity_labels, \
@@ -680,6 +721,18 @@ class EdDuckDataModule(LightningDataModule):
                 relation_labels
             )
             targets = targets[:bsz]
+        
+        entity_token_ids = entity_token_ids[:self.max_num_entities_per_batch]
+        entity_indexes = entity_indexes[:self.max_num_entities_per_batch]
+        entity_labels = entity_labels[:self.max_num_entities_per_batch]
+        relation_ids = relation_ids[:self.max_num_entities_per_batch]
+        relation_labels = relation_labels[:self.max_num_entities_per_batch]
+        if relation_data is not None:
+            relation_data = relation_data[:self.max_num_entities_per_batch]
+        
+        prior_probabilities, prior_prob_mask = self._transform_prior_probabilities(
+            prior_probabilities, entity_indexes
+        )
 
         pad_length = max_length - len(entity_token_ids)
         entity_tensor_mask = [1] * len(entity_token_ids) + [0] * pad_length
@@ -711,7 +764,77 @@ class EdDuckDataModule(LightningDataModule):
         result["entity_tensor_mask"] = torch.tensor(entity_tensor_mask, dtype=torch.long).bool()
         result["ent_rel_mask"] = ent_rel_mask
         result["candidate_labels"] = candidate_labels
+        result["prior_probabilities"] = prior_probabilities
+        result["prior_prob_mask"] = prior_prob_mask
         return result
+
+    def _process_entity_lists(self, entity_lists, low=0, high=1):
+        indexes = []
+        relation_data = []
+        token_ids = []
+        labels = []
+        relation_labels = []
+        relation_ids = []
+        probabilities = []
+
+        if any(lst is not None for lst in entity_lists):
+            indexes = [
+                [e["entity_index"] for e in lst[low:high]]
+                for lst in entity_lists
+            ]
+            labels = [
+                [e["entity_label"] for e in lst[low:high]]
+                for lst in entity_lists
+            ]
+            token_ids = [
+                [e["entity_tokens"] for e in lst[low:high]]
+                for lst in entity_lists
+            ]
+            relation_data = [
+                [e["relation_data"] for e in lst[low:high]]
+                for lst in entity_lists
+            ]
+            relation_ids = [
+                [e["relation_indexes"] for e in lst[low:high]]
+                for lst in entity_lists
+            ]
+            relation_labels = [
+                [e["relation_labels"] for e in lst[low:high]]
+                for lst in entity_lists
+            ]
+            if any("probability" in e for lst in entity_lists for e in lst):
+                probabilities = [
+                    {e["entity_index"]: e["probability"] for e in lst[low:high]}
+                    for lst in entity_lists
+                ]
+
+            if all(rels is None for rels in relation_data):
+                relation_data = None
+            
+            return {
+                "indexes": indexes,
+                "relation_data": relation_data,
+                "token_ids": token_ids,
+                "labels": labels,
+                "relation_labels": relation_labels,
+                "relation_ids": relation_ids,
+                "probabilities": probabilities
+            }
+
+    def _transform_prior_probabilities(self, prior_probabilities, entity_indexes):
+        index_map = {index: i for i, index in enumerate(entity_indexes)}
+        result = []
+        mask = []
+        for probs in prior_probabilities:
+            row = torch.zeros(len(index_map))
+            mask_row = row.bool()
+            for (e, p) in probs.items():
+                if e in index_map:
+                    row[index_map[e]] = p
+                    mask_row[index_map[e]] = True
+            result.append(row)
+            mask.append(mask_row)
+        return torch.stack(result), torch.stack(mask)
 
     def _order_entities(
         self,

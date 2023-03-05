@@ -518,6 +518,7 @@ class Duck(pl.LightningModule):
         self.ent_index = None
         self.dim = None
         self.ed_loss = nn.CrossEntropyLoss()
+        self.prior_loss = nn.CrossEntropyLoss()
         self.gather_on_ddp = True
         self.data = kwargs.get("data")
         self.no_box_ablation = False
@@ -587,7 +588,7 @@ class Duck(pl.LightningModule):
         start = self.global_rank * device_data_size
         end = min((self.global_rank + 1) * device_data_size, num_entities)
         
-        ent_emb_dataset = self.data.train_dataset.ent_emb_dataset
+        neighbors_dataset = self.data.train_dataset.neighbors_dataset
         with torch.no_grad():
             if self.config.get("debug"):
                 logger.info("Debug mode: skipping index update")
@@ -595,7 +596,7 @@ class Duck(pl.LightningModule):
                 logger.info(f"Updating entity index from entity {start} to {end} on local rank {self.global_rank} ({str(self.device)})")
                 for i in tqdm(range(start, end, bsz)):
                     end_index = min(i + bsz, end)
-                    ent_batch = ent_emb_dataset.get_slice(i, end_index)
+                    ent_batch = neighbors_dataset.get_slice(i, end_index)
                     ent_batch = self.data.transform.transform_ent_data(ent_batch)
                     ent_batch = self.batch_to_device(ent_batch)
                     entity_repr = self.encode_entity(ent_batch)
@@ -613,7 +614,7 @@ class Duck(pl.LightningModule):
     
     def setup_entity_index_sequential(self) -> None:
         num_entities = len(self.data.ent_catalogue.entities)
-        ent_emb_dataset = self.data.train_dataset.ent_emb_dataset
+        neighbors_dataset = self.data.train_dataset.neighbors_dataset
 
         if self.config.get("debug"):
             logger.info("Debug mode: instantiating random index")
@@ -636,7 +637,7 @@ class Duck(pl.LightningModule):
         with torch.no_grad():
             for i in tqdm(range(0, num_entities, bsz)):
                 end_index = min(i + bsz, num_entities)
-                ent_batch = ent_emb_dataset.get_slice(i, end_index)
+                ent_batch = neighbors_dataset.get_slice(i, end_index)
                 ent_batch = self.data.transform.transform_ent_data(ent_batch)
                 ent_batch = self.batch_to_device(ent_batch)
                 entity_repr = self.encode_entity(ent_batch)
@@ -729,6 +730,8 @@ class Duck(pl.LightningModule):
         
         if self.relations_as_points:
             self.duck_point_loss = nn.BCEWithLogitsLoss()
+        
+        self.prior_projection = nn.Linear(2, 1)
 
         if self.config.get("ckpt_path") is not None:
             with open(self.config.ckpt_path, "rb") as f:
@@ -956,12 +959,21 @@ class Duck(pl.LightningModule):
         scores = self.sim_score(mentions, entities)
         ed_loss = self.ed_loss(scores, target)
         loss = ed_loss + self.duck_loss_weight * (duck_loss_entity + duck_loss_mention + regularization)
-       
+
+        prior_loss = 0.0
+        prior_probabilities = batch["prior_probabilities"]
+        if not self.config.ablations.no_priors:
+            prior_loss = self.compute_prior_loss(
+                scores, prior_probabilities, target
+            )
+            loss += prior_loss
+
         metrics = {
             "train/duck_loss_entity": duck_loss_entity,
             "train/duck_loss_mention": duck_loss_mention,
             "train/ed_loss": ed_loss,
             "train/loss": loss,
+            "train/prior_loss": prior_loss,
             "train/regularization": regularization
         }
         metrics.update({
@@ -1044,11 +1056,20 @@ class Duck(pl.LightningModule):
         result["regularization"] = regularization
         return result, negative_boxes
 
+    def compute_prior_loss(
+            self, scores, prior_probabilities, target
+        ):
+            scores = torch.nn.functional.softmax(scores)
+            scores = torch.stack([scores, prior_probabilities])
+            scores = rearrange(scores, "s b e -> b e s")
+            scores = self.prior_projection(scores).squeeze(-1)
+            return self.prior_loss(scores, target)
+
     def compute_box_containment_metrics(self, entities, entity_boxes, relation_ids, ent_rel_mask):
         result = {}
         entities = entities.unsqueeze(1).half()
         entity_boxes = entity_boxes.half()
-        negative_boxes = self.uniform_negative_box_sampling(relation_ids)[..., :entities.size(-1)].half()
+        negative_boxes = self.uniform_negative_box_sampling(relation_ids, num_samples=128)[..., :entities.size(-1)].half()
         in_pos = (entities > entity_boxes.left) & (entities < entity_boxes.right)
         in_pos = in_pos[ent_rel_mask]
         result["containment_positive_boxes"] = in_pos.all(dim=-1).float().mean()
@@ -1070,11 +1091,11 @@ class Duck(pl.LightningModule):
         all_boxes = all_boxes[:, :entities.size(-1)]
         predicted_mask = ((all_boxes.left < entities) & (entities < all_boxes.right)).all(dim=-1)
         gold_mask = torch.full_like(predicted_mask, False).scatter_(1, relation_ids, True)
-        dist = hydra.utils.instantiate(self.config.duck.duck_loss.distance_function)
-        distances = dist(entities, all_boxes)
-        sort_perm = torch.argsort(distances, dim=-1)
-        predicted_mask = predicted_mask.gather(-1, sort_perm)
-        gold_mask = gold_mask.gather(-1, sort_perm)
+        # dist = hydra.utils.instantiate(self.config.duck.duck_loss.distance_function)
+        # distances = dist(entities, all_boxes)
+        # sort_perm = torch.argsort(distances, dim=-1)
+        # predicted_mask = predicted_mask.gather(-1, sort_perm)
+        # gold_mask = gold_mask.gather(-1, sort_perm)
         matches = (predicted_mask & gold_mask)
         precision = torch.nan_to_num((matches.sum(dim=-1) / predicted_mask.sum(dim=-1)))
         recall =  matches.sum(dim=-1) / gold_mask.sum(dim=-1)
@@ -1082,9 +1103,9 @@ class Duck(pl.LightningModule):
         result["box_precision"] = precision.mean()
         result["box_recall"] = recall.mean()
         result["box_f1"] = f1.mean()
-        result["box_p@10"] = torch.nan_to_num(
-            (matches[:, :10].sum(dim=-1) / predicted_mask[:, :10].sum(dim=-1))
-        ).mean()
+        # result["box_p@10"] = torch.nan_to_num(
+        #     (matches[:, :10].sum(dim=-1) / predicted_mask[:, :10].sum(dim=-1))
+        # ).mean()
         return result
 
     def compute_box_metrics(self, entity_boxes):
@@ -1248,13 +1269,14 @@ class Duck(pl.LightningModule):
                     assert len(set_pos & set_neg) == 0
         return self.rel_encoder(negative_ids.detach())
 
-    def uniform_negative_box_sampling(self, relation_ids):
+    def uniform_negative_box_sampling(self, relation_ids, num_samples=None):
+        num_samples = num_samples or self.config.duck.num_negative_boxes
         with torch.no_grad():
             ids_range = torch.arange(0, len(self.data.rel_catalogue) + 1, device=self.device)
             weights = torch.ones((relation_ids.size(0), ids_range.size(0)), device=self.device)
             weights.scatter_(1, relation_ids, float("-inf"))
             distribution = torch.nn.functional.softmax(weights, dim=-1)
-            negative_ids = torch.multinomial(distribution, num_samples=self.config.duck.num_negative_boxes).detach()
+            negative_ids = torch.multinomial(distribution, num_samples=num_samples).detach()
             if self.config.debug:
                 for i, row in enumerate(negative_ids):
                     set_pos = set(rid.item() for rid in relation_ids[i]) 

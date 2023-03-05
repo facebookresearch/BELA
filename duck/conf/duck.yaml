@@ -14,7 +14,7 @@ defaults:
 
 data:
   _target_: duck.datamodule.EdDuckDataModule
-  # train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
+  #  train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
   train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
@@ -42,11 +42,10 @@ data:
   neighbors_path: null
   entity_priors_path: /data/home/matzeni/ReFinED/data/wikipedia_data/pem.lmdb
   stop_rels_path: /fsx/matzeni/data/duck/stop_rels.jsonl
-  batch_size: 32
+  batch_size: 16
   num_neighbors_per_entity: 3
-  num_priors_per_entity: 3
-  max_num_neighbors_per_batch: 16
-  max_num_priors_per_batch: 16
+  num_priors_per_mention: 3
+  max_num_entities_per_batch: 32
   shuffle: True
   num_workers: 10
   transform:
@@ -71,9 +70,9 @@ duck:
     regularization:
       _target_: duck.box_tensors.regularization.L2BoxSideRegularizer
       weight: 0.0
-    # dimensions: 1.0
+    dimensions: 1.0
   duck_loss_weight: 0.1
-  num_negative_boxes: 256
+  num_negative_boxes: 512
   box_dropout: 0.0
   mention_in_box: True
   dropout: 0.0
@@ -117,6 +116,7 @@ ablations:
   blink: False
   relations_as_points: False
   joint_ent_rel_encoding: False
+  no_priors: False
 
 hydra:
   run:
