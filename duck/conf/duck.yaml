@@ -76,7 +76,7 @@ duck:
   num_negative_boxes: 512
   box_dropout: 0.0
   mention_in_box: True
-  dropout: 0.0
+  dropout: 0.05
   gaussian_box_regularization: 0.0
   negative_box_sampling: hard
   duck_loss:
@@ -90,7 +90,7 @@ duck:
       norm: 2
 
 trainer:
-  max_epochs: 30
+  max_epochs: 10
   min_epochs: 10
   num_sanity_val_steps: 0
   log_every_n_steps: 1

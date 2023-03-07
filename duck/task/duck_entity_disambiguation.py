@@ -516,7 +516,7 @@ class Duck(pl.LightningModule):
         self.duck_loss = None
         self.duck_point_loss = None
         self.ent_index = None
-        self.dim = None
+        self.dim = transformers.AutoConfig.from_pretrained(self.config.language_model).hidden_size
         self.ed_loss = nn.CrossEntropyLoss()
         self.prior_loss = nn.NLLLoss()
         self.gather_on_ddp = True
@@ -552,7 +552,14 @@ class Duck(pl.LightningModule):
         self.entity_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
         self.mention_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
         self.duck_loss_weight = self.config.duck.get("duck_loss_weight") or 1.0
-        self.prior_ffn = None
+        
+        self.prior_ffn = nn.Sequential(
+            nn.Linear(self.dim, self.dim),
+            nn.Dropout(p=self.config.duck.get("dropout") or 0.0),
+            nn.ReLU(),
+            nn.Linear(self.dim, 2),
+            nn.LogSoftmax(dim=-1)
+        )
 
         stage = self.config.get("stage") or kwargs.get("stage")
         self.setup(stage)
@@ -698,7 +705,6 @@ class Duck(pl.LightningModule):
         self.biencoder_task.setup(stage)
         self.mention_encoder = self.biencoder_task.mention_encoder
         self.entity_encoder = self.biencoder_task.entity_encoder
-        self.dim = self.entity_encoder.transformer.config.hidden_size
         self.box_size = self.dim
         if self.config.duck.boxes.get("dimensions") is not None:
             dimensions = self.config.duck.boxes.get("dimensions") 
@@ -732,13 +738,6 @@ class Duck(pl.LightningModule):
         if self.relations_as_points:
             self.duck_point_loss = nn.BCEWithLogitsLoss()
 
-        self.prior_ffn = nn.Sequential(
-            nn.Linear(self.dim, self.dim),
-            nn.Dropout(p=0.1),
-            nn.ReLU(),
-            nn.Linear(self.dim, 2),
-            nn.LogSoftmax(dim=-1)
-        )
         if self.config.get("ckpt_path") is not None:
             with open(self.config.ckpt_path, "rb") as f:
                 checkpoint = torch.load(f, map_location=torch.device("cpu"))
