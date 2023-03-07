@@ -518,7 +518,7 @@ class Duck(pl.LightningModule):
         self.ent_index = None
         self.dim = None
         self.ed_loss = nn.CrossEntropyLoss()
-        self.prior_loss = nn.CrossEntropyLoss()
+        self.prior_loss = nn.NLLLoss()
         self.gather_on_ddp = True
         self.data = kwargs.get("data")
         self.no_box_ablation = False
@@ -533,10 +533,6 @@ class Duck(pl.LightningModule):
             self.no_box_ablation = self.ablations.get("blink") \
                 or self.relations_as_points \
                 or self.joint_ent_rel_encoding or False
-        stage = self.config.get("stage") or kwargs.get("stage")
-        self.setup(stage)
-        with open_dict(self.config):
-            self.config.stage = "loading"
 
         self.datasets = {
             "val": [d.upper() for d in dict(self.config.data.val_paths).keys()],
@@ -555,8 +551,13 @@ class Duck(pl.LightningModule):
 
         self.entity_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
         self.mention_dropout = nn.Dropout(p=self.config.duck.get("dropout") or 0.0)
-        self.prior_projection = nn.Linear(2, 1)
         self.duck_loss_weight = self.config.duck.get("duck_loss_weight") or 1.0
+        self.prior_ffn = None
+
+        stage = self.config.get("stage") or kwargs.get("stage")
+        self.setup(stage)
+        with open_dict(self.config):
+            self.config.stage = "loading"
         
         self.save_hyperparameters(self.config)
 
@@ -603,12 +604,12 @@ class Duck(pl.LightningModule):
                     local_index[i - start:end_index - start] = entity_repr.half().detach()
             logger.info("Gathering local indices")
             torch.cuda.empty_cache()
-            indexes = self.all_gather(local_index.detach())
-            ent_index_cpu = indexes.cpu()
-            if indexes.dim() == 3:
-                assert indexes.size(0) == world_size
+            indices = self.all_gather(local_index.detach())
+            ent_index_cpu = indices.cpu()
+            if indices.dim() == 3:
+                assert indices.size(0) == world_size
                 ent_index_cpu = rearrange(ent_index_cpu, "w e d -> (w e) d") #.float()
-            indexes = None
+            indices = None
             torch.cuda.empty_cache()
             self.ent_index = ent_index_cpu.detach().to(self.device)
     
@@ -731,6 +732,13 @@ class Duck(pl.LightningModule):
         if self.relations_as_points:
             self.duck_point_loss = nn.BCEWithLogitsLoss()
 
+        self.prior_ffn = nn.Sequential(
+            nn.Linear(self.dim, self.dim),
+            nn.Dropout(p=0.1),
+            nn.ReLU(),
+            nn.Linear(self.dim, 2),
+            nn.LogSoftmax(dim=-1)
+        )
         if self.config.get("ckpt_path") is not None:
             with open(self.config.ckpt_path, "rb") as f:
                 checkpoint = torch.load(f, map_location=torch.device("cpu"))
@@ -799,16 +807,27 @@ class Duck(pl.LightningModule):
             return
         self._setup_rel_description_to_box_encoder()
 
-    def sim_score(self, mentions_repr: Tensor, entities_repr: Tensor):
-        # eps = 1e-8
-        # mentions_repr = mentions_repr / (torch.norm(mentions_repr, p=2, dim=-1).unsqueeze(-1) + eps)
-        # entities_repr = entities_repr / (torch.norm(entities_repr, p=2, dim=-1).unsqueeze(-1) + eps)
-        scores = torch.matmul(
-            mentions_repr.to(entities_repr.dtype),
-            torch.transpose(entities_repr, 0, 1)
+    def ed_score(self, mentions: Tensor, entities: Tensor):
+        if entities.dim() == 2:
+            return torch.matmul(
+                mentions.to(entities.dtype),
+                entities.transpose(0, 1)
+            )
+        return torch.bmm(
+            mentions.unsqueeze(1).to(entities.dtype),
+            entities.transpose(1, -1)
+        ).squeeze(1)
+
+    def log_combined_score(self, mentions, ed_scores, prior_probabilities):
+        no_prior_mask = (prior_probabilities == 0.0).all(dim=-1)
+        prior_probabilities[no_prior_mask] = 1.0
+        prior_probabilities = prior_probabilities / prior_probabilities.sum(dim=-1).unsqueeze(-1)
+        logweights = self.prior_ffn(mentions)
+        return torch.logaddexp(
+            logweights[:, :1] + ed_scores.log_softmax(dim=-1),
+            logweights[:, 1:] + prior_probabilities.log()
         )
-        return scores
-    
+
     def encode_with_boxes(self, entity, relations, relation_mask):
         entity_boxes = self.relations_to_box(relations)
         return entity, entity_boxes
@@ -852,6 +871,11 @@ class Duck(pl.LightningModule):
                 )
         return entity_repr, entity_boxes, relation_set_embeddings
 
+    def encode_mention(self, mention):
+        return self.mention_encoder(
+            mention["data"], attention_mask=mention["attention_mask"]
+        )[0]
+    
     def forward(self, batch):
         mentions = batch["mentions"] 
         entities = batch["entities"]
@@ -863,9 +887,7 @@ class Duck(pl.LightningModule):
         assert mentions["data"].size(-1) <= self.config.data.transform.max_mention_len
         assert entities["data"].size(-1) <= self.config.data.transform.max_entity_len
 
-        mention_repr, _ = self.mention_encoder(
-            mentions["data"], attention_mask=mentions["attention_mask"]
-        )
+        mention_repr = self.encode_mention(mentions)
         
         entity_repr, entity_boxes, relation_sets = self.encode_entity_with_relations(
             entities,
@@ -954,16 +976,15 @@ class Duck(pl.LightningModule):
             )
             duck_loss_entity = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
         
-        scores = self.sim_score(mentions, entities)
-        ed_loss = self.ed_loss(scores, target)
+        ed_score = self.ed_score(mentions, entities)
+        ed_loss = self.ed_loss(ed_score, target)
         loss = ed_loss + self.duck_loss_weight * (duck_loss_entity + duck_loss_mention + regularization)
 
         prior_loss = 0.0
-        prior_probabilities = batch["prior_probabilities"]
         if not self.config.ablations.no_priors:
-            prior_loss = self.compute_prior_loss(
-                scores, prior_probabilities, target
-            )
+            prior_probabilities = batch["prior_probabilities"]
+            log_combined_score = self.log_combined_score(mentions, ed_score, prior_probabilities)
+            prior_loss = self.prior_loss(log_combined_score, target)
             loss += prior_loss
 
         metrics = {
@@ -1054,15 +1075,6 @@ class Duck(pl.LightningModule):
         result["regularization"] = regularization
         return result, negative_boxes
 
-    def compute_prior_loss(
-            self, scores, prior_probabilities, target
-        ):
-            scores = torch.nn.functional.softmax(scores, dim=-1)
-            scores = torch.stack([scores, prior_probabilities])
-            scores = rearrange(scores, "s b e -> b e s")
-            scores = self.prior_projection(scores).squeeze(-1)
-            return self.prior_loss(scores, target)
-
     def compute_box_containment_metrics(self, entities, entity_boxes, relation_ids, ent_rel_mask):
         result = {}
         entities = entities.unsqueeze(1).half()
@@ -1126,29 +1138,40 @@ class Duck(pl.LightningModule):
         entity_boxes = entity_boxes[..., :entities.size(-1)].clone()
         return entity_boxes, entities
 
+    def score(self, mentions, entities, prior_probabilities=None):
+        ed_score = self.ed_score(mentions, entities).float()
+        if prior_probabilities is None:
+            return ed_score.softmax(dim=-1)
+        return self.log_combined_score(mentions, ed_score, prior_probabilities).float().exp()
+
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        representations = self(batch)
-        mentions = representations["mentions"]
+        mentions = self.encode_mention(batch["mentions"])
         entities = self.ent_index
         target = batch["entity_ids"]
-        scores = self.sim_score(mentions, entities)
+        prior_probabilities = None
+        if not self.config.ablations.no_priors:
+            prior_indices = batch["prior_indices"]
+            prior_probabilities = torch.zeros((mentions.size(0), entities.size(0)), device=mentions.device)
+            prior_probabilities = prior_probabilities.scatter_(
+                1, prior_indices.long(), batch["prior_probabilities"]
+            )
+        scores = self.score(mentions, entities, prior_probabilities=prior_probabilities)
         preds = scores.argmax(dim=-1)
 
         candidate_preds = preds
         candidate_preds_at_30 = preds
         if batch["candidates"] is not None:
-            candidate_indexes = batch["candidates"]["data"].long()
-            candidates = self.ent_index[candidate_indexes]
-            candidate_scores = torch.bmm(
-                mentions.unsqueeze(1).to(candidates.dtype),
-                candidates.transpose(1, -1)
-            ).squeeze(1)
+            candidate_indices = batch["candidates"]["data"].long()
+            candidates = self.ent_index[candidate_indices]
+            if not self.config.ablations.no_priors:
+                prior_probabilities = prior_probabilities.gather(1, candidate_indices)
+            candidate_scores = self.score(mentions, candidates, prior_probabilities=prior_probabilities)
             candidate_mask = batch["candidates"]["attention_mask"].bool()
             candidate_scores[~candidate_mask] = 0
-            candidate_preds = candidate_indexes.gather(
+            candidate_preds = candidate_indices.gather(
                 1, candidate_scores.argmax(dim=-1).unsqueeze(1)
             ).squeeze(dim=1)
-            candidate_preds_at_30 = candidate_indexes.gather(
+            candidate_preds_at_30 = candidate_indices.gather(
                 1, candidate_scores[:, :30].argmax(dim=-1).unsqueeze(1)
             ).squeeze(dim=1)
             no_candidates_mask = ~(candidate_mask.any(dim=-1))
@@ -1408,7 +1431,7 @@ class Duck(pl.LightningModule):
         # filtered_rel_ids_data = []
         # filtered_rel_ids_mask = []
         filtered_relation_set_embeddings = []
-        ent_indexes_map = {}
+        ent_indices_map = {}
 
         for entities_repr, entity_ids, targets, relation_set_embeddings in zip(
             all_entities_list,
@@ -1422,16 +1445,16 @@ class Duck(pl.LightningModule):
                 ent_id = entity_ids[i]
                 # box = boxes[i] if boxes is not None else None
                 relation_set_emb = relation_set_embeddings[i] if relation_set_embeddings is not None else None
-                if ent_id not in ent_indexes_map:
-                    ent_idx = len(ent_indexes_map)
-                    ent_indexes_map[ent_id] = ent_idx
+                if ent_id not in ent_indices_map:
+                    ent_idx = len(ent_indices_map)
+                    ent_indices_map[ent_id] = ent_idx
                     filtered_entities_repr.append(entity_repr)
                     # filtered_boxes.append(box)
                     # filtered_rel_ids_data.append(rel_ids["data"][i])
                     # filtered_rel_ids_mask.append(rel_ids["attention_mask"][i])
                     filtered_relation_set_embeddings.append(relation_set_emb)
             for target in targets.tolist():
-                filtered_targets.append(ent_indexes_map[entity_ids[target]])
+                filtered_targets.append(ent_indices_map[entity_ids[target]])
 
         filtered_entities_repr = torch.stack(filtered_entities_repr, dim=0)
         # if not self.no_box_ablation:

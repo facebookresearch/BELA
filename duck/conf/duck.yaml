@@ -70,7 +70,7 @@ duck:
     parametrization: spherical
     regularization:
       _target_: duck.box_tensors.regularization.L2BoxSideRegularizer
-      weight: 0.0
+      weight: 0.1
     dimensions: 1.0
   duck_loss_weight: 0.1
   num_negative_boxes: 512
@@ -84,7 +84,7 @@ duck:
     intersect_positive_boxes: false
     margin_pos: 1.0
     margin_neg: 1.0
-    sampling_temperature: 1.0
+    sampling_temperature: 0.5
     distance_function:
       _target_: duck.task.duck_entity_disambiguation.BoxEDistance
       norm: 2
@@ -106,18 +106,18 @@ checkpoint_callback:
   save_top_k: 1
   dirpath: ${ckpt_dir}
 
-early_stopping:
-  _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
-  monitor: val_f1
-  mode: max
-  patience: 10
-  verbose: true
+# early_stopping:
+#   _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+#   monitor: val_f1
+#   mode: max
+#   patience: 10
+#   verbose: true
 
-lr_scheduler:
-  _target_: torch.optim.lr_scheduler.MultiStepLR
-  milestones:
-    - 1000
-  gamma: 0.2
+# lr_scheduler:
+#   _target_: torch.optim.lr_scheduler.MultiStepLR
+#   milestones:
+#     - 1000
+#   gamma: 0.2
 
 ablations:
   blink: False

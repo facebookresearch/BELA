@@ -72,7 +72,6 @@ class EdDuckDataset(torch.utils.data.Dataset):
         num_neighbors_per_entity: int = 3,
         stop_rels: Optional[Set[str]] = None,
         entity_priors=None,
-        num_priors_per_mention: int = 3,
         relation_threshold: int = 0,
         **kwargs
     ) -> None:
@@ -103,8 +102,7 @@ class EdDuckDataset(torch.utils.data.Dataset):
             rel_catalogue,
             ent_to_rel,
             label_to_id=label_to_id,
-            stop_rels=stop_rels,
-            num_priors_per_mention=num_priors_per_mention
+            stop_rels=stop_rels
         )
         self.count = 0
         self.batch_size = None
@@ -128,10 +126,10 @@ class EdDuckDataset(torch.utils.data.Dataset):
         item.update(additional_attributes)
         additional_attributes = self.priors_dataset.get_by_mention(item["mention"])
         item.update(additional_attributes)
-        prior_indexes = [p["entity_index"] for p in item["priors"][:2]]
-        for index in prior_indexes:
-            if index not in item["candidate_indexes"]:
-                item["candidate_indexes"].append(index)
+        prior_indices = [p["entity_index"] for p in item["priors"][:2]]
+        for index in prior_indices:
+            if index not in item["candidate_indices"]:
+                item["candidate_indices"].append(index)
         item["entity_label"] = entity_label
         return item
 
@@ -143,8 +141,7 @@ class EntityPriorsDataset():
         rel_catalogue: RelationCatalogue,
         ent_to_rel: Dict[str, List[str]],
         label_to_id: Dict[str, str],
-        stop_rels: Optional[Set[str]] = None,
-        num_priors_per_mention=1
+        stop_rels: Optional[Set[str]] = None
     ):
         super().__init__()
         self.label_to_id = label_to_id
@@ -156,7 +153,6 @@ class EntityPriorsDataset():
             self.ent_to_rel = {
                 e: list(set(rels) - stop_rels) for e, rels in self.ent_to_rel.items()
             }
-        self.num_priors_per_mention = num_priors_per_mention
         self.stop_rels = stop_rels or set()
         self.id_to_label = {eid: label for label, eid in label_to_id.items()}
 
@@ -172,7 +168,7 @@ class EntityPriorsDataset():
             "entity_index": entity_index,
             "entity_tokens": entity_tokens,
             "relation_labels": rels,
-            "relation_indexes": relation_indices,
+            "relation_indices": relation_indices,
             "relation_data": relation_data,
             "probability": prob
         }
@@ -180,7 +176,7 @@ class EntityPriorsDataset():
     def get_by_mention(self, mention):
         result = {"priors": []}
         if self.priors is not None and mention.lower() in self.priors:
-            priors = self.priors[mention.lower()][:self.num_priors_per_mention]
+            priors = self.priors[mention.lower()]
             result["priors"] = [
                 self._get_entity_dict(prior[0], prior[1])
                 for prior in priors
@@ -236,7 +232,7 @@ class NeighborsDataset(torch.utils.data.Dataset):
             "entity_index": entity_index,
             "entity_tokens": entity_tokens,
             "relation_labels": rels,
-            "relation_indexes": relation_indices,
+            "relation_indices": relation_indices,
             "relation_data": relation_data
         }
 
@@ -319,10 +315,10 @@ class EdGenreDataset(torch.utils.data.Dataset):
         entity_id = self.label_to_id[entity_label]
         entity_index, entity_tokens = self.ent_catalogue[entity_id]
 
-        candidate_indexes = []
+        candidate_indices = []
         candidate_labels = []
         if "candidates" in data:
-            candidate_indexes = [
+            candidate_indices = [
                 self.ent_catalogue[self.label_to_id[c]][0]
                 for c in data["candidates"]
                 if c in self.label_to_id and self.label_to_id.get(c) in self.ent_catalogue
@@ -337,7 +333,7 @@ class EdGenreDataset(torch.utils.data.Dataset):
             "entity_label": entity_label,
             "entity_index": entity_index,
             "entity_tokens": entity_tokens,
-            "candidate_indexes": candidate_indexes,
+            "candidate_indices": candidate_indices,
             "candidate_labels": candidate_labels
         }
 
@@ -450,20 +446,9 @@ class DuckTransform(BlinkTransform):
 
     
     def transform_ent_data(self, ent_data):
-        """
-        {
-            "entity_id": entity_id,
-            'entity_label': entity_label,
-            "entity_index": entity_index,
-            "entity_tokens": entity_tokens,
-            "relation_labels": rels,
-            "relation_indexes": relation_indices,
-            "relation_data": relation_data
-        }
-        """
         entity_ids = [e["entity_index"] for e in ent_data]
         entity_token_ids = [e["entity_tokens"] for e in ent_data]
-        relation_ids = [e["relation_indexes"] for e in ent_data]
+        relation_ids = [e["relation_indices"] for e in ent_data]
         entity_labels = [e["entity_label"] for e in ent_data]
         relation_labels = [e["relation_labels"] for e in ent_data]
         relation_data = [e["relation_data"] for e in ent_data]
@@ -486,8 +471,8 @@ class DuckTransform(BlinkTransform):
     def forward(
         self, batch: Dict[str, Any]
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-
         batch = dict(batch)
+        batch["mention"] = batch["mention_text"]
         batch["token_ids"] = batch["entity_token_ids"]
         mention_tensor, entity_tensor = super().forward(batch)
         relation_data = batch["relation_data"]
@@ -640,7 +625,6 @@ class EdDuckDataModule(LightningDataModule):
                 stop_rels=self.stop_rels,
                 batch_size=self.batch_size,
                 entity_priors=self.entity_priors,
-                num_priors_per_mention=self.num_priors_per_mention,
                 **kwargs
             )
         self.dataset_cache[path] = dataset
@@ -689,78 +673,108 @@ class EdDuckDataModule(LightningDataModule):
         """
         Prepare mention, entity tokens and target tensors
         """
-        if self.jump_to_batch is not None and self.count < self.jump_to_batch:
-            self.count += 1
-            return None
+        batch = self._preprocess_batch(batch)
+
+        if is_train:
+            batch = self._prepare_train_batch(batch)
+        else:
+            batch = self._prepare_eval_batch(batch)
+
+        transform_out = self.transform(batch)
+        batch.update(transform_out)
+        return batch
+
+    def _preprocess_batch(self, batch):
         left_context, mention, right_context, \
-            _, entity_labels, entity_indexes, entity_token_ids, \
-            candidate_indexes, candidate_labels, \
+            _, entity_labels, entity_indices, entity_token_ids, \
+            candidate_indices, candidate_labels, \
             relation_labels, relation_ids, relation_data, \
             neighbors, priors = zip(
             *[item.values() for item in batch]
         )
-
-        targets = None
-        entity_token_ids = list(entity_token_ids)
-        entity_indexes = list(entity_indexes)
-        entity_labels = list(entity_labels)
-        relation_ids = list(relation_ids)
-        relation_labels = list(relation_labels)
-        if relation_data is not None and any(rels is not None for rels in relation_data):
-            relation_data = list(relation_data)
-        else:
+        if relation_data is not None and all(rels is None for rels in relation_data):
             relation_data = None
-        bsz = len(entity_indexes)
-        prior_probabilities = None
 
-        if is_train:
-            neighbors = self._process_entity_lists(
-                neighbors, low=1, high=(self.num_neighbors_per_entity + 1)
-            )
-            priors = self._process_entity_lists(
-                priors, low=0, high=(self.num_priors_per_mention)
-            )
+        return {
+            "left_context": list(left_context),
+            "mention_text": list(mention),
+            "right_context": list(right_context),
+            "entity_token_ids": list(entity_token_ids),
+            "entity_indices": list(entity_indices),
+            "entity_labels": list(entity_labels),
+            "relation_ids": list(relation_ids),
+            "relation_data": list(relation_data) if relation_data is not None else None,
+            "relation_labels": list(relation_labels),
+            "candidates": list(candidate_indices),
+            "candidate_labels": list(candidate_labels),
+            "neighbors": list(neighbors),
+            "priors": list(priors)
+        }
+    
+    def _prepare_eval_batch(self, batch, max_priors_eval=30):
+        priors = self._process_entity_lists(
+            batch["priors"], low=0, high=max_priors_eval
+        )
+        prior_indices = list_to_tensor(priors["indices"], pad_value=0.0)[0]
+        prior_probabilities = list_to_tensor(
+            [list(p.values()) for p in priors["probabilities"]],
+            pad_value=0.0
+        )[0]
+        batch.update({
+            "prior_indices": prior_indices.long(),
+            "prior_probabilities": prior_probabilities,
+            "entity_ids": torch.tensor(batch["entity_indices"], dtype=torch.long),
+        })
+        return batch
 
-            additional_entities = concatenate_dicts_of_lists(priors, neighbors)
-            additional_entities = flatten_dict_of_lists(additional_entities)
-            prior_probabilities = priors["probabilities"]
-            entity_token_ids += additional_entities["token_ids"]
-            entity_indexes += additional_entities["indexes"]
-            entity_labels += additional_entities["labels"]
-            relation_ids += additional_entities["relation_ids"]
-            relation_labels += additional_entities["relation_labels"]
-            
-            if relation_data is not None:
-                relation_data = list(relation_data) + additional_entities["relation_data"]
+    def _prepare_train_batch(self, batch):
+        neighbors = self._process_entity_lists(
+            batch["neighbors"], low=1, high=(self.num_neighbors_per_entity + 1)
+        )
+        priors = self._process_entity_lists(
+            batch["priors"], low=0, high=(self.num_priors_per_mention)
+        )
+
+        additional_entities = concatenate_dicts_of_lists(priors, neighbors)
+        additional_entities = flatten_dict_of_lists(additional_entities)
+        prior_probabilities =  priors["probabilities"]
+        entity_token_ids = batch["entity_token_ids"] + additional_entities["token_ids"]
+        entity_indices = batch["entity_indices"] + additional_entities["indices"]
+        entity_labels = batch["entity_labels"] + additional_entities["labels"]
+        relation_ids = batch["relation_ids"] + additional_entities["relation_ids"]
+        relation_labels = batch["relation_labels"] + additional_entities["relation_labels"]
+        relation_data = None
+        if batch["relation_data"] is not None:
+            relation_data = batch["relation_data"] + additional_entities["relation_data"]
+    
+        entity_token_ids, entity_indices, entity_labels, \
+        relation_ids, relation_labels, targets = self._order_entities(
+            entity_token_ids,
+            entity_indices,
+            entity_labels,
+            relation_ids,
+            relation_labels
+        )
+        targets = targets[:self.batch_size]
+    
+        entity_token_ids = entity_token_ids[:self.max_num_entities_per_batch]
+        entity_indices = entity_indices[:self.max_num_entities_per_batch]
+        entity_labels = entity_labels[:self.max_num_entities_per_batch]
+        relation_ids = relation_ids[:self.max_num_entities_per_batch]
+        relation_labels = relation_labels[:self.max_num_entities_per_batch]
+        if relation_data is not None:
+            relation_data = relation_data[:self.max_num_entities_per_batch]
         
-            entity_token_ids, entity_indexes, entity_labels, \
-            relation_ids, relation_labels, targets = self._order_entities(
-                entity_token_ids,
-                entity_indexes,
-                entity_labels,
-                relation_ids,
-                relation_labels
-            )
-            targets = targets[:bsz]
-        
-            entity_token_ids = entity_token_ids[:self.max_num_entities_per_batch]
-            entity_indexes = entity_indexes[:self.max_num_entities_per_batch]
-            entity_labels = entity_labels[:self.max_num_entities_per_batch]
-            relation_ids = relation_ids[:self.max_num_entities_per_batch]
-            relation_labels = relation_labels[:self.max_num_entities_per_batch]
-            if relation_data is not None:
-                relation_data = relation_data[:self.max_num_entities_per_batch]
-            
-            prior_probabilities, _ = self._transform_prior_probabilities(
-                prior_probabilities, entity_indexes
-            )
+        prior_probabilities, _ = self._transform_prior_probabilities(
+            prior_probabilities, entity_indices
+        )
 
-        pad_length = self.max_num_entities_per_batch - len(entity_token_ids) if is_train else 0
+        pad_length = self.max_num_entities_per_batch - len(entity_token_ids)
         entity_tensor_mask = [1] * len(entity_token_ids) + [0] * pad_length
         entity_token_ids += [
             [self.transform.bos_idx, self.transform.eos_idx]
         ] * pad_length
-        entity_indexes += [0] * pad_length
+        entity_indices += [0] * pad_length
     
         relation_ids, relation_data, ent_rel_mask = self._order_relations(
             relation_ids, relation_data
@@ -769,33 +783,27 @@ class EdDuckDataModule(LightningDataModule):
         if prior_probabilities is not None:
             prior_probabilities = torch.cat([
                 prior_probabilities,
-                torch.zeros(bsz, pad_length)
+                torch.zeros(self.batch_size, pad_length)
             ], dim=1).clone().detach()
-
-        result = self.transform(
-            {
-                "left_context": left_context,
-                "mention": mention,
-                "right_context": right_context,
-                "entity_token_ids": entity_token_ids,
-                "relation_ids": relation_ids,
-                "relation_data": relation_data,
-                "candidates": candidate_indexes
-            }
-        )
-        result["mention_text"] = list(mention)
-        result["entity_labels"] = entity_labels
-        result["entity_ids"] = torch.tensor(entity_indexes, dtype=torch.long)
-        result["relation_labels"] = relation_labels
-        result["targets"] = torch.tensor(targets, dtype=torch.long) if targets is not None else None
-        result["entity_tensor_mask"] = torch.tensor(entity_tensor_mask, dtype=torch.long).bool()
-        result["ent_rel_mask"] = ent_rel_mask
-        result["candidate_labels"] = candidate_labels
-        result["prior_probabilities"] = prior_probabilities
-        return result
-
+        
+        batch.update({
+            "entity_token_ids": entity_token_ids,
+            "entity_ids": torch.tensor(entity_indices, dtype=torch.long),
+            "entity_labels": entity_labels,
+            "relation_ids": relation_ids,
+            "relation_data": relation_data,
+            "relation_labels": relation_labels,
+            "neighbors": neighbors,
+            "priors": priors,
+            "prior_probabilities": prior_probabilities,
+            "entity_tensor_mask": torch.tensor(entity_tensor_mask, dtype=torch.long).bool(), 
+            "ent_rel_mask": ent_rel_mask,
+            "targets": torch.tensor(targets, dtype=torch.long)
+        })
+        return batch
+    
     def _process_entity_lists(self, entity_lists, low=0, high=1):
-        indexes = []
+        indices = []
         relation_data = []
         token_ids = []
         labels = []
@@ -804,7 +812,7 @@ class EdDuckDataModule(LightningDataModule):
         probabilities = []
 
         if any(lst is not None for lst in entity_lists):
-            indexes = [
+            indices = [
                 [e["entity_index"] for e in lst[low:high]]
                 for lst in entity_lists
             ]
@@ -821,7 +829,7 @@ class EdDuckDataModule(LightningDataModule):
                 for lst in entity_lists
             ]
             relation_ids = [
-                [e["relation_indexes"] for e in lst[low:high]]
+                [e["relation_indices"] for e in lst[low:high]]
                 for lst in entity_lists
             ]
             relation_labels = [
@@ -838,7 +846,7 @@ class EdDuckDataModule(LightningDataModule):
                 relation_data = None
             
         return {
-            "indexes": indexes,
+            "indices": indices,
             "relation_data": relation_data,
             "token_ids": token_ids,
             "labels": labels,
@@ -847,8 +855,8 @@ class EdDuckDataModule(LightningDataModule):
             "probabilities": probabilities
         }
 
-    def _transform_prior_probabilities(self, prior_probabilities, entity_indexes):
-        index_map = {index: i for i, index in enumerate(entity_indexes)}
+    def _transform_prior_probabilities(self, prior_probabilities, entity_indices):
+        index_map = {index: i for i, index in enumerate(entity_indices)}
         result = []
         mask = []
         for probs in prior_probabilities:
@@ -939,7 +947,7 @@ class EdDuckDataModule(LightningDataModule):
             False
         )
         for i, rels in enumerate(relation_ids):
-            indexes = [rel_id_map[r] for r in rels]
-            ent_rel_mask[i][indexes] = True
+            indices = [rel_id_map[r] for r in rels]
+            ent_rel_mask[i][indices] = True
 
         return filtered_relation_ids, filtered_relation_data, ent_rel_mask
