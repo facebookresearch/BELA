@@ -126,10 +126,9 @@ class EdDuckDataset(torch.utils.data.Dataset):
         item.update(additional_attributes)
         additional_attributes = self.priors_dataset.get_by_mention(item["mention"])
         item.update(additional_attributes)
-        prior_indices = [p["entity_index"] for p in item["priors"][:2]]
-        for index in prior_indices:
-            if index not in item["candidate_indices"]:
-                item["candidate_indices"].append(index)
+        prior_indices = [p["entity_index"] for p in item["priors"]]
+        if len(item["candidate_indices"]) == 0:
+            item["candidate_indices"] = prior_indices[:30]
         item["entity_label"] = entity_label
         return item
 
@@ -444,7 +443,6 @@ class DuckTransform(BlinkTransform):
     def _to_tensor(self, token_ids, attention_mask_pad_idx=0):
         return self._list_to_tensor(token_ids, pad_value=None)
 
-    
     def transform_ent_data(self, ent_data):
         entity_ids = [e["entity_index"] for e in ent_data]
         entity_token_ids = [e["entity_tokens"] for e in ent_data]
@@ -636,7 +634,8 @@ class EdDuckDataModule(LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_train,
-            shuffle=self.shuffle
+            shuffle=self.shuffle,
+            drop_last=True
         )
 
     def val_dataloader(self):
@@ -783,7 +782,7 @@ class EdDuckDataModule(LightningDataModule):
         if prior_probabilities is not None:
             prior_probabilities = torch.cat([
                 prior_probabilities,
-                torch.zeros(self.batch_size, pad_length)
+                torch.zeros(prior_probabilities.size(0), pad_length)
             ], dim=1).clone().detach()
         
         batch.update({

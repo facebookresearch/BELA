@@ -46,7 +46,7 @@ data:
   num_neighbors_per_entity: 3
   num_priors_per_mention: 2
   max_num_entities_per_batch: 32
-  relation_threshold: 0
+  relation_threshold: 4
   shuffle: True
   num_workers: 10
   transform:
@@ -60,7 +60,6 @@ task:
   _target_: duck.task.Duck
 
 duck:
-  # rel_to_box_model: ${ckpt_dir}/r2b_wd/r2b_wd_origin_epoch=373_kldiv_train=0.0010_last.ckpt
   base_model:
       _target_: bela.models.hf_encoder.HFEncoder
       model_path: ${language_model}
@@ -76,17 +75,16 @@ duck:
   num_negative_boxes: 512
   box_dropout: 0.0
   mention_in_box: True
-  dropout: 0.05
+  dropout: 0.0
   gaussian_box_regularization: 0.0
   negative_box_sampling: hard
   duck_loss:
-    _target_: duck.task.duck_entity_disambiguation.DuckNegativeSamplingLoss
-    intersect_positive_boxes: false
-    margin_pos: 1.0
-    margin_neg: 1.0
-    sampling_temperature: 0.5
+    _target_: duck.task.duck_loss.DuckNegativeSamplingLoss
+    margin_pos: 2.0
+    margin_neg: 2.0
+    sampling_temperature: 1.0
     distance_function:
-      _target_: duck.task.duck_entity_disambiguation.BoxEDistance
+      _target_: duck.task.duck_loss.BoxEDistance
       norm: 2
 
 trainer:
@@ -105,19 +103,6 @@ checkpoint_callback:
   filename: ${run_name}_{epoch}_{val_f1:.3f}
   save_top_k: 1
   dirpath: ${ckpt_dir}
-
-# early_stopping:
-#   _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
-#   monitor: val_f1
-#   mode: max
-#   patience: 10
-#   verbose: true
-
-# lr_scheduler:
-#   _target_: torch.optim.lr_scheduler.MultiStepLR
-#   milestones:
-#     - 1000
-#   gamma: 0.2
 
 ablations:
   blink: False
