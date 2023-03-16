@@ -9,12 +9,12 @@ import h5py
 from pytorch_lightning import LightningDataModule
 from transformers import AutoTokenizer
 from duck.common.lmdb_wrapper import LmdbImmutableDict
-from duck.common.utils import concatenate_dicts_of_lists, flatten_dict_of_lists, list_to_tensor, load_json, load_jsonl, any_none, load_pkl
+from duck.common.utils import FineTuningWithRehearsalDataset, concatenate_dicts_of_lists, shift_candidates, flatten_dict_of_lists, list_to_tensor, load_json, load_jsonl, any_none, load_pkl
 
 from mblink.utils.utils import EntityCatalogue
 from mblink.transforms.blink_transform import BlinkTransform
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Sequence
 import numpy as np
 from tqdm import tqdm
 
@@ -126,9 +126,9 @@ class EdDuckDataset(torch.utils.data.Dataset):
         item.update(additional_attributes)
         additional_attributes = self.priors_dataset.get_by_mention(item["mention"])
         item.update(additional_attributes)
-        prior_indices = [p["entity_index"] for p in item["priors"]]
-        if len(item["candidate_indices"]) == 0:
-            item["candidate_indices"] = prior_indices[:30]
+        # prior_indices = [p["entity_index"] for p in item["priors"]]
+        # if len(item["candidate_indices"]) == 0:
+        #     item["candidate_indices"] = prior_indices[:30]
         item["entity_label"] = entity_label
         return item
 
@@ -153,7 +153,7 @@ class EntityPriorsDataset():
                 e: list(set(rels) - stop_rels) for e, rels in self.ent_to_rel.items()
             }
         self.stop_rels = stop_rels or set()
-        self.id_to_label = {eid: label for label, eid in label_to_id.items()}
+        self.id_to_label = {eid: label for label, eid in reversed(label_to_id.items())}
 
     def _get_entity_dict(self, entity_id, prob):
         entity_label = self.id_to_label[entity_id]
@@ -217,7 +217,7 @@ class NeighborsDataset(torch.utils.data.Dataset):
             self.entities = [e for e in ent_catalogue.idx]
         self.num_neighbors_per_entity = num_neighbors_per_entity
         self.stop_rels = stop_rels or set()
-        self.id_to_label = {eid: label for label, eid in label_to_id.items()}
+        self.id_to_label = {eid: label for label, eid in reversed(label_to_id.items())}
 
     def _get_entity_dict(self, entity_id):
         entity_label = self.id_to_label[entity_id]
@@ -289,10 +289,11 @@ class EdGenreDataset(torch.utils.data.Dataset):
             label = data["output"][0]["answer"]
             if label in self.label_to_id and self.label_to_id[label] in self.ent_catalogue:
                 qcode = self.label_to_id[label]
-                if ent_to_rel is None or (
+                if (relation_threshold == 0 or (
+                    ent_to_rel is None or (
                     qcode in ent_to_rel and \
                     len(set(ent_to_rel[qcode]) - stop_rels) >= relation_threshold
-                ):
+                ))) and ("candidates" not in data or len(data["candidates"]) > 0):
                     self.offsets.append(offset)
                     self.count += 1
             offset = self.mm.tell()
@@ -316,13 +317,25 @@ class EdGenreDataset(torch.utils.data.Dataset):
 
         candidate_indices = []
         candidate_labels = []
+        candidate_tokens = []
         if "candidates" in data:
             candidate_indices = [
                 self.ent_catalogue[self.label_to_id[c]][0]
                 for c in data["candidates"]
                 if c in self.label_to_id and self.label_to_id.get(c) in self.ent_catalogue
             ]
-            candidate_labels = data["candidates"]
+            candidate_tokens = [
+                self.ent_catalogue[self.label_to_id[c]][1]
+                for c in data["candidates"]
+                if c in self.label_to_id and self.label_to_id.get(c) in self.ent_catalogue
+            ]
+            candidate_labels = [
+                c for c in data["candidates"]
+                if c in self.label_to_id and self.label_to_id.get(c) in self.ent_catalogue
+            ]
+            # candidate_indices, candidate_labels, candidate_tokens = shift_candidates(
+            #     candidate_indices, candidate_labels, candidate_tokens, entity_label
+            # )
 
         return {
             "context_left": data["meta"]["left_context"],
@@ -333,7 +346,8 @@ class EdGenreDataset(torch.utils.data.Dataset):
             "entity_index": entity_index,
             "entity_tokens": entity_tokens,
             "candidate_indices": candidate_indices,
-            "candidate_labels": candidate_labels
+            "candidate_labels": candidate_labels,
+            "candidate_tokens": candidate_tokens
         }
 
 
@@ -364,7 +378,6 @@ class DuckTransform(BlinkTransform):
         self.add_eos_bos = add_eos_bos
         self.max_num_rels = max_num_rels
 
-    
     def _transform_relation_token_ids(
         self,
         relation_token_ids: List[List[List[int]]],
@@ -497,14 +510,18 @@ class DuckTransform(BlinkTransform):
         
         candidates = None
         if "candidates" in batch and any(len(cands) > 0 for cands in batch["candidates"]):
-            candidates = self._list_to_tensor(batch["candidates"])
-        
+            candidates = self._list_to_tensor(batch["candidates"], pad_value=0)
+        if "candidate_tokens" in batch:
+            candidate_tokens = self._transform_neighbors(batch["candidate_tokens"])
+            candidate_tokens = self._to_tensor(candidate_tokens)
+
         return {
             "mentions": mention_tensor,
             "entities": entity_tensor,
             "relations": relations_tensor,
             "relation_ids": relation_ids,
-            "candidates": candidates
+            "candidates": candidates,
+            "candidate_tokens": candidate_tokens
         }
 
 
@@ -573,7 +590,7 @@ class EdDuckDataModule(LightningDataModule):
         self.shuffle = shuffle
 
         self.stop_rels = None
-        if stop_rels_path is not None and not self.debug:
+        if stop_rels_path is not None:
             self.stop_rels = set(r["id"] for r in load_jsonl(stop_rels_path))
 
         val_paths = list(val_paths.values())
@@ -588,7 +605,10 @@ class EdDuckDataModule(LightningDataModule):
             self.entity_priors = LmdbImmutableDict(entity_priors_path)
         self.num_priors_per_mention = num_priors_per_mention
 
-        self.train_dataset = self._duck_dataset(train_path, relation_threshold=relation_threshold)
+        if isinstance(train_path, Sequence) and not isinstance(train_path, str):
+            self.train_dataset = [self._duck_dataset(path, relation_threshold=relation_threshold) for path in train_path]
+        else:
+            self.train_dataset = self._duck_dataset(train_path, relation_threshold=relation_threshold)
         self.val_datasets = [self._duck_dataset(val_path) for val_path in val_paths]
         self.test_datasets = [self._duck_dataset(test_path) for test_path in test_paths]
         self.count = 0
@@ -629,8 +649,14 @@ class EdDuckDataModule(LightningDataModule):
         return dataset
     
     def train_dataloader(self):
+        train_dataset = self.train_dataset
+        if isinstance(train_dataset, list):
+            train_dataset = FineTuningWithRehearsalDataset(
+                train_dataset[0],
+                train_dataset[1]
+            )
         return torch.utils.data.DataLoader(
-            self.train_dataset,
+            train_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=self.collate_train,
@@ -686,7 +712,7 @@ class EdDuckDataModule(LightningDataModule):
     def _preprocess_batch(self, batch):
         left_context, mention, right_context, \
             _, entity_labels, entity_indices, entity_token_ids, \
-            candidate_indices, candidate_labels, \
+            candidate_indices, candidate_labels, candidate_tokens, \
             relation_labels, relation_ids, relation_data, \
             neighbors, priors = zip(
             *[item.values() for item in batch]
@@ -707,7 +733,8 @@ class EdDuckDataModule(LightningDataModule):
             "candidates": list(candidate_indices),
             "candidate_labels": list(candidate_labels),
             "neighbors": list(neighbors),
-            "priors": list(priors)
+            "priors": list(priors),
+            "candidate_tokens": list(candidate_tokens)
         }
     
     def _prepare_eval_batch(self, batch, max_priors_eval=30):
@@ -808,7 +835,7 @@ class EdDuckDataModule(LightningDataModule):
         labels = []
         relation_labels = []
         relation_ids = []
-        probabilities = []
+        probabilities = [{}] * len(entity_lists)
 
         if any(lst is not None for lst in entity_lists):
             indices = [

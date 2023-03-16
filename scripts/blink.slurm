@@ -17,5 +17,4 @@ export PYTHONPATH=.:$PYTHONPATH
 
 module purge
 
-srun python duck/main.py run_name=blink_roberta trainer=1host ablations.blink=True data.batch_size=32 &
-wait
+srun python duck/main.py run_name=blink_roberta trainer=1host ablations.blink=True data.batch_size=32 

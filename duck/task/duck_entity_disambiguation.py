@@ -19,6 +19,8 @@ import torchmetrics
 import wandb
 from pytorch_lightning.strategies import DDPShardedStrategy, DDPStrategy
 from omegaconf import open_dict
+# Needed for loading checkpoints before code refactoring
+from duck.task.duck_loss import DuckNegativeSamplingLoss, DuckNegativeSamplingLossWithTemperature, BoxEDistance
 
 
 transformers.logging.set_verbosity_error()
@@ -34,7 +36,6 @@ class Duck(pl.LightningModule):
         self.mention_encoder = None
         self.entity_encoder = None
         self.rel_encoder = None
-        self.optimizer = None
         self.volume = None
         self.intersection = None
         self.duck_loss = None
@@ -144,7 +145,7 @@ class Duck(pl.LightningModule):
             torch.cuda.empty_cache()
             self.ent_index = ent_index_cpu.detach().to(self.device)
     
-    def setup_entity_index_sequential(self) -> None:
+    def setup_entity_index_sequential(self, spherical_coord=False) -> None:
         num_entities = len(self.data.ent_catalogue.entities)
         neighbors_dataset = self.data.train_dataset.neighbors_dataset
 
@@ -190,23 +191,6 @@ class Duck(pl.LightningModule):
             entities["data"],
             attention_mask=entities["attention_mask"],
         )
-        
-        # entity_boxes = None
-        # if not self.no_box_ablation:
-        #     rel_ids = ent_batch["relation_ids"]["data"]
-        #     entity_boxes = self.relations_to_box(rel_ids)
-        #     relation_mask = ent_batch["relation_ids"]["attention_mask"].bool()
-        #     centers = entity_boxes.center
-        #     centers[relation_mask] = 0.0
-        #     center = centers.sum(dim=1) / relation_mask.sum(dim=-1).unsqueeze(-1)
-        #     entity_repr = entity_repr + center  
-        # elif self.joint_ent_rel_encoding:
-            #relations = self.rel_encoder(ent_batch["relation_ids"]["data"])
-            # entity_repr = self.joint_ent_rel_transformer(
-            #     entity_repr,
-            #     relations,
-            #     ent_batch["relation_ids"]["attention_mask"]
-            # )
         return entity_repr
     
     def free_index(self):
@@ -248,11 +232,6 @@ class Duck(pl.LightningModule):
                 self.rel_set_transformer = TransformerSetEncoder(self.dim)
 
         self.setup_rel_encoder()
-        self.optimizer = hydra.utils.instantiate(
-            self.config.optim,
-            [p for p in self.parameters() if p.requires_grad],
-            _recursive_=False
-        )
 
         if self.config.duck.duck_loss is not None and not self.no_box_ablation:
             self.duck_loss = hydra.utils.instantiate(
@@ -452,7 +431,7 @@ class Duck(pl.LightningModule):
         duck_metrics = {}
         regularization = 0.0
 
-        if self.duck_loss is not None:
+        if self.duck_loss is not None and not self.config.duck.entity_priors:
             rel_ids = batch["relation_ids"]["data"]
             duck_metrics = self.compute_box_metrics(entity_boxes)
             duck_metrics = prefix_suffix_keys(duck_metrics, "Boxes/")
@@ -500,22 +479,20 @@ class Duck(pl.LightningModule):
             duck_loss_entity = self.duck_point_loss(ent_to_rel_scores, ent_to_rel_target)
         
         ed_score = self.ed_score(mentions, entities)
-        ed_loss = self.ed_loss(ed_score, target)
-        loss = ed_loss + self.duck_loss_weight * (duck_loss_entity + duck_loss_mention + regularization)
-
-        prior_loss = 0.0
-        if not self.config.ablations.no_priors:
+        if self.config.duck.entity_priors:
             prior_probabilities = batch["prior_probabilities"]
             log_combined_score = self.log_combined_score(mentions, ed_score, prior_probabilities)
-            prior_loss = self.prior_loss(log_combined_score, target)
-            loss += prior_loss
+            ed_loss = self.prior_loss(log_combined_score, target)
+            loss = ed_loss
+        else:
+            ed_loss = self.ed_loss(ed_score, target)
+            loss = ed_loss + self.duck_loss_weight * (duck_loss_entity + duck_loss_mention + regularization)
 
         metrics = {
             "train/duck_loss_entity": duck_loss_entity,
             "train/duck_loss_mention": duck_loss_mention,
             "train/ed_loss": ed_loss,
             "train/loss": loss,
-            "train/prior_loss": prior_loss,
             "train/regularization": regularization
         }
         metrics.update({
@@ -672,7 +649,7 @@ class Duck(pl.LightningModule):
         entities = self.ent_index
         target = batch["entity_ids"]
         prior_probabilities = None
-        if not self.config.ablations.no_priors:
+        if self.config.duck.entity_priors:
             prior_indices = batch["prior_indices"]
             prior_probabilities = torch.zeros((mentions.size(0), entities.size(0)), device=mentions.device)
             prior_probabilities = prior_probabilities.scatter_(
@@ -683,10 +660,11 @@ class Duck(pl.LightningModule):
 
         candidate_preds = preds
         candidate_preds_at_30 = preds
+        candidate_target = target
         if batch["candidates"] is not None:
             candidate_indices = batch["candidates"]["data"].long()
             candidates = self.ent_index[candidate_indices]
-            if not self.config.ablations.no_priors:
+            if self.config.duck.entity_priors:
                 prior_probabilities = prior_probabilities.gather(1, candidate_indices)
             candidate_scores = self.score(mentions, candidates, prior_probabilities=prior_probabilities)
             candidate_mask = batch["candidates"]["attention_mask"].bool()
@@ -697,16 +675,18 @@ class Duck(pl.LightningModule):
             candidate_preds_at_30 = candidate_indices.gather(
                 1, candidate_scores[:, :30].argmax(dim=-1).unsqueeze(1)
             ).squeeze(dim=1)
-            no_candidates_mask = ~(candidate_mask.any(dim=-1))
-            candidate_preds[no_candidates_mask] = preds[no_candidates_mask]
-            candidate_preds_at_30[no_candidates_mask] = preds[no_candidates_mask]
-            
+            # candidate_mask = candidate_mask.any(dim=-1)
+            # candidate_preds = candidate_preds[candidate_mask]
+            # candidate_preds_at_30 = candidate_preds_at_30[candidate_mask]
+            # candidate_target = candidate_target[candidate_mask]
+        
         return {
             "preds": preds,
             "candidate_preds": candidate_preds,
             "target": target,
             "topk": scores.topk(100),
-            "candidate_preds_at_30": candidate_preds_at_30
+            "candidate_preds_at_30": candidate_preds_at_30,
+            "candidate_target": candidate_target
         }
     
     def all_gather_flat(self, tensor):
@@ -728,6 +708,7 @@ class Duck(pl.LightningModule):
             dataset_outputs = outputs[i]
             preds = torch.cat([o["preds"] for o in dataset_outputs])
             target = torch.cat([o["target"] for o in dataset_outputs])
+            candidate_target = torch.cat([o["candidate_target"] for o in dataset_outputs])
             topk = [o["topk"] for o in dataset_outputs]
             candidate_preds = torch.cat([o["candidate_preds"] for o in dataset_outputs])
             candidate_preds_at_30 = torch.cat([o["candidate_preds_at_30"] for o in dataset_outputs])
@@ -736,16 +717,19 @@ class Duck(pl.LightningModule):
             target = self.all_gather_flat(target)
             candidate_preds = self.all_gather_flat(candidate_preds)
             candidate_preds_at_30 = self.all_gather_flat(candidate_preds_at_30)
+            candidate_target = self.all_gather_flat(candidate_target)
             
             micro_f1 = torchmetrics.functional.classification.multiclass_f1_score(
                 preds, target, num_classes=len(self.data.ent_catalogue), average='micro'
             ).item()
             micro_f1_candidate_set = torchmetrics.functional.classification.multiclass_f1_score(
-                candidate_preds, target, num_classes=len(self.data.ent_catalogue), average='micro'
+                candidate_preds, candidate_target, num_classes=len(self.data.ent_catalogue), average='micro'
             ).item()
             micro_f1_candidate_set_at_30 = torchmetrics.functional.classification.multiclass_f1_score(
-                candidate_preds_at_30, target, num_classes=len(self.data.ent_catalogue), average='micro'
+                candidate_preds_at_30, candidate_target, num_classes=len(self.data.ent_catalogue), average='micro'
             ).item()
+
+
             metrics[f"Micro-F1/{dataset}"] = micro_f1
             tqdm.write(f"Micro F1 on {dataset}: \t{micro_f1:.4f}")
             metrics[f"Micro-F1_candidate_set/{dataset}"] = micro_f1_candidate_set
@@ -790,14 +774,38 @@ class Duck(pl.LightningModule):
         ).item()
 
     def configure_optimizers(self):
+        trainable_parameters = [p for p in self.parameters() if p.requires_grad]
+        if self.config.duck.entity_priors:
+            for n, p in self.named_parameters():
+                if "prior" not in n:
+                    p.requires_grad = False
+            trainable_parameters = [p for n, p in self.named_parameters() if "prior" in n and p.requires_grad]
+        optimizer = hydra.utils.instantiate(
+            self.config.optim,
+            trainable_parameters,
+            _recursive_=False
+        )
         if self.config.get("lr_scheduler") is None:
-            return self.optimizer
+            return optimizer
+        if self.config.lr_scheduler.get("_target_") is not None:
+            scheduler = hydra.utils.instantiate(
+                self.config.lr_scheduler, optimizer=optimizer
+            )
+        else:
+            num_training_steps = self.config.trainer.max_epochs * len(self.data.train_dataloader())
+            accumulate_grad_batches = self.config.trainer.get("accumulate_grad_batches")
+            if accumulate_grad_batches is not None:
+                num_training_steps /= accumulate_grad_batches
+            num_warmup_steps = self.config.lr_scheduler.num_warmup_steps
+            scheduler = transformers.get_linear_schedule_with_warmup(
+                optimizer=optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=num_training_steps
+            )
         return {
-            "optimizer": self.optimizer,
+            "optimizer": optimizer,
             "lr_scheduler": {
-                "scheduler": hydra.utils.instantiate(
-                    self.config.lr_scheduler, optimizer=self.optimizer
-                ),
+                "scheduler": scheduler,
                 "interval": "step"
             }
         }

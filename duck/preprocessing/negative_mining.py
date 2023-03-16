@@ -36,7 +36,7 @@ logger = logging.getLogger()
 class DuckHardNegativeMiner:
     def __init__(self, config):
         self.config = config
-        self.duck = Duck.load_from_checkpoint(config.ckpt_path)
+        self.duck = Duck.load_from_checkpoint(config.ckpt_path, strict=False)
         self.duck.eval()
         with open_dict(self.duck.config):
             self.duck.config.debug = config.debug

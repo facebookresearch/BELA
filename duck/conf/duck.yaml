@@ -5,7 +5,7 @@ run_name: duck
 debug: False
 resume_path: null
 ckpt_path: null
-wandb: True
+wandb: true
 
 defaults:
   - optim: adamw
@@ -15,7 +15,7 @@ defaults:
 data:
   _target_: duck.datamodule.EdDuckDataModule
   train_path: /fsx/matzeni/data/GENRE/blink-train-kilt.jsonl
-  # train_path: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
+   # - /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
   val_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
     aida_train: /fsx/matzeni/data/GENRE/aida-train-kilt.jsonl
@@ -26,6 +26,7 @@ data:
     clueweb: /fsx/matzeni/data/GENRE/clueweb-test-kilt.jsonl
     msnbc: /fsx/matzeni/data/GENRE/msnbc-test-kilt.jsonl
     wiki: /fsx/matzeni/data/GENRE/wiki-test-kilt.jsonl
+    aida_pershina: /fsx/matzeni/data/GENRE/aida-test-pershina.jsonl
   test_paths:
     aida: /fsx/matzeni/data/GENRE/aida-test-kilt.jsonl
     ace2004: /fsx/matzeni/data/GENRE/ace2004-test-kilt.jsonl
@@ -44,10 +45,10 @@ data:
   stop_rels_path: /fsx/matzeni/data/duck/stop_rels.jsonl
   batch_size: 16
   num_neighbors_per_entity: 3
-  num_priors_per_mention: 2
+  num_priors_per_mention: 3
   max_num_entities_per_batch: 32
-  relation_threshold: 4
-  shuffle: True
+  relation_threshold: 0
+  shuffle: true
   num_workers: 10
   transform:
     _target_: duck.datamodule.DuckTransform
@@ -73,30 +74,30 @@ duck:
     dimensions: 1.0
   duck_loss_weight: 0.1
   num_negative_boxes: 512
+  entity_priors: false
   box_dropout: 0.0
-  mention_in_box: True
+  mention_in_box: true
   dropout: 0.0
   gaussian_box_regularization: 0.0
   negative_box_sampling: hard
   duck_loss:
-    _target_: duck.task.duck_loss.DuckNegativeSamplingLoss
+    _target_: duck.task.duck_loss.DuckNegativeSamplingLossWithTemperature
     margin_pos: 2.0
     margin_neg: 2.0
-    sampling_temperature: 1.0
+    sampling_temperature: 0.5
     distance_function:
       _target_: duck.task.duck_loss.BoxEDistance
       norm: 2
 
 trainer:
-  max_epochs: 10
-  min_epochs: 10
+  max_epochs: 2
+  min_epochs: 2
   num_sanity_val_steps: 0
   log_every_n_steps: 1
 
 checkpoint_callback:
   _target_: pytorch_lightning.callbacks.ModelCheckpoint
   monitor: val_f1
-  every_n_train_steps: 5001
   mode: max
   save_last: true
   verbose: true
@@ -104,11 +105,13 @@ checkpoint_callback:
   save_top_k: 1
   dirpath: ${ckpt_dir}
 
+lr_scheduler:
+  num_warmup_steps: 5000
+
 ablations:
   blink: False
   relations_as_points: False
   joint_ent_rel_encoding: False
-  no_priors: False
 
 hydra:
   run:

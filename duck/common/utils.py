@@ -251,6 +251,14 @@ def pad_tensors(tensors, pad_value, size=None):
     return padded_tensor
 
 
+def shift_candidates(candidate_indices, candidate_labels, candidate_tokens, entity_label):
+    if entity_label in candidate_labels:
+        i = candidate_labels.index(entity_label)
+        candidate_indices = [candidate_indices[i]] + candidate_indices[:i] + candidate_indices[i + 1:]
+        candidate_labels = [candidate_labels[i]] + candidate_labels[:i] + candidate_labels[i + 1:]
+        candidate_tokens = [candidate_tokens[i]] + candidate_tokens[:i] + candidate_tokens[i + 1:]
+    return candidate_indices, candidate_labels, candidate_tokens
+
 def logsubexp(x, y, eps=1e-7):
     return x + torch.log1p(-torch.exp(y - x) + eps)
 
@@ -425,3 +433,33 @@ def concatenate_dicts_of_lists(dict1, dict2):
     return {
         k: v + dict2[k] for k, v in dict1.items() if k in dict2
     }
+
+
+class FineTuningWithRehearsalDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        main_dataset,
+        rehearsal_dataset,
+        rehearsing_ratio: float = 1.0
+    ):
+        self.main_dataset = main_dataset
+        self.rehearsal_dataset = rehearsal_dataset
+        rehearsal_size = int(rehearsing_ratio * len(main_dataset))
+        rehearsal_size = min(rehearsal_size, len(rehearsal_dataset))
+        self.rehearsal_indices = random.sample(
+            range(0, len(rehearsal_dataset)),
+            rehearsal_size
+        )
+        self.permutation = list(range(len(self.main_dataset) + len(self.rehearsal_indices)))
+        random.shuffle(self.permutation)
+
+    def __len__(self):
+        return len(self.main_dataset) + len(self.rehearsal_indices)
+
+    def __getitem__(self, index):
+        index = self.permutation[index]
+        if index < len(self.main_dataset):
+            return self.main_dataset[index]
+        index = index - len(self.main_dataset)
+        index = self.rehearsal_indices[index]
+        return self.rehearsal_dataset[index]
