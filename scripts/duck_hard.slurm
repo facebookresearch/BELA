@@ -46,19 +46,17 @@ module purge
 #     "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_duck_val_f1\=0.749_129919.json"
 
 
-srun python duck/main.py run_name=duck_hard trainer=1host \
+srun python duck/main.py run_name=duck_hard_cartesian trainer=1host \
     data.relation_threshold=0 \
-    data.batch_size=4 \
+    data.batch_size=8 \
     data.num_neighbors_per_entity=5 \
-    data.transform.max_mention_len=512 \
+    duck.boxes.parametrization=relu \
+    data.transform.max_mention_len=128 \
     data.num_priors_per_mention=0 \
     trainer.max_epochs=1 \
     trainer.min_epochs=1 \
-    +trainer.accumulate_grad_batches=4 \
     duck.duck_loss.sampling_temperature=1.0 \
-    trainer.val_check_interval=1000 \
-    optim.lr=5e-6 \
-    "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck/duck_hard_epoch\=0_val_f1\=0.840_130006.ckpt" \
+    "ckpt_path=/checkpoints/matzeni/duck/checkpoints/duck_cartesian_epoch\=1_val_f1\=0.654_130181_last.ckpt" \
     "data.neighbors_path=/fsx/matzeni/data/duck/negatives/negatives_duck_hard_val_f1\=0.840_130006.json"
 
 
