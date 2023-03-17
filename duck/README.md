@@ -116,6 +116,12 @@ python duck/main.py \
     data.num_priors_per_mention=0 \
 ```
 
+## Model checkpoints
+
+Model checkpoints are available at ```/fsx/matzeni/data/duck_checkpoints```:
+* ```/fsx/matzeni/data/duck_checkpoints/duck_wikipedia.ckpt``` is the model trained on Wikipedia (the Blink dataset, consisting of 9M mention-entity pairs
+* ```/fsx/matzeni/data/duck_checkpoints/duck_finetuned.ckpt``` is the model fine-tuned on AIDA.
+
 <!-- ## Training Duck with a joint entity-relation encoder
 
 You can train Duck with a joint entity-relation encoder that does not use box embeddings. This model creates a joint encoding of an entity and its relations by encoding the relations of an entity with a transformer encoder and then applying an attention module that updates entity representations by attending to relation encodings. This model gives the best results without hard negatives.
