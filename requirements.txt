@@ -1,0 +1,12 @@
+faiss-gpu
+fairscale
+hydra-core
+hydra-submitit-launcher
+pyyaml
+pytorch-lightning
+transformers
+tqdm
+sentencepiece
+h5py
+protobuf==3.20
+ujson

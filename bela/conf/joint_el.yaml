@@ -1,0 +1,52 @@
+defaults:
+  - config
+  - datamodule: joint_el_datamodule
+  - task/transform: joint_el_xlmr_transform
+  - task/model: xlmr
+  - task/optim: adamw
+  - trainer: gpu_1_host
+
+task:
+  _target_: bela.task.joint_el_task.JointELTask
+#   embeddings_path: /data/home/kassner/BELA/data/matcha/en/en_embeddings.pt
+#   faiss_index_path: /data/home/kassner/BELA/data/matcha/en/en_index.faiss
+#   load_from_checkpoint: /checkpoints/movb/hydra_outputs/main/2021-09-13-001149/0/lightning_logs/version_89311/checkpoints/checkpoint_best-v1.ckpt
+  embeddings_path: /fsx/movb/data/matcha/en/en_embeddings.pt
+  faiss_index_path: /fsx/movb/data/matcha/en/en_index.faiss
+  optim:
+    lr: 5e-05
+  # pretraining
+  # load_from_checkpoint: "/checkpoints/movb/hydra_outputs/main/2021-09-13-001149/0/lightning_logs/version_89311/checkpoints/checkpoint_best.ckpt"
+  # trained on 1st par of wikipedia
+  load_from_checkpoint: "/data/home/movb/work/BELA/outputs/2022-03-01/10-48-13/lightning_logs/version_0/checkpoints/checkpoint_best.ckpt"
+  # fine-tuned on AIDA
+  # load_from_checkpoint: "/data/home/movb/work/BELA/outputs/2022-04-12/02-07-45/lightning_logs/version_0/checkpoints/checkpoint_best.ckpt"
+  train_saliency: False
+  use_gpu_index: True
+
+datamodule:
+  # train_path: /data/home/movb/tmp/cnn_bbc_matcha_jointtrain_200.jsonl
+  # val_path: /data/home/movb/tmp/cnn_bbc_matcha_jointtrain_200.jsonl
+  # test_path: /data/home/movb/tmp/cnn_bbc_matcha_jointtrain_200.jsonl
+  # train_path: /fsx/movb/data/matcha/en/wiki_train_1st_par.txt
+  # val_path: /fsx/movb/data/matcha/en/wiki_eval_1st_par.txt
+  # test_path: /fsx/movb/data/matcha/en/wiki_test_1st_par.txt
+  # AIDA -en
+  train_path: /fsx/movb/data/matcha/aida/aida_train.jsonl_split
+  val_path: /fsx/movb/data/matcha/aida/aida_testb.jsonl_split
+  test_path: /fsx/movb/data/matcha/aida/aida_testa.jsonl_split
+  ent_catalogue_idx_path: /fsx/movb/data/matcha/en/en_xlm_ent_idx.txt
+  batch_size: 64
+
+# datamodule:
+#   train_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointtrain.jsonl
+#   val_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointdev.jsonl
+#   test_path: /fsx/kassner/OSCAR/subset/t1/cnn_bbc_matcha_jointdev.jsonl
+#   ent_catalogue_idx_path: /fsx/movb/data/matcha/en/en_xlm_ent_idx.txt
+#   batch_size: 64
+
+trainer:
+  max_epochs: 30
+
+checkpoint_callback:
+    monitor: valid_f1

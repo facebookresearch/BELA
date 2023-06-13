@@ -1,0 +1,5 @@
+# @package _group_
+_target_: mblink.models.hf_encoder.HFEncoder
+model_path: xlm-roberta-base
+projection_dim: Null
+output_dropout: 0.0

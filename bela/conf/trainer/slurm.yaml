@@ -1,0 +1,29 @@
+# @package _global_
+defaults:
+  - override /hydra/launcher: submitit_slurm
+
+trainer:
+  gpus: 8
+  num_nodes: 4
+  max_epochs: 2
+  num_sanity_val_steps: 0
+  log_every_n_steps: 10
+  gradient_clip_val: 2.0
+  accumulate_grad_batches: 1
+  accelerator: cuda
+  strategy: ddp_sharded
+  precision: 16
+
+hydra:
+  launcher:
+    gpus_per_node: ${trainer.gpus}
+    tasks_per_node: ${trainer.gpus}
+    nodes: ${trainer.num_nodes}
+    #timeout_min: 10080 # 7 days
+    timeout_min: 7200 # 5 days
+    cpus_per_task: 10
+    mem_gb: 0
+    partition: learnai4p
+    account: all
+  sweep:
+    dir: /checkpoints/${oc.env:USER}/bela/${now:%Y-%m-%d-%H%M%S}

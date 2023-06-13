@@ -1,0 +1,3 @@
+# @package _group_
+_target_: bela.task.joint_el_task.JointELTask
+datamodule: null
