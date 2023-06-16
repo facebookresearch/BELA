@@ -1,5 +1,6 @@
-# Bi-encoder Entity Linking Architecture
+# Bi-encoder Entity Linking Architecture (BELA)
 
+The end to end transformer based model for entity linking in 98 languages. The BELA architecture is described in the following paper: [Multilingual End to End Entity Linking](https://arxiv.org/pdf/2306.08896.pdf).
 ## Install package and requirements
 
 First you need to install pytorch with cuda11 support:
