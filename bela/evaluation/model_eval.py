@@ -63,21 +63,27 @@ def convert_sp_to_char_offsets(
     
 
 class ModelEval:
-    def __init__(self, checkpoint_path, config_name="joint_el_mel"):
+    def __init__(
+        self,
+        checkpoint_path,
+        config_name="joint_el_mel",
+        embeddings_path=None,
+        ent_catalogue_idx_path=None
+    ):
         self.device = torch.device("cuda:0")
         
         logger.info("Create task")
         with initialize_config_module("bela/conf"):
             cfg = compose(config_name=config_name)
-            cfg.task.load_from_checkpoint = checkpoint_path  # Overwrite checkpoint path in config
-        self.checkpoint_path = checkpoint_path
-            
-        self.transform = hydra.utils.instantiate(cfg.task.transform)
-        # TODO: The datamodule instanciation takes 90s due to the memory map in joint_el_datamodule.py: prun output: 91.197   91.197 joint_el_datamodule.py:166(__init__)
-        # clear datamodule paths
-        cfg.datamodule.train_path = None
-        cfg.datamodule.val_path = None
-        cfg.datamodule.test_path = None
+            cfg.task.load_from_checkpoint = checkpoint_path
+            cfg.task.embeddings_path = embeddings_path or cfg.task.embeddings_path
+            cfg.datamodule.ent_catalogue_idx_path = ent_catalogue_idx_path or  cfg.datamodule.ent_catalogue_idx_path
+            cfg.datamodule.train_path = None
+            cfg.datamodule.val_path = None
+            cfg.datamodule.test_path = None
+
+        self.checkpoint_path = checkpoint_path           
+        self.transform = hydra.utils.instantiate(cfg.task.transform)        
         datamodule = hydra.utils.instantiate(cfg.datamodule, transform=self.transform)
         self.task = hydra.utils.instantiate(cfg.task, datamodule=datamodule, _recursive_=False)
         
@@ -86,9 +92,6 @@ class ModelEval:
         self.task = self.task.to(self.device)
         self.embeddings = self.task.embeddings
         self.faiss_index = self.task.faiss_index
-        
-        # logger.info("Create GPU index")
-        # self.create_gpu_index()
         
         logger.info("Create ent index")
         self.ent_idx = []
@@ -162,7 +165,7 @@ class ModelEval:
                 flat_mentions_repr.detach()
             )
 
-            entities_repr = self.embeddings[cand_indices].to(self.device)
+            entities_repr = self.embeddings[cand_indices.to(self.embeddings.device)].to(self.device)
 
             chosen_mention_limits: List[int] = (
                 chosen_mention_mask.int().sum(-1).detach().cpu().tolist()
